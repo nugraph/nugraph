@@ -1,0 +1,41 @@
+checkpoint: true
+classes:
+- MIP
+- HIP
+- shower
+- michel
+- diffuse
+edge_features: 16
+event_classes:
+- numu
+- nue
+- nc
+event_head: false
+filter_head: false
+gamma: 2
+in_features: 4
+lr: 0.001
+node_features: 64
+num_iters: 5
+planes:
+- u
+- v
+- y
+semantic_head: true
+semantic_weight: !!python/object/apply:torch._utils._rebuild_tensor_v2
+- !!python/object/apply:torch.storage._load_from_bytes
+  - !!binary |
+    gAKKCmz8nEb5IGqoUBkugAJN6QMugAJ9cQAoWBAAAABwcm90b2NvbF92ZXJzaW9ucQFN6QNYDQAA
+    AGxpdHRsZV9lbmRpYW5xAohYCgAAAHR5cGVfc2l6ZXNxA31xBChYBQAAAHNob3J0cQVLAlgDAAAA
+    aW50cQZLBFgEAAAAbG9uZ3EHSwR1dS6AAihYBwAAAHN0b3JhZ2VxAGN0b3JjaApGbG9hdFN0b3Jh
+    Z2UKcQFYDgAAADk0NzM1MDI5ODMzNzkycQJYAwAAAGNwdXEDSwVOdHEEUS6AAl1xAFgOAAAAOTQ3
+    MzUwMjk4MzM3OTJxAWEuBQAAAAAAAAD+mjk/9J/uPxNUsz5Lx7tB/3erQA==
+- 0
+- !!python/tuple
+  - 5
+- !!python/tuple
+  - 1
+- false
+- !!python/object/apply:collections.OrderedDict
+  - []
+sp_features: 16

@@ -1,0 +1,27 @@
+[build-system]
+requires = ["flit_core >=3.2,<4"]
+build-backend = "flit_core.buildapi"
+
+[project]
+name = "nugraph"
+authors = [{name = "v hewes", email = "vhewes@fnal.gov"}]
+requires-python = ">=3.10"
+readme = "README.md"
+license = {file = "LICENSE"}
+classifiers = [
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License"
+]
+dependencies = [
+    "matplotlib",
+    "plotly",
+    "pynuml>=23.5.2",
+    "seaborn",
+    "torch>=1.12.1",
+    "torch-geometric>=2.1.0",
+    "pytorch-lightning>=1.7.1",
+]
+dynamic = ["version", "description"]
+
+[project.urls]
+Home = "https://github.com/vhewes/nugraph"
