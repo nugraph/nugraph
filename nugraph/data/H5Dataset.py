@@ -23,12 +23,4 @@ class H5Dataset(Dataset):
         return len(self._samples)
 
     def get(self, idx: int) -> HeteroData:
-        data = self._interface.load_heterodata(self._samples[idx])
-        data['sp'].x = torch.empty(data['sp'].num_nodes, 0)
-        del data['sp'].num_nodes
-        for p in ['u', 'v', 'y']:
-            data[p, 'plane', p].edge_index = data[p].edge_index
-            del data[p].edge_index
-            data[p, 'nexus', 'sp'].edge_index = data[p, 'forms', 'sp'].edge_index
-            del data[p, 'forms', 'sp']
-        return data
+        return self._interface.load_heterodata(self._samples[idx])
