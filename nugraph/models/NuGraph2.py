@@ -635,8 +635,8 @@ class NuGraph2(LightningModule):
         self(batch)
 
     def configure_optimizers(self) -> tuple:
-        optimizer = torch.optim.SGD(self.parameters(),
-                                    lr=self.lr)
+        optimizer = torch.optim.AdamW(self.parameters(),
+                                      lr=self.lr)
         onecycle = torch.optim.lr_scheduler.OneCycleLR(
                 optimizer,
                 max_lr=self.lr,
