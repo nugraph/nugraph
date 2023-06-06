@@ -280,6 +280,7 @@ class EventDecoder(nn.Module):
                  gamma: float = 2):
         super().__init__()
 
+        self.name = 'event'
         self.planes = planes
         self.classes = event_classes
         num_planes = len(planes)
@@ -362,6 +363,7 @@ class SemanticDecoder(nn.Module):
                  weight: torch.Tensor = None):
         super().__init__()
 
+        self.name = 'semantic'
         self.planes = planes
         self.classes = classes
         num_classes = len(classes)
@@ -405,6 +407,10 @@ class SemanticDecoder(nn.Module):
             self.cm_pred.update(x, y)
         return loss, metrics
 
+    def reset_confusion_matrix(self):
+        self.cm_true.reset()
+        self.cm_pred.reset()
+
     def draw_confusion_matrix(self, cm: tm.ConfusionMatrix) -> plt.Figure:
         '''Produce confusion matrix at end of epoch'''
         confusion = cm.compute().cpu()
@@ -418,6 +424,11 @@ class SemanticDecoder(nn.Module):
         plt.xlabel('Assigned label')
         plt.ylabel('True label')
         return fig
+
+    def plot_confusion_matrix(self) -> tuple['plt.Figure']:
+        cm_true = self.draw_confusion_matrix(self.cm_true)
+        cm_pred = self.draw_confusion_matrix(self.cm_pred)
+        return cm_true, cm_pred
 
     def val_epoch_end(self,
                       logger: 'pl.loggers.TensorBoardLogger',
@@ -441,6 +452,7 @@ class FilterDecoder(nn.Module):
                  classes: list[str]):
         super().__init__()
 
+        self.name = 'filter'
         self.planes = planes
         self.classes = classes
         num_classes = len(classes)
@@ -614,9 +626,13 @@ class NuGraph2(LightningModule):
         self.log('loss/train', total_loss, batch_size=batch.num_graphs, prog_bar=True)
         return total_loss
 
+    def on_validation_epoch_start(self) -> None:
+        for decoder in self.decoders:
+            decoder.reset_confusion_matrix()
+
     def validation_step(self,
                         batch,
-                        batch_idx: int) -> NoReturn:
+                        batch_idx: int) -> None:
         self(batch)
         total_loss = 0.
         for decoder in self.decoders:
@@ -625,14 +641,26 @@ class NuGraph2(LightningModule):
             self.log_dict(metrics, batch_size=batch.num_graphs)
         self.log('loss/val', total_loss, batch_size=batch.num_graphs)
 
-    def on_validation_epoch_end(self) -> NoReturn:
+    def on_validation_epoch_end(self) -> None:
         for decoder in self.decoders:
             decoder.val_epoch_end(self.logger, self.trainer.current_epoch+1)
+
+    def on_test_epoch_start(self) -> None:
+        for decoder in self.decoders:
+            decoder.reset_confusion_matrix()
 
     def test_step(self,
                   batch,
                   batch_idx: int = 0) -> None:
         self(batch)
+        for decoder in self.decoders:
+            decoder.loss(batch, 'test', True)
+
+    def on_test_epoch_end(self) -> tuple['plt.Figure']:
+        for decoder in self.decoders:
+            cm_true, cm_pred = decoder.plot_confusion_matrix()
+            cm_true.savefig(f'cm_{decoder.name}_true.pdf')
+            cm_pred.savefig(f'cm_{decoder.name}_pred.pdf')
 
     def configure_optimizers(self) -> tuple:
         optimizer = torch.optim.AdamW(self.parameters(),
