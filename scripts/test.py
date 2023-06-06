@@ -23,10 +23,7 @@ def configure():
 def test(args):
 
     # Load dataset
-    nudata = Data(args.data_path,
-                  batch_size=args.batch_size,
-                  planes=['u','v','y'],
-                  classes=['HIP','MIP','shower','michel','diffuse'],)
+    nudata = Data(args.data_path, batch_size=args.batch_size)
 
     model = Model.load_from_checkpoint(args.checkpoint, event_head=False)
 
