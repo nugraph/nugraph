@@ -13,7 +13,7 @@ from torch.utils.checkpoint import checkpoint
 import matplotlib.pyplot as plt
 import seaborn as sn
 
-from ..util import FocalLoss
+from ..util import FocalLoss, RecallLoss
 
 Activation = nn.Tanh
 
@@ -370,7 +370,7 @@ class SemanticDecoder(nn.Module):
         for p in planes:
             self.net[p] = ClassLinear(node_features, 1, num_classes)
 
-        self.loss_func = FocalLoss(weight=weight, gamma=2)
+        self.loss_func = RecallLoss()
         self.acc_func = tm.Accuracy(task='multiclass',
                                     num_classes=num_classes)
         self.acc_func_classwise = tm.Accuracy(task='multiclass',
