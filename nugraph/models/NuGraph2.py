@@ -121,7 +121,7 @@ class NexusNet(nn.Module):
 
         class NexusDown(pyg.nn.MessagePassing):
             def __init__(self):
-                super().__init__(node_dim=0, aggr=aggr)
+                super().__init__(node_dim=0, aggr=aggr, flow='target_to_source')
 
                 self.edge_net = nn.Sequential(
                     ClassLinear(node_features+sp_features,
