@@ -18,15 +18,14 @@ Model = ng.models.NuGraph2
 
 def configure():
     parser = argparse.ArgumentParser(sys.argv[0])
-    group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument('--name', type=str, default=None,
-                       help='Training instance name, for logging purposes')
-    group.add_argument('--resume', type=str, default=None,
-                       help='Checkpoint file to resume training from')
+    parser.add_argument('--name', type=str, default=None,
+                        help='Training instance name, for logging purposes')
+    parser.add_argument('--logdir', type=str, default=None,
+                        help='Output directory to write logs to')
+    parser.add_argument('--resume', type=str, default=None,
+                        help='Checkpoint file to resume training from')
     parser.add_argument('--devices', nargs='+', type=int, default=None,
                         help='List of devices to train with')
-    parser.add_argument('--logdir', type=str, default='auto',
-                        help='Output directory to write logs to')
     parser.add_argument('--profiler', type=str, default=None,
                         help='Enable requested profiler')
     parser.add_argument('--detect-anomaly', action='store_true', default=False,
@@ -43,18 +42,7 @@ def train(args):
     # Load dataset
     nudata = Data(args.data_path, batch_size=args.batch_size)
 
-    logdir = args.logdir
-    if logdir == 'auto':
-        logdir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'logs')
-
-    # are we resuming an existing training?
-    resume = args.resume is not None
-    if resume:
-        model = Model.load_from_checkpoint(args.resume)
-        stub = os.path.dirname(os.path.dirname(args.resume))
-        stub, version = os.path.split(stub)
-        name = os.path.basename(stub)
-    else:
+    if args.name is not None and args.logdir is not None and args.resume is None:
         model = Model(in_features=4,
                       node_features=args.node_feats,
                       edge_features=args.edge_feats,
@@ -68,8 +56,17 @@ def train(args):
                       checkpoint=not args.no_checkpointing,
                       lr=args.learning_rate)
         name = args.name
+        logdir = args.logdir
         version = None
         os.makedirs(os.path.join(logdir, args.name), exist_ok=True)
+    elif args.resume is not None and args.name is None and args.logdir is None:
+        model = Model.load_from_checkpoint(args.resume)
+        stub = os.path.dirname(os.path.dirname(args.resume))
+        stub, version = os.path.split(stub)
+        logdir, name = os.path.split(stub)
+    else:
+        raise Exception('You must pass either the --name and --logdir arguments to start an existing training, or the --resume argument to resume an existing one.')
+
     logger = pl.loggers.TensorBoardLogger(save_dir=logdir,
                                           name=name, version=version,
                                           default_hp_metric=False)
@@ -78,25 +75,15 @@ def train(args):
         LearningRateMonitor(logging_interval='step')
     ]
 
-    plugins = [
-        SLURMEnvironment(requeue_signal=signal.SIGHUP)
-    ]
+    devices = 1 if torch.cuda.device_count() > 1 else 'auto'
 
-    if args.devices is None:
-        print('No devices specified – training with CPU')
-
-    accelerator = 'cpu' if args.devices is None else 'gpu'
-    trainer = pl.Trainer(accelerator=accelerator,
-                         devices=args.devices,
+    trainer = pl.Trainer(devices=devices,
                          max_epochs=args.epochs,
-                         gradient_clip_val=args.clip_gradients,
                          limit_train_batches=args.limit_train_batches,
                          limit_val_batches=args.limit_val_batches,
                          logger=logger,
                          profiler=args.profiler,
-                         detect_anomaly=args.detect_anomaly,
-                         callbacks=callbacks,
-                         plugins=plugins)
+                         callbacks=callbacks)
 
     trainer.fit(model, datamodule=nudata, ckpt_path=args.resume)
 
