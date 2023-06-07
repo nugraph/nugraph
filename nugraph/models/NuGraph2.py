@@ -51,6 +51,9 @@ class PlaneNet(nn.Module):
 
         # define individual module block for each plane
         class Net(pyg.nn.MessagePassing):
+
+            propagate_type = { 'x': torch.Tensor }
+
             def __init__(self):
                 super().__init__(node_dim=0, aggr=aggr)
 
