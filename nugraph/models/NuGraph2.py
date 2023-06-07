@@ -302,7 +302,7 @@ class SemanticDecoder(nn.Module):
                                           normalize='pred')
 
     def forward(self, x: PlaneTensor, batch: PlaneTensor) -> dict[str, PlaneTensor]:
-        return { p: { 'x_s': self.net[p](x[p]) } for p in self.planes }
+        return { 'x_s': { p: self.net[p](x[p]).squeeze(dim=-1) for p in self.planes } }
 
     def loss(self,
              batch,
@@ -521,11 +521,13 @@ class NuGraph2(LightningModule):
         return ret
 
     def step(self, batch):
-        return self(batch.collect('x'),
-                    { p: batch[p, 'plane', p].edge_index for p in self.planes },
-                    { p: batch[p, 'nexus', 'sp'].edge_index for p in self.planes },
-                    torch.empty(batch['sp'].num_nodes, 0),
-                    { p: batch[p].batch for p in self.planes })
+        x = self(batch.collect('x'),
+                 { p: batch[p, 'plane', p].edge_index for p in self.planes },
+                 { p: batch[p, 'nexus', 'sp'].edge_index for p in self.planes },
+                 torch.empty(batch['sp'].num_nodes, 0),
+                 { p: batch[p].batch for p in self.planes })
+        for key, value in x.items():
+            batch.set_value_dict(key, value)
 
     def on_train_start(self):
         hpmetrics = { 'max_lr': self.hparams.lr }
@@ -545,7 +547,7 @@ class NuGraph2(LightningModule):
     def training_step(self,
                       batch,
                       batch_idx: int) -> float:
-        ret = self.step(batch)
+        self.step(batch)
         total_loss = 0.
         for decoder in self.decoders:
             loss, metrics = decoder.loss(batch, 'train')
@@ -561,7 +563,7 @@ class NuGraph2(LightningModule):
     def validation_step(self,
                         batch,
                         batch_idx: int) -> None:
-        batch.update(pyg.data.HeteroData().from_dict(self.step(batch)))
+        self.step(batch)
         total_loss = 0.
         for decoder in self.decoders:
             loss, metrics = decoder.loss(batch, 'val', True)
