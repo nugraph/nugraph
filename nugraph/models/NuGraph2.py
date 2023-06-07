@@ -17,8 +17,6 @@ from ..util import FocalLoss, RecallLoss
 
 PlaneTensor = dict[str, torch.Tensor]
 
-Activation = nn.Tanh
-
 class ClassLinear(nn.Module):
     """Linear convolution module grouped by class, with activation."""
     def __init__(self,
@@ -62,7 +60,7 @@ class PlaneNet(nn.Module):
                     ClassLinear(2 * (in_features + node_features),
                                 edge_features,
                                 num_classes),
-                    Activation(),
+                    nn.Tanh(),
                     ClassLinear(edge_features,
                                 1,
                                 num_classes),
@@ -72,11 +70,11 @@ class PlaneNet(nn.Module):
                     ClassLinear(2 * (in_features + node_features),
                                 node_features,
                                 num_classes),
-                    Activation(),
+                    nn.Tanh(),
                     ClassLinear(node_features,
                                 node_features,
                                 num_classes),
-                    Activation())
+                    nn.Tanh())
 
             def forward(self,
                         x: torch.Tensor,
@@ -113,11 +111,11 @@ class NexusNet(nn.Module):
             ClassLinear(len(planes)*node_features,
                         sp_features,
                         num_classes),
-            Activation(),
+            nn.Tanh(),
             ClassLinear(sp_features,
                         sp_features,
                         num_classes),
-            Activation())
+            nn.Tanh())
 
         class NexusDown(pyg.nn.MessagePassing):
             def __init__(self):
@@ -127,18 +125,18 @@ class NexusNet(nn.Module):
                     ClassLinear(node_features+sp_features,
                                 edge_features,
                                 num_classes),
-                    Activation(),
+                    nn.Tanh(),
                     ClassLinear(edge_features, 1, num_classes),
                     nn.Softmax(dim=1))
                 self.node_net = nn.Sequential(
                     ClassLinear(node_features+sp_features,
                                 node_features,
                                 num_classes),
-                    Activation(),
+                    nn.Tanh(),
                     ClassLinear(node_features,
                                 node_features,
                                 num_classes),
-                    Activation())
+                    nn.Tanh())
 
             def forward(self, x: torch.Tensor, edge_index: torch.Tensor,
                         n: torch.Tensor) -> torch.Tensor:
@@ -186,7 +184,7 @@ class Encoder(nn.Module):
         def make_net():
             return nn.Sequential(
                 ClassLinear(in_features, node_features, self.num_classes),
-                Activation())
+                nn.Tanh())
         self.net = nn.ModuleDict({ p: make_net() for p in planes })
 
     def forward(self, x: PlaneTensor) -> PlaneTensor:
