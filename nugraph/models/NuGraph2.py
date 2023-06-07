@@ -107,9 +107,7 @@ class NexusNet(nn.Module):
                  aggr: str = 'mean'):
         super().__init__()
 
-
-        self.nexus_up = pyg.nn.SimpleConv(node_dim=0,
-                                          flow='target_to_source')
+        self.nexus_up = pyg.nn.SimpleConv(node_dim=0)
 
         self.nexus_net = nn.Sequential(
             ClassLinear(len(planes)*node_features,
@@ -155,21 +153,18 @@ class NexusNet(nn.Module):
         self.nexus_down = nn.ModuleDict({ p: NexusDown() for p in planes })
 
     def forward(self, x: PlaneTensor, edge_index: PlaneTensor,
-                num_nexus_nodes: int) -> None:
+                nexus: torch.Tensor) -> None:
 
         # project up to nexus space
         n = [None] * len(self.nexus_down)
         for i, p in enumerate(self.nexus_down):
-            print(p, 'plane size:', x[p].size(0))
-            print('nexus size:', num_nexus_nodes)
-            n[i] = self.nexus_up(x=(x[p], x[p].new_zeros(num_nexus_nodes, x[p].size(2))), edge_index=edge_index[p], size=(x[p].size(0), num_nexus_nodes))
-            print('tensor shape:', n[i].shape)
+            n[i] = self.nexus_up(x=(x[p], nexus), edge_index=edge_index[p])
 
         # convolve in nexus space
         n = self.nexus_net(torch.cat(n, dim=-1))
 
         # project back down to planes
-        for p in self.planes:
+        for p in self.nexus_down:
             x[p] = self.nexus_down[p](x=x[p], edge_index=edge_index[p], n=n)
 
 class Encoder(nn.Module):
@@ -510,29 +505,27 @@ class NuGraph2(LightningModule):
             raise Exception('At least one decoder head must be enabled!')
 
     def forward(self, x: PlaneTensor, edge_index_plane: PlaneTensor,
-                edge_index_nexus: PlaneTensor, num_nexus_nodes: int) -> PlaneTensor:
+                edge_index_nexus: PlaneTensor, nexus: torch.Tensor,
+                batch: PlaneTensor) -> PlaneTensor:
         m = self.encoder(x)
         for _ in range(self.num_iters):
             # shortcut connect features
             for i, p in enumerate(self.planes):
                 m[p] = torch.cat((m[p], x[p].unsqueeze(1).expand(-1, m[p].size(1), -1)), dim=-1)
-            print('let\'s see whether these tensors are changing in place.')
-            print('u plane mean before anything:', m['u'].mean())
             self.plane_net(m, edge_index_plane)
-            print('u plane mean after plane net:', m['u'].mean())
-            self.nexus_net(m, edge_index_nexus, num_nexus_nodes)
-            print('u plane mean after nexus net:', m['u'].mean())
+            self.nexus_net(m, edge_index_nexus, nexus)
 
         ret = {}
         for decoder in self.decoders:
-            ret += decoder(m)
+            ret.update(decoder(m, batch))
         return ret
 
     def step(self, batch):
         return self(batch.collect('x'),
                     { p: batch[p, 'plane', p].edge_index for p in self.planes },
                     { p: batch[p, 'nexus', 'sp'].edge_index for p in self.planes },
-                    batch['sp'].num_nodes)
+                    torch.empty(batch['sp'].num_nodes, 0),
+                    { p: batch[p].batch for p in self.planes })
 
     def on_train_start(self):
         hpmetrics = { 'max_lr': self.hparams.lr }
