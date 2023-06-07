@@ -186,7 +186,7 @@ class Encoder(nn.Module):
         self.net = nn.ModuleDict({ p: make_net() for p in planes })
 
     def forward(self, x: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
-        return { p: self.net[p](x[p].unsqueeze(1).expand(-1, self.num_classes, -1)) for p in self.planes}
+        return { p: net(x[p].unsqueeze(1).expand(-1, self.num_classes, -1)) for p, net in self.net.items() }
 
 class EventDecoder(nn.Module):
     def __init__(self,
