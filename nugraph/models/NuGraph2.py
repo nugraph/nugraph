@@ -15,8 +15,6 @@ import seaborn as sn
 
 from ..util import FocalLoss, RecallLoss
 
-PlaneTensor = dict[str, torch.Tensor]
-
 class ClassLinear(nn.Module):
     """Linear convolution module grouped by class, with activation."""
     def __init__(self,
@@ -89,7 +87,7 @@ class PlaneNet(nn.Module):
 
         self.net = nn.ModuleDict({ p: Net() for p in planes })
 
-    def forward(self, x: PlaneTensor, edge_index: PlaneTensor) -> None:
+    def forward(self, x: dict[str, torch.Tensor], edge_index: dict[str, torch.Tensor]) -> None:
         for p in self.net:
             x[p] = checkpoint(self.net[p], x[p], edge_index[p])
 
@@ -150,7 +148,7 @@ class NexusNet(nn.Module):
 
         self.nexus_down = nn.ModuleDict({ p: NexusDown() for p in planes })
 
-    def forward(self, x: PlaneTensor, edge_index: PlaneTensor,
+    def forward(self, x: dict[str, torch.Tensor], edge_index: dict[str, torch.Tensor],
                 nexus: torch.Tensor) -> None:
 
         # project up to nexus space
@@ -187,7 +185,7 @@ class Encoder(nn.Module):
                 nn.Tanh())
         self.net = nn.ModuleDict({ p: make_net() for p in planes })
 
-    def forward(self, x: PlaneTensor) -> PlaneTensor:
+    def forward(self, x: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
         return { p: self.net[p](x[p].unsqueeze(1).expand(-1, self.num_classes, -1)) for p in self.planes}
 
 class EventDecoder(nn.Module):
@@ -222,7 +220,7 @@ class EventDecoder(nn.Module):
                                           num_classes=len(event_classes),
                                           normalize='pred')
 
-    def forward(self, x: PlaneTensor, batch: PlaneTensor) -> dict[str, PlaneTensor]:
+    def forward(self, x: dict[str, torch.Tensor], batch: dict[str, torch.Tensor]) -> dict[str, dict[str, torch.Tensor]]:
         return { self.name: { p: self.pool[p](x[p],flatten(1), batch[p])} }
 
     def loss(self,
@@ -299,7 +297,7 @@ class SemanticDecoder(nn.Module):
                                           num_classes=num_classes,
                                           normalize='pred')
 
-    def forward(self, x: PlaneTensor, batch: PlaneTensor) -> dict[str, PlaneTensor]:
+    def forward(self, x: dict[str, torch.Tensor], batch: dict[str, torch.Tensor]) -> dict[str, dict[str, torch.Tensor]]:
         return { 'x_s': { p: self.net[p](x[p]).squeeze(dim=-1) for p in self.planes } }
 
     def loss(self,
@@ -382,7 +380,7 @@ class FilterDecoder(nn.Module):
         self.cm_pred = tm.ConfusionMatrix(task='binary',
                                           normalize='pred')
 
-    def forward(self, x: PlaneTensor, batch: PlaneTensor) -> dict[str, PlaneTensor]:
+    def forward(self, x: dict[str, torch.Tensor], batch: dict[str, torch.Tensor]) -> dict[str, dict[str, torch.Tensor]]:
         return { self.name: { p: self.net[p](x[p].flatten(start_dim=1)).squeeze(dim=-1) for p in self.planes }}
 
     def loss(self,
@@ -502,9 +500,9 @@ class NuGraph2(LightningModule):
         if len(self.decoders) == 0:
             raise Exception('At least one decoder head must be enabled!')
 
-    def forward(self, x: PlaneTensor, edge_index_plane: PlaneTensor,
-                edge_index_nexus: PlaneTensor, nexus: torch.Tensor,
-                batch: PlaneTensor) -> PlaneTensor:
+    def forward(self, x: dict[str, torch.Tensor], edge_index_plane: dict[str, torch.Tensor],
+                edge_index_nexus: dict[str, torch.Tensor], nexus: torch.Tensor,
+                batch: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
         m = self.encoder(x)
         for _ in range(self.num_iters):
             # shortcut connect features
