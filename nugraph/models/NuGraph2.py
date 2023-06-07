@@ -93,7 +93,7 @@ class PlaneNet(nn.Module):
 
     def forward(self, x: PlaneTensor, edge_index: PlaneTensor) -> None:
         for p in self.net:
-            x[p] = self.net[p](x[p], edge_index[p])
+            x[p] = checkpoint(self.net[p], x[p], edge_index[p])
 
 class NexusNet(nn.Module):
     '''Module to project to nexus space and mix detector planes'''
@@ -161,11 +161,11 @@ class NexusNet(nn.Module):
             n[i] = self.nexus_up(x=(x[p], nexus), edge_index=edge_index[p])
 
         # convolve in nexus space
-        n = self.nexus_net(torch.cat(n, dim=-1))
+        n = checkpoint(self.nexus_net, torch.cat(n, dim=-1))
 
         # project back down to planes
         for p in self.nexus_down:
-            x[p] = self.nexus_down[p](x=x[p], edge_index=edge_index[p], n=n)
+            x[p] = checkpoint(self.nexus_down[p], x[p], edge_index[p], n)
 
 class Encoder(nn.Module):
     """NuGraph2 encoder module.
@@ -512,9 +512,8 @@ class NuGraph2(LightningModule):
             # shortcut connect features
             for i, p in enumerate(self.planes):
                 m[p] = torch.cat((m[p], x[p].unsqueeze(1).expand(-1, m[p].size(1), -1)), dim=-1)
-            torch.utils.checkpoint.checkpoint(self.plane_net, m, edge_index_plane)
-            torch.utils.checkpoint.checkpoint(self.nexus_net, m, edge_index_nexus, nexus)
-
+            self.plane_net(m, edge_index_plane)
+            self.nexus_net(m, edge_index_nexus, nexus)
         ret = {}
         for decoder in self.decoders:
             ret.update(decoder(m, batch))
