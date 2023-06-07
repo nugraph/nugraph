@@ -66,9 +66,7 @@ def train(args):
                       semantic_head=args.semantic,
                       filter_head=args.filter,
                       checkpoint=not args.no_checkpointing,
-                      lr=args.learning_rate,
-                      semantic_weight=weights,
-                      gamma=args.gamma)
+                      lr=args.learning_rate)
         name = args.name
         version = None
         os.makedirs(os.path.join(logdir, args.name), exist_ok=True)
