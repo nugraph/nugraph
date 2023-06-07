@@ -24,12 +24,8 @@ def configure():
                         help='Output directory to write logs to')
     parser.add_argument('--resume', type=str, default=None,
                         help='Checkpoint file to resume training from')
-    parser.add_argument('--devices', nargs='+', type=int, default=None,
-                        help='List of devices to train with')
     parser.add_argument('--profiler', type=str, default=None,
                         help='Enable requested profiler')
-    parser.add_argument('--detect-anomaly', action='store_true', default=False,
-                        help='Enable PyTorch anomaly detection')
     parser = Data.add_data_args(parser)
     parser = Model.add_model_args(parser)
     parser = Model.add_train_args(parser)
@@ -75,7 +71,12 @@ def train(args):
         LearningRateMonitor(logging_interval='step')
     ]
 
-    devices = 1 if torch.cuda.device_count() > 1 else 'auto'
+    devices = 'auto'
+    device_count = torch.cuda.device_count()
+    if device_count > 1:
+        devices = { i: torch.cuda.mem_get_info(i)[0] for i in range(device_count) }
+        devices = [ max(devices, key=devices.get) ]
+        print('Multiple GPUs detected, selected device', *devices)
 
     trainer = pl.Trainer(devices=devices,
                          max_epochs=args.epochs,
