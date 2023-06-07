@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 from .linear import ClassLinear
 from ..util import FocalLoss, RecallLoss
 
+class EventDecoder(nn.Module):
     def __init__(self,
                  node_features: int,
                  planes: list[str],
