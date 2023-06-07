@@ -512,8 +512,8 @@ class NuGraph2(LightningModule):
             # shortcut connect features
             for i, p in enumerate(self.planes):
                 m[p] = torch.cat((m[p], x[p].unsqueeze(1).expand(-1, m[p].size(1), -1)), dim=-1)
-            self.plane_net(m, edge_index_plane)
-            self.nexus_net(m, edge_index_nexus, nexus)
+            torch.utils.checkpoint.checkpoint(self.plane_net, m, edge_index_plane)
+            torch.utils.checkpoint.checkpoint(self.nexus_net, m, edge_index_nexus, nexus)
 
         ret = {}
         for decoder in self.decoders:
