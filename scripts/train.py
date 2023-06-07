@@ -43,12 +43,6 @@ def train(args):
     # Load dataset
     nudata = Data(args.data_path, batch_size=args.batch_size)
 
-    weights = nudata.semantic_weights
-    print('\nsemantic weights:')
-    for c, w in zip(nudata.classes, weights):
-        print(f'{c:>10}: {w:.2g}')
-    print()
-
     logdir = args.logdir
     if logdir == 'auto':
         logdir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'logs')
