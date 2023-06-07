@@ -15,6 +15,8 @@ import seaborn as sn
 
 from ..util import FocalLoss, RecallLoss
 
+PlaneTensor = dict[str, torch.Tensor]
+
 Activation = nn.Tanh
 
 class ClassLinear(nn.Module):
@@ -40,71 +42,77 @@ class ClassLinear(nn.Module):
         x = torch.tensor_split(X, self.num_classes, dim=1)
         return torch.cat([ net(x[i]) for i, net in enumerate(self.net) ], dim=1)
 
-class Message2D(pyg.nn.MessagePassing):
+class PlaneNet(nn.Module):
+    '''Module to convolve within each detector plane'''
     def __init__(self,
                  in_features: int,
                  node_features: int,
                  edge_features: int,
                  num_classes: int,
+                 planes: list[str],
                  aggr: str = 'add'):
-        super().__init__(node_dim=0, aggr=aggr)
+        super().__init__()
 
-        self.edge_net = nn.Sequential(
-            ClassLinear(2 * (in_features + node_features),
-                        edge_features,
-                        num_classes),
-            Activation(),
-            ClassLinear(edge_features,
-                        1,
-                        num_classes),
-            nn.Softmax(dim=1))
+        # define individual module block for each plane
+        class Net(pyg.nn.MessagePassing):
+            def __init__(self):
+                super().__init__(node_dim=0, aggr=aggr)
 
-        self.node_net = nn.Sequential(
-            ClassLinear(2 * (in_features + node_features),
-                        node_features,
-                        num_classes),
-            Activation(),
-            ClassLinear(node_features,
-                        node_features,
-                        num_classes),
-            Activation())
+                self.edge_net = nn.Sequential(
+                    ClassLinear(2 * (in_features + node_features),
+                                edge_features,
+                                num_classes),
+                    Activation(),
+                    ClassLinear(edge_features,
+                                1,
+                                num_classes),
+                    nn.Softmax(dim=1))
 
-    def forward(self,
-                x: torch.Tensor,
-                edge_index: torch.Tensor):
-        return self.propagate(x=x, edge_index=edge_index)
+                self.node_net = nn.Sequential(
+                    ClassLinear(2 * (in_features + node_features),
+                                node_features,
+                                num_classes),
+                    Activation(),
+                    ClassLinear(node_features,
+                                node_features,
+                                num_classes),
+                    Activation())
 
-    def message(self, x_i: torch.Tensor, x_j: torch.Tensor):
-        return self.edge_net(torch.cat((x_i, x_j), dim=-1).detach()) * x_j
+            def forward(self,
+                        x: torch.Tensor,
+                        edge_index: torch.Tensor):
+                return self.propagate(x=x, edge_index=edge_index)
 
-    def update(self, aggr_out: torch.Tensor, x: torch.Tensor):
-        return self.node_net(torch.cat((x, aggr_out), dim=-1))
+            def message(self, x_i: torch.Tensor, x_j: torch.Tensor):
+                return self.edge_net(torch.cat((x_i, x_j), dim=-1).detach()) * x_j
 
-class SPNet(nn.Module):
-    """Module for propagating global features between planes.
+            def update(self, aggr_out: torch.Tensor, x: torch.Tensor):
+                return self.node_net(torch.cat((x, aggr_out), dim=-1))
 
-    Propagate features from 2D nodes up to 3D nodes using 2D-to-3D edges,
-    convolve features of 3D nodes, then form attention weights on 2D-to-3D
-    edges and propagate 3D node features back to 2D nodes using these weights.
-    Skip-connect with original 2D features and convolve once more.
-    """
+        self.net = nn.ModuleDict({ p: Net() for p in planes })
+
+    def forward(self, x: PlaneTensor, edge_index: PlaneTensor) -> None:
+        for p in self.net:
+            x[p] = self.net[p](x[p], edge_index[p])
+
+class NexusNet(nn.Module):
+    '''Module to project to nexus space and mix detector planes'''
     def __init__(self,
+                 in_features: int,
                  node_features: int,
                  edge_features: int,
                  sp_features: int,
+                 num_classes: int,
                  planes: list[str],
-                 classes: list[str],
-                 checkpoint: bool):
+                 aggr: str = 'mean'):
         super().__init__()
 
-        self.planes = planes
-        self.checkpoint = checkpoint
 
-        num_planes = len(planes)
-        num_classes = len(classes)
+        self.nexus_up = pyg.nn.SimpleConv(node_dim=0,
+                                          flow='target_to_source')
 
-        self.node_net_3d = nn.Sequential(
-            ClassLinear(num_planes*node_features,
+        self.nexus_net = nn.Sequential(
+            ClassLinear(len(planes)*node_features,
                         sp_features,
                         num_classes),
             Activation(),
@@ -113,136 +121,56 @@ class SPNet(nn.Module):
                         num_classes),
             Activation())
 
-        self.edge_net = nn.ModuleDict({
-            p: nn.Sequential(
-                ClassLinear(node_features+sp_features,
-                            edge_features,
-                            num_classes),
-                Activation(),
-                ClassLinear(edge_features, 1, num_classes),
-                nn.Softmax(dim=1))
-            for p in planes
-            })
+        class NexusDown(pyg.nn.MessagePassing):
+            def __init__(self):
+                super().__init__(node_dim=0, aggr=aggr)
 
-        self.node_net_2d = nn.ModuleDict({
-            p: nn.Sequential(
-                ClassLinear(node_features+sp_features,
-                            node_features,
-                            num_classes),
-                Activation(),
-                ClassLinear(node_features,
-                            node_features,
-                            num_classes),
-                Activation())
-            for p in planes
-            })
+                self.edge_net = nn.Sequential(
+                    ClassLinear(node_features+sp_features,
+                                edge_features,
+                                num_classes),
+                    Activation(),
+                    ClassLinear(edge_features, 1, num_classes),
+                    nn.Softmax(dim=1))
+                self.node_net = nn.Sequential(
+                    ClassLinear(node_features+sp_features,
+                                node_features,
+                                num_classes),
+                    Activation(),
+                    ClassLinear(node_features,
+                                node_features,
+                                num_classes),
+                    Activation())
 
-    def sp_to_hit(self,
-                  m_2d: torch.Tensor,
-                  m_3d: torch.Tensor,
-                  edge_index: torch.Tensor,
-                  plane: str) -> torch.Tensor:
-        hit, sp = edge_index
-        edge_feats = torch.cat([m_2d[hit], m_3d[sp]], dim=-1).detach()
-        return self.edge_net[plane](edge_feats)
+            def forward(self, x: torch.Tensor, edge_index: torch.Tensor,
+                        n: torch.Tensor) -> torch.Tensor:
+                return self.propagate(x=x, n=n, edge_index=edge_index)
 
-    def forward(self, data) -> None:
+            def message(self, x_i: torch.Tensor, n_j: torch.Tensor) -> torch.Tensor:
+                return self.edge_net(torch.cat((x_i, n_j), dim=-1).detach()) * n_j
 
-        # propagate 2D hit features to 3D and convolve
-        # TODO: let's just do this with torch.new_empty in future
-        def hit_to_sp(data,
-                      plane: str) -> torch.Tensor:
-            hit, sp = data[plane, 'nexus', 'sp'].edge_index
-            return pyg.utils.scatter(data[plane].m[hit],
-                                     sp,
-                                     dim=0,
-                                     dim_size=data['sp'].num_nodes,
-                                     reduce='add')
-        m_sp = torch.cat([hit_to_sp(data, p) for p in self.planes], dim=-1)
-        if self.checkpoint and self.training:
-            m_sp = checkpoint(self.node_net_3d, m_sp)
-        else:
-            m_sp = self.node_net_3d(m_sp)
+            def update(self, aggr_out: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
+                return self.node_net(torch.cat((x, aggr_out), dim=-1))
 
-        # merge 3D hit features back down to 2D
+        self.nexus_down = nn.ModuleDict({ p: NexusDown() for p in planes })
+
+    def forward(self, x: PlaneTensor, edge_index: PlaneTensor,
+                num_nexus_nodes: int) -> None:
+
+        # project up to nexus space
+        n = [None] * len(self.nexus_down)
+        for i, p in enumerate(self.nexus_down):
+            print(p, 'plane size:', x[p].size(0))
+            print('nexus size:', num_nexus_nodes)
+            n[i] = self.nexus_up(x=(x[p], x[p].new_zeros(num_nexus_nodes, x[p].size(2))), edge_index=edge_index[p], size=(x[p].size(0), num_nexus_nodes))
+            print('tensor shape:', n[i].shape)
+
+        # convolve in nexus space
+        n = self.nexus_net(torch.cat(n, dim=-1))
+
+        # project back down to planes
         for p in self.planes:
-            if self.checkpoint and self.training:
-                edge_feats = checkpoint(self.sp_to_hit,
-                                        data[p].m,
-                                        m_sp,
-                                        data[p, 'nexus', 'sp'].edge_index,
-                                        p)
-            else:
-                edge_feats = self.sp_to_hit(data[p].m, m_sp, data[p, 'nexus', 'sp'].edge_index, p)
-
-            hit, sp = data[p, 'nexus', 'sp'].edge_index
-            m_hit = pyg.utils.scatter(edge_feats*m_sp[sp],
-                                      hit,
-                                      dim=0,
-                                      dim_size=data[p].num_nodes,
-                                      reduce='mean')
-            m = torch.cat([data[p].m, m_hit], dim=-1)
-            if self.checkpoint and self.training:
-                data[p].m = checkpoint(self.node_net_2d[p], m)
-            else:
-                data[p].m = self.node_net_2d[p](m)
-
-class MessageNet(nn.Module):
-    """Message-passing backbone of the NuGraph2 model.
-
-    Apply edge network to form classwise edge attention weights, use those
-    weights to pass node features across graph edges and then convolve 2D node
-    features. Then project 2D graph node features into a 3D node space,
-    convolve again, form 2D-to-3D edge attention weights and then use those
-    weights to propagate 3D information back down to 2D nodes. This entire
-    procedure is applied iteratively multiple times, to propagate information
-    throughout the graph.
-    """
-    def __init__(self,
-                 in_features: int,
-                 node_features: int,
-                 edge_features: int,
-                 sp_features: int,
-                 planes: list[str],
-                 classes: list[str],
-                 num_iters: int,
-                 checkpoint: bool):
-        super().__init__()
-
-        self.planes = planes
-        self.num_iters = num_iters
-        self.checkpoint = checkpoint
-
-        num_planes = len(planes)
-        num_classes = len(classes)
-
-        def make_net2d():
-            return Message2D(in_features,
-                             node_features,
-                             edge_features,
-                             num_classes)
-        self.net2d = nn.ModuleList([make_net2d() for _ in planes])
-
-        self.sp_net = SPNet(node_features,
-                            edge_features,
-                            sp_features,
-                            planes,
-                            classes,
-                            checkpoint)
-
-    def forward(self, data) -> None:
-        for _ in range(self.num_iters):
-            for i, p in enumerate(self.planes):
-                num_classes = data[p].m.size(-2)
-                S = data[p].x.unsqueeze(1).expand(-1, num_classes, -1)
-                M = torch.cat((data[p].m, S), dim=-1)
-                E = data[p, 'plane', p].edge_index
-                if self.checkpoint and self.training:
-                    M = checkpoint(self.net2d[i], M, E)
-                else:
-                    M = self.net2d[i](M, E)
-                data[p].m = M
-            self.sp_net(data)
+            x[p] = self.nexus_down[p](x=x[p], edge_index=edge_index[p], n=n)
 
 class Encoder(nn.Module):
     """NuGraph2 encoder module.
@@ -266,18 +194,15 @@ class Encoder(nn.Module):
                 Activation())
         self.net = nn.ModuleDict({ p: make_net() for p in planes })
 
-    def forward(self, batch: pyg.data.HeteroData) -> None:
-        for p in self.planes:
-            x = batch[p].x.unsqueeze(1).expand(-1, self.num_classes, -1)
-            batch[p].m = self.net[p](x)
+    def forward(self, x: PlaneTensor) -> PlaneTensor:
+        return { p: self.net[p](x[p].unsqueeze(1).expand(-1, self.num_classes, -1)) for p in self.planes}
 
 class EventDecoder(nn.Module):
     def __init__(self,
                  node_features: int,
                  planes: list[str],
                  classes: list[str],
-                 event_classes: list[str],
-                 gamma: float = 2):
+                 event_classes: list[str]):
         super().__init__()
 
         self.name = 'event'
@@ -304,11 +229,8 @@ class EventDecoder(nn.Module):
                                           num_classes=len(event_classes),
                                           normalize='pred')
 
-    def forward(self, data) -> None:
-        x = []
-        for p in self.planes:
-            x.append(self.pool[p](data[p].m.flatten(1), data[p].batch))
-        data['evt'].x = self.net(torch.cat(x, dim=-1))
+    def forward(self, x: PlaneTensor, batch: PlaneTensor) -> dict[str, PlaneTensor]:
+        return { self.name: { p: self.pool[p](x[p],flatten(1), batch[p])} }
 
     def loss(self,
              batch,
@@ -359,8 +281,7 @@ class SemanticDecoder(nn.Module):
     def __init__(self,
                  node_features: int,
                  planes: list[str],
-                 classes: list[str],
-                 weight: torch.Tensor = None):
+                 classes: list[str]):
         super().__init__()
 
         self.name = 'semantic'
@@ -385,9 +306,8 @@ class SemanticDecoder(nn.Module):
                                           num_classes=num_classes,
                                           normalize='pred')
 
-    def forward(self, data) -> None:
-        for p in self.planes:
-            data[p].x_s = self.net[p](data[p].m).squeeze(dim=-1)
+    def forward(self, x: PlaneTensor, batch: PlaneTensor) -> dict[str, PlaneTensor]:
+        return { p: { 'x_s': self.net[p](x[p]) } for p in self.planes }
 
     def loss(self,
              batch,
@@ -469,10 +389,8 @@ class FilterDecoder(nn.Module):
         self.cm_pred = tm.ConfusionMatrix(task='binary',
                                           normalize='pred')
 
-    def forward(self, data):
-        for p in self.planes:
-            x = self.net[p](data[p].m.flatten(start_dim=1)).squeeze(dim=-1)
-            data[p].x_f = torch.sigmoid(x.clamp(-1000., 1000.))
+    def forward(self, x: PlaneTensor, batch: PlaneTensor) -> dict[str, PlaneTensor]:
+        return { self.name: { p: self.net[p](x[p].flatten(start_dim=1)).squeeze(dim=-1) for p in self.planes }}
 
     def loss(self,
              batch,
@@ -532,9 +450,7 @@ class NuGraph2(LightningModule):
                  semantic_head: bool = True,
                  filter_head: bool = False,
                  checkpoint: bool = False,
-                 lr: float = 0.001,
-                 semantic_weight: torch.Tensor = None,
-                 gamma: float = 2):
+                 lr: float = 0.001):
         super().__init__()
 
         warnings.filterwarnings("ignore", ".*NaN values found in confusion matrix.*")
@@ -553,14 +469,18 @@ class NuGraph2(LightningModule):
                                planes,
                                classes)
 
-        self.message_net = MessageNet(in_features,
-                                      node_features,
-                                      edge_features,
-                                      sp_features,
-                                      planes,
-                                      classes,
-                                      num_iters,
-                                      checkpoint)
+        self.plane_net = PlaneNet(in_features,
+                                  node_features,
+                                  edge_features,
+                                  len(classes),
+                                  planes)
+
+        self.nexus_net = NexusNet(in_features,
+                                  node_features,
+                                  edge_features,
+                                  sp_features,
+                                  len(classes),
+                                  planes)
 
         self.decoders = []
 
@@ -569,16 +489,14 @@ class NuGraph2(LightningModule):
                 node_features,
                 planes,
                 classes,
-                event_classes,
-                gamma)
+                event_classes)
             self.decoders.append(self.event_decoder)
 
         if semantic_head:
             self.semantic_decoder = SemanticDecoder(
                 node_features,
                 planes,
-                classes,
-                semantic_weight)
+                classes)
             self.decoders.append(self.semantic_decoder)
 
         if filter_head:
@@ -591,13 +509,30 @@ class NuGraph2(LightningModule):
         if len(self.decoders) == 0:
             raise Exception('At least one decoder head must be enabled!')
 
-    def forward(self, data) -> None:
-        for p in self.planes:
-            data[p].x.requires_grad_()
-        self.encoder(data)
-        self.message_net(data)
+    def forward(self, x: PlaneTensor, edge_index_plane: PlaneTensor,
+                edge_index_nexus: PlaneTensor, num_nexus_nodes: int) -> PlaneTensor:
+        m = self.encoder(x)
+        for _ in range(self.num_iters):
+            # shortcut connect features
+            for i, p in enumerate(self.planes):
+                m[p] = torch.cat((m[p], x[p].unsqueeze(1).expand(-1, m[p].size(1), -1)), dim=-1)
+            print('let\'s see whether these tensors are changing in place.')
+            print('u plane mean before anything:', m['u'].mean())
+            self.plane_net(m, edge_index_plane)
+            print('u plane mean after plane net:', m['u'].mean())
+            self.nexus_net(m, edge_index_nexus, num_nexus_nodes)
+            print('u plane mean after nexus net:', m['u'].mean())
+
+        ret = {}
         for decoder in self.decoders:
-            decoder(data)
+            ret += decoder(m)
+        return ret
+
+    def step(self, batch):
+        return self(batch.collect('x'),
+                    { p: batch[p, 'plane', p].edge_index for p in self.planes },
+                    { p: batch[p, 'nexus', 'sp'].edge_index for p in self.planes },
+                    batch['sp'].num_nodes)
 
     def on_train_start(self):
         hpmetrics = { 'max_lr': self.hparams.lr }
@@ -617,7 +552,7 @@ class NuGraph2(LightningModule):
     def training_step(self,
                       batch,
                       batch_idx: int) -> float:
-        self(batch)
+        ret = self.step(batch)
         total_loss = 0.
         for decoder in self.decoders:
             loss, metrics = decoder.loss(batch, 'train')
@@ -633,7 +568,7 @@ class NuGraph2(LightningModule):
     def validation_step(self,
                         batch,
                         batch_idx: int) -> None:
-        self(batch)
+        batch.update(pyg.data.HeteroData().from_dict(self.step(batch)))
         total_loss = 0.
         for decoder in self.decoders:
             loss, metrics = decoder.loss(batch, 'val', True)
