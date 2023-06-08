@@ -3,6 +3,19 @@ import torch.nn as nn
 
 from .linear import ClassLinear
 
+class Norm(nn.Module):
+    def __init__(self,
+                 in_features: int,
+                 planes: list[str]):
+        super().__init__()
+
+        self.net = nn.ModuleDict()
+        for p in planes:
+            self.net[p] = nn.BatchNorm1d(in_features)
+
+    def forward(self, x: dict[str, Tensor]) -> dict[str, Tensor]:
+        return { p: net(x[p]) for p, net in self.net.items() }
+
 class Encoder(nn.Module):
     def __init__(self,
                  in_features: int,
