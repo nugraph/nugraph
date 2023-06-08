@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Callable
 
 from torch import Tensor, cat
 import torch.nn as nn
@@ -71,7 +71,7 @@ class PlaneNet(nn.Module):
                                            num_classes,
                                            aggr)
 
-    def checkpoint(self, fn: Callable, *args) -> Any:
+    def ckpt(self, fn: Callable, *args) -> Any:
         if self.checkpoint and self.training:
             return checkpoint(fn, *args)
         else:
@@ -79,4 +79,4 @@ class PlaneNet(nn.Module):
 
     def forward(self, x: dict[str, Tensor], edge_index: dict[str, Tensor]) -> None:
         for p in self.net:
-            x[p] = self.checkpoint(self.net[p], x[p], edge_index[p])
+            x[p] = self.ckpt(self.net[p], x[p], edge_index[p])

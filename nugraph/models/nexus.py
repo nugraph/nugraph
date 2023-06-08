@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Callable
 
 from torch import Tensor, cat
 import torch.nn as nn
@@ -77,7 +77,7 @@ class NexusNet(nn.Module):
                                            num_classes,
                                            aggr)
 
-    def checkpoint(self, fn: Callable, *args) -> Any:
+    def ckpt(self, fn: Callable, *args) -> Any:
         if self.checkpoint and self.training:
             return checkpoint(fn, *args)
         else:
@@ -91,8 +91,8 @@ class NexusNet(nn.Module):
             n[i] = self.nexus_up(x=(x[p], nexus), edge_index=edge_index[p])
 
         # convolve in nexus space
-        n = self.checkpoint(self.nexus_net, cat(n, dim=-1))
+        n = self.ckpt(self.nexus_net, cat(n, dim=-1))
 
         # project back down to planes
         for p in self.nexus_down:
-            x[p] = self.checkpoint(self.nexus_down[p], x[p], edge_index[p], n)
+            x[p] = self.ckpt(self.nexus_down[p], x[p], edge_index[p], n)
