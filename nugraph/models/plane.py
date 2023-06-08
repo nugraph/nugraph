@@ -1,3 +1,5 @@
+from typing import Any
+
 from torch import Tensor, cat
 import torch.nn as nn
 from torch.utils.checkpoint import checkpoint
@@ -55,8 +57,11 @@ class PlaneNet(nn.Module):
                  edge_features: int,
                  num_classes: int,
                  planes: list[str],
-                 aggr: str = 'add'):
+                 aggr: str = 'add',
+                 checkpoint: bool = True):
         super().__init__()
+
+        self.checkpoint = checkpoint
 
         self.net = nn.ModuleDict()
         for p in planes:
@@ -66,6 +71,12 @@ class PlaneNet(nn.Module):
                                            num_classes,
                                            aggr)
 
+    def checkpoint(self, fn: Callable, *args) -> Any:
+        if self.checkpoint and self.training:
+            return checkpoint(fn, *args)
+        else:
+            return fn(*args)
+
     def forward(self, x: dict[str, Tensor], edge_index: dict[str, Tensor]) -> None:
         for p in self.net:
-            x[p] = checkpoint(self.net[p], x[p], edge_index[p])
+            x[p] = self.checkpoint(self.net[p], x[p], edge_index[p])

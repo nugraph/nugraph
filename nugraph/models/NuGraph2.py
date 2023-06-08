@@ -1,4 +1,3 @@
-from typing import Any, Callable, NoReturn
 from argparse import ArgumentParser
 import warnings
 
@@ -41,7 +40,6 @@ class NuGraph2(LightningModule):
         self.classes = classes
         self.event_classes = event_classes
         self.num_iters = num_iters
-        self.checkpoint = checkpoint
         self.lr = lr
 
         self.norm = Norm(in_features, planes)
@@ -55,13 +53,15 @@ class NuGraph2(LightningModule):
                                   node_features,
                                   edge_features,
                                   len(classes),
-                                  planes)
+                                  planes,
+                                  checkpoint=checkpoint)
 
         self.nexus_net = NexusNet(node_features,
                                   edge_features,
                                   sp_features,
                                   len(classes),
-                                  planes)
+                                  planes,
+                                  checkpoint=checkpoint)
 
         self.decoders = []
 
