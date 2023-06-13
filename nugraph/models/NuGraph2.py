@@ -6,7 +6,7 @@ from torch.optim import AdamW
 from torch.optim.lr_scheduler import OneCycleLR
 from pytorch_lightning import LightningModule
 
-from .encoder import Norm, Encoder
+from .encoder import Encoder
 from .plane import PlaneNet
 from .nexus import NexusNet
 from .decoders import SemanticDecoder, FilterDecoder, EventDecoder
@@ -41,8 +41,6 @@ class NuGraph2(LightningModule):
         self.event_classes = event_classes
         self.num_iters = num_iters
         self.lr = lr
-
-        self.norm = Norm(in_features, planes)
 
         self.encoder = Encoder(in_features,
                                node_features,
@@ -96,7 +94,6 @@ class NuGraph2(LightningModule):
                 edge_index_nexus: dict[str, Tensor],
                 nexus: Tensor,
                 batch: dict[str, Tensor]) -> dict[str, Tensor]:
-        x = self.norm(x)
         m = self.encoder(x)
         for _ in range(self.num_iters):
             # shortcut connect features

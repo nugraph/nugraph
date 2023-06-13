@@ -37,6 +37,5 @@ class FeatureNorm(BaseTransform):
     def __call__(self, data: "pyg.data.HeteroData") -> "pyg.data.HeteroData":
         for p in self.planes:
             mean, std = self.norm[p]
-            x = torch.cat((data[p].pos, data[p].x), dim=-1)
-            data[p].x = (x - mean[None,:]) / std[None,:]
+            data[p].x = (data[p].x - mean[None,:]) / std[None,:]
         return data

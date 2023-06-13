@@ -3,12 +3,14 @@ import warnings
 
 import h5py
 
+from torch import tensor, cat
 from torch.utils.data import random_split
 from torch_geometric.loader import DataLoader
+from torch_geometric.transforms import Compose
 from pytorch_lightning import LightningDataModule
 
 from ..data import H5Dataset
-from ..util import PositionFeatures
+from ..util import PositionFeatures, FeatureNormMetric, FeatureNorm
 
 class H5DataModule(LightningDataModule):
     """PyTorch Lightning data module for neutrino graph data."""
@@ -39,17 +41,49 @@ class H5DataModule(LightningDataModule):
                 print('samples not found in file! pass "prepare=True" to generate them')
                 exit
 
-        transform = PositionFeatures(self.planes)
+        transform = Compose((PositionFeatures(self.planes), self.load_norm()))
+
         self.train_dataset = H5Dataset(self.filename, train_samples, transform)
         self.val_dataset = H5Dataset(self.filename, val_samples, transform)
         self.test_dataset = H5Dataset(self.filename, test_samples, transform)
+
+    def generate_norm(self):
+        with h5py.File(self.filename, 'r+') as f:
+
+            metrics = None
+            samples = list(f['dataset'].keys())
+            loader = DataLoader(H5Dataset(self.filename, samples=samples),
+                                batch_size=self.batch_size)
+
+            print('  generating feature norm...')
+            metrics = None
+            for batch in tqdm.tqdm(loader):
+                for p in self.planes:
+                    x = cat([batch[p].pos, batch[p].x], dim=-1)
+                    if not metrics:
+                        num_feats = x.shape[-1]
+                        metrics = { p: FeatureNormMetric(num_feats) for p in self.planes }
+                    metrics[p].update(x)
+            for p in self.planes:
+                f[f'norm/{p}'] = metrics[p].compute()
+
+    def load_norm(self):
+        norm = {}
+        try:
+            with h5py.File(self.filename) as f:
+                for p in self.planes:
+                    norm[p] = tensor(f[f'norm/{p}'][()])
+        except:
+            print('feature normalisations not found in file! run generate_norm() to generate them.')
+            exit
+        return FeatureNorm(self.planes, norm)
 
     def generate_samples(self):
         with h5py.File(self.filename, 'r+') as f:
             samples = list(f['dataset'].keys())
             split = int(0.05 * len(samples))
             splits = [ len(samples)-(2*split), split, split ]
-            train, val, test = torch.utils.data.random_split(samples, splits)
+            train, val, test = random_split(samples, splits)
 
             for key in [ 'train', 'validation', 'test' ]:
                 name = f'samples/{key}'
