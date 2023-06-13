@@ -123,15 +123,15 @@ class SemanticDecoder(nn.Module):
                                           ignore_index=-1)
 
     def forward(self, x: dict[str, Tensor], batch: dict[str, Tensor]) -> dict[str, dict[str, Tensor]]:
-        return { 'x_s': { p: self.net[p](x[p]).squeeze(dim=-1) for p in self.planes } }
+        return { f'x_{self.name}': { p: self.net[p](x[p]).squeeze(dim=-1) for p in self.planes } }
 
     def loss(self,
              batch,
              name: str,
              confusion: bool = False):
         metrics = {}
-        x = cat([batch[p].x_s[batch[p].y_f] for p in self.planes], dim=0)
-        y = cat([batch[p].y_s for p in self.planes], dim=0)
+        x = cat([batch[p].x_semantic for p in self.planes], dim=0)
+        y = cat([batch[p].y_semantic for p in self.planes], dim=0)
         loss = self.loss_func(x, y)
         metrics[f'semantic_loss/{name}'] = loss
         acc = 100. * self.acc_func(x, y)
