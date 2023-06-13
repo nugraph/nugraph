@@ -105,18 +105,22 @@ class SemanticDecoder(nn.Module):
         for p in planes:
             self.net[p] = ClassLinear(node_features, 1, num_classes)
 
-        self.loss_func = RecallLoss()
+        self.loss_func = RecallLoss(ignore_index=-1)
         self.acc_func = tm.Accuracy(task='multiclass',
-                                    num_classes=num_classes)
+                                    num_classes=num_classes,
+                                    ignore_index=-1)
         self.acc_func_classwise = tm.Accuracy(task='multiclass',
                                               num_classes=num_classes,
-                                              average='none')
+                                              average='none',
+                                              ignore_index=-1)
         self.cm_true = tm.ConfusionMatrix(task='multiclass',
                                           num_classes=num_classes,
-                                          normalize='true')
+                                          normalize='true',
+                                          ignore_index=-1)
         self.cm_pred = tm.ConfusionMatrix(task='multiclass',
                                           num_classes=num_classes,
-                                          normalize='pred')
+                                          normalize='pred',
+                                          ignore_index=-1)
 
     def forward(self, x: dict[str, Tensor], batch: dict[str, Tensor]) -> dict[str, dict[str, Tensor]]:
         return { 'x_s': { p: self.net[p](x[p]).squeeze(dim=-1) for p in self.planes } }
