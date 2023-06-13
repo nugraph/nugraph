@@ -1,3 +1,5 @@
+from typing import Any, Callable
+
 from abc import ABC
 
 from torch import Tensor, cat
@@ -11,7 +13,7 @@ import seaborn as sn
 from .linear import ClassLinear
 from ..util import FocalLoss, RecallLoss
 
-class DecoderBase(nn.Module, ABC);
+class DecoderBase(nn.Module, ABC):
     '''Base class for all NuGraph decoders'''
     def __init__(self,
                  name: str,
@@ -45,7 +47,7 @@ class DecoderBase(nn.Module, ABC);
     def arrange(self, batch) -> tuple[Tensor, Tensor]:
         raise NotImplementedError
 
-    def metrics(self, x: Tensor, y: Tensor) -> dict[str, Any]:
+    def metrics(self, x: Tensor, y: Tensor, stage: str) -> dict[str, Any]:
         raise NotImplementedError
 
     def loss(self,
@@ -53,7 +55,7 @@ class DecoderBase(nn.Module, ABC);
              stage: str,
              confusion: bool = False):
         x, y = self.arrange(batch)
-        metrics = self.metrics(x, y)
+        metrics = self.metrics(x, y, stage)
         loss = self.loss_func(x, y)
         metrics[f'{self.name}_loss/{stage}'] = loss
         if confusion:
@@ -78,10 +80,10 @@ class DecoderBase(nn.Module, ABC);
     def val_epoch_end(self,
                       logger: 'pl.loggers.TensorBoardLogger',
                       epoch: int) -> None:
-        logger.experiment.add_figure('event_efficiency',
+        logger.experiment.add_figure(f'{self.name}_efficiency',
                                      self.draw_confusion_matrix(self.cm_true),
                                      global_step=epoch)
-        logger.experiment.add_figure('event_purity',
+        logger.experiment.add_figure(f'{self.name}_purity',
                                      self.draw_confusion_matrix(self.cm_pred),
                                      global_step=epoch)
 
