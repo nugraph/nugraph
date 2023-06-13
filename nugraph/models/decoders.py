@@ -1,3 +1,5 @@
+from abc import ABC
+
 from torch import Tensor, cat
 import torch.nn as nn
 
@@ -8,6 +10,84 @@ import seaborn as sn
 
 from .linear import ClassLinear
 from ..util import FocalLoss, RecallLoss
+
+class DecoderBase(nn.Module, ABC);
+    '''Base class for all NuGraph decoders'''
+    def __init__(self,
+                 name: str,
+                 planes: list[str],
+                 classes: list[str],
+                 loss_func: Callable,
+                 task: str,
+                 ignore_index=None):
+        super().__init__()
+
+        self.name = name
+        self.planes = planes
+        self.classes = classes
+
+        self.loss_func = loss_func
+
+        self.acc_func = tm.Accuracy(task=task,
+                                    num_classes=len(classes),
+                                    average='none',
+                                    ignore_index=ignore_index)
+
+        self.cm_true = tm.ConfusionMatrix(task=task,
+                                          num_classes=len(classes),
+                                          normalize='true',
+                                          ignore_index=ignore_index)
+        self.cm_pred = tm.ConfusionMatrix(task=task,
+                                          num_classes=len(classes),
+                                          normalize='pred',
+                                          ignore_index=ignore_index)
+
+    def arrange(self, batch) -> tuple[Tensor, Tensor]:
+        raise NotImplementedError
+
+    def metrics(self, x: Tensor, y: Tensor) -> dict[str, Any]:
+        raise NotImplementedError
+
+    def loss(self,
+             batch,
+             stage: str,
+             confusion: bool = False):
+        x, y = self.arrange(batch)
+        metrics = self.metrics(x, y)
+        loss = self.loss_func(x, y)
+        metrics[f'{self.name}_loss/{stage}'] = loss
+        if confusion:
+            self.cm_true.update(x, y)
+            self.cm_pred.update(x, y)
+        return loss, metrics
+
+    def draw_confusion_matrix(self, cm: tm.ConfusionMatrix) -> plt.Figure:
+        '''Produce confusion matrix at end of epoch'''
+        confusion = cm.compute().cpu()
+        fig = plt.figure(figsize=[8,6])
+        sn.heatmap(confusion,
+                   xticklabels=self.classes,
+                   yticklabels=self.classes,
+                   vmin=0, vmax=1,
+                   annot=True)
+        plt.ylim(0, len(self.classes))
+        plt.xlabel('Assigned label')
+        plt.ylabel('True label')
+        return fig
+
+    def val_epoch_end(self,
+                      logger: 'pl.loggers.TensorBoardLogger',
+                      epoch: int) -> None:
+        logger.experiment.add_figure('event_efficiency',
+                                     self.draw_confusion_matrix(self.cm_true),
+                                     global_step=epoch)
+        logger.experiment.add_figure('event_purity',
+                                     self.draw_confusion_matrix(self.cm_pred),
+                                     global_step=epoch)
+
+    def reset_confusion_matrix(self):
+        self.cm_true.reset()
+        self.cm_pred.reset()
 
 class EventDecoder(nn.Module):
     def __init__(self,
