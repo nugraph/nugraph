@@ -166,7 +166,7 @@ class EventDecoder(nn.Module):
                                      self.draw_confusion_matrix(self.cm_pred),
                                      global_step=epoch)
 
-class SemanticDecoder(nn.Module):
+class SemanticDecoder(DecoderBase):
     """NuGraph semantic decoder module.
 
     Convolve down to a single node score per semantic class for each 2D graph,
@@ -176,87 +176,32 @@ class SemanticDecoder(nn.Module):
                  node_features: int,
                  planes: list[str],
                  classes: list[str]):
-        super().__init__()
-
-        self.name = 'semantic'
-        self.planes = planes
-        self.classes = classes
-        num_classes = len(classes)
+        super().__init__('semantic',
+                         planes,
+                         classes,
+                         RecallLoss(ignore_index=-1),
+                         'multiclass',
+                         ignore_index=-1)
 
         self.net = nn.ModuleDict()
         for p in planes:
-            self.net[p] = ClassLinear(node_features, 1, num_classes)
-
-        self.loss_func = RecallLoss(ignore_index=-1)
-        self.acc_func = tm.Accuracy(task='multiclass',
-                                    num_classes=num_classes,
-                                    ignore_index=-1)
-        self.acc_func_classwise = tm.Accuracy(task='multiclass',
-                                              num_classes=num_classes,
-                                              average='none',
-                                              ignore_index=-1)
-        self.cm_true = tm.ConfusionMatrix(task='multiclass',
-                                          num_classes=num_classes,
-                                          normalize='true',
-                                          ignore_index=-1)
-        self.cm_pred = tm.ConfusionMatrix(task='multiclass',
-                                          num_classes=num_classes,
-                                          normalize='pred',
-                                          ignore_index=-1)
+            self.net[p] = ClassLinear(node_features, 1, len(classes))
 
     def forward(self, x: dict[str, Tensor], batch: dict[str, Tensor]) -> dict[str, dict[str, Tensor]]:
-        return { f'x_{self.name}': { p: self.net[p](x[p]).squeeze(dim=-1) for p in self.planes } }
+        return { f'x_semantic': { p: self.net[p](x[p]).squeeze(dim=-1) for p in self.planes } }
 
-    def loss(self,
-             batch,
-             name: str,
-             confusion: bool = False):
-        metrics = {}
+    def arrange(self, batch) -> tuple[Tensor, Tensor]:
         x = cat([batch[p].x_semantic for p in self.planes], dim=0)
         y = cat([batch[p].y_semantic for p in self.planes], dim=0)
-        loss = self.loss_func(x, y)
-        metrics[f'semantic_loss/{name}'] = loss
+        return x, y
+
+    def metrics(self, x: Tensor, y: Tensor, stage: str) -> dict[str, Any]:
+        metrics = {}
         acc = 100. * self.acc_func(x, y)
-        metrics[f'semantic_accuracy/{name}'] = acc
-        for c, a in zip(self.classes, self.acc_func_classwise(x, y)):
-            metrics[f'semantic_accuracy_class_{name}/{c}'] = 100. * a
-        if confusion:
-            self.cm_true.update(x, y)
-            self.cm_pred.update(x, y)
-        return loss, metrics
-
-    def reset_confusion_matrix(self):
-        self.cm_true.reset()
-        self.cm_pred.reset()
-
-    def draw_confusion_matrix(self, cm: tm.ConfusionMatrix) -> plt.Figure:
-        '''Produce confusion matrix at end of epoch'''
-        confusion = cm.compute().cpu()
-        fig = plt.figure(figsize=[8,6])
-        sn.heatmap(confusion,
-                   xticklabels=self.classes,
-                   yticklabels=self.classes,
-                   vmin=0, vmax=1,
-                   annot=True)
-        plt.ylim(0, len(self.classes))
-        plt.xlabel('Assigned label')
-        plt.ylabel('True label')
-        return fig
-
-    def plot_confusion_matrix(self) -> tuple['plt.Figure']:
-        cm_true = self.draw_confusion_matrix(self.cm_true)
-        cm_pred = self.draw_confusion_matrix(self.cm_pred)
-        return cm_true, cm_pred
-
-    def val_epoch_end(self,
-                      logger: 'pl.loggers.TensorBoardLogger',
-                      epoch: int) -> None:
-        logger.experiment.add_figure('semantic_efficiency',
-                                     self.draw_confusion_matrix(self.cm_true),
-                                     global_step=epoch)
-        logger.experiment.add_figure('semantic_purity',
-                                     self.draw_confusion_matrix(self.cm_pred),
-                                     global_step=epoch)
+        metrics[f'semantic_accuracy/{stage}'] = acc.mean()
+        for c, a in zip(self.classes, acc):
+            metrics[f'semantic_accuracy_class_{stage}/{c}'] = a
+        return metrics
 
 class FilterDecoder(nn.Module):
     """NuGraph filter decoder module.
