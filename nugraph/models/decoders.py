@@ -219,7 +219,7 @@ class FilterDecoder(DecoderBase):
                  classes: list[str]):
         super().__init__('filter',
                          planes,
-                         ['signal', 'noise'],
+                         ('noise', 'signal'),
                          nn.BCELoss(),
                          'binary',
                          confusion=True)
