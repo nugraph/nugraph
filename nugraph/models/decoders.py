@@ -220,7 +220,7 @@ class FilterDecoder(DecoderBase):
         super().__init__('filter',
                          planes,
                          ['signal', 'noise'],
-                         nn.BCELoss(),
+                         RecallLoss(),
                          'binary',
                          confusion=True)
 
@@ -237,7 +237,7 @@ class FilterDecoder(DecoderBase):
 
     def arrange(self, batch) -> tuple[Tensor, Tensor]:
         x = cat([batch[p].x_filter for p in self.planes], dim=0)
-        y = cat([(batch[p].y_semantic!=-1).float() for p in self.planes], dim=0)
+        y = cat([(batch[p].y_semantic!=-1).long() for p in self.planes], dim=0)
         return x, y
 
     def metrics(self, x: Tensor, y: Tensor, stage: str) -> dict[str, Any]:
