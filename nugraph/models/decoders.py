@@ -38,7 +38,7 @@ class DecoderBase(nn.Module, ABC):
                                     average='none',
                                     ignore_index=ignore_index)
 
-        self.confusion = {}
+        self.confusion = nn.ModuleDict()
         if confusion:
             self.confusion[f'{self.name}_recall'] = tm.ConfusionMatrix(
                 task=task,
