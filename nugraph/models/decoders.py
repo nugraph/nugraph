@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 import seaborn as sn
 
 from .linear import ClassLinear
-from ..util import FocalLoss, RecallLoss
+from ..util import FocalLoss, RecallLoss, BinaryRecallLoss
 
 class DecoderBase(nn.Module, ABC):
     '''Base class for all NuGraph decoders'''
@@ -220,7 +220,7 @@ class FilterDecoder(DecoderBase):
         super().__init__('filter',
                          planes,
                          ['signal', 'noise'],
-                         RecallLoss(),
+                         BinaryRecallLoss(),
                          'binary',
                          confusion=True)
 
@@ -237,7 +237,7 @@ class FilterDecoder(DecoderBase):
 
     def arrange(self, batch) -> tuple[Tensor, Tensor]:
         x = cat([batch[p].x_filter for p in self.planes], dim=0)
-        y = cat([(batch[p].y_semantic!=-1).long() for p in self.planes], dim=0)
+        y = cat([(batch[p].y_semantic!=-1).float() for p in self.planes], dim=0)
         return x, y
 
     def metrics(self, x: Tensor, y: Tensor, stage: str) -> dict[str, Any]:
