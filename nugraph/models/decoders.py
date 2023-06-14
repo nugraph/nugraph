@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 import seaborn as sn
 
 from .linear import ClassLinear
-from ..util import FocalLoss, RecallLoss, BinaryRecallLoss
+from ..util import FocalLoss, RecallLoss
 
 class DecoderBase(nn.Module, ABC):
     '''Base class for all NuGraph decoders'''
@@ -220,7 +220,7 @@ class FilterDecoder(DecoderBase):
         super().__init__('filter',
                          planes,
                          ['signal', 'noise'],
-                         BinaryRecallLoss(),
+                         nn.BCELoss(),
                          'binary',
                          confusion=True)
 
