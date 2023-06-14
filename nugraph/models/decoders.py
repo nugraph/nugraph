@@ -21,7 +21,8 @@ class DecoderBase(nn.Module, ABC):
                  classes: list[str],
                  loss_func: Callable,
                  task: str,
-                 ignore_index=None):
+                 confusion: bool = False,
+                 ignore_index: int = None):
         super().__init__()
 
         self.name = name
@@ -30,19 +31,25 @@ class DecoderBase(nn.Module, ABC):
 
         self.loss_func = loss_func
 
+        self.task = task
+
         self.acc_func = tm.Accuracy(task=task,
                                     num_classes=len(classes),
                                     average='none',
                                     ignore_index=ignore_index)
 
-        self.cm_true = tm.ConfusionMatrix(task=task,
-                                          num_classes=len(classes),
-                                          normalize='true',
-                                          ignore_index=ignore_index)
-        self.cm_pred = tm.ConfusionMatrix(task=task,
-                                          num_classes=len(classes),
-                                          normalize='pred',
-                                          ignore_index=ignore_index)
+        self.confusion = {}
+        if confusion:
+            self.confusion[f'{self.name}_recall'] = tm.ConfusionMatrix(
+                task=task,
+                num_classes=len(classes),
+                normalize='true',
+                ignore_index=ignore_index)
+            self.confusion[f'{self.name}_precision'] = tm.ConfusionMatrix(
+                task=task,
+                num_classes=len(classes),
+                normalize='pred',
+                ignore_index=ignore_index)
 
     def arrange(self, batch) -> tuple[Tensor, Tensor]:
         raise NotImplementedError
@@ -58,9 +65,8 @@ class DecoderBase(nn.Module, ABC):
         metrics = self.metrics(x, y, stage)
         loss = self.loss_func(x, y)
         metrics[f'{self.name}_loss/{stage}'] = loss
-        if confusion:
-            self.cm_true.update(x, y)
-            self.cm_pred.update(x, y)
+        for cm in self.confusion.values():
+            cm.update(x, y)
         return loss, metrics
 
     def draw_confusion_matrix(self, cm: tm.ConfusionMatrix) -> plt.Figure:
@@ -77,19 +83,16 @@ class DecoderBase(nn.Module, ABC):
         plt.ylabel('True label')
         return fig
 
-    def val_epoch_end(self,
-                      logger: 'pl.loggers.TensorBoardLogger',
-                      epoch: int) -> None:
-        logger.experiment.add_figure(f'{self.name}_efficiency',
-                                     self.draw_confusion_matrix(self.cm_true),
-                                     global_step=epoch)
-        logger.experiment.add_figure(f'{self.name}_purity',
-                                     self.draw_confusion_matrix(self.cm_pred),
-                                     global_step=epoch)
-
-    def reset_confusion_matrix(self):
-        self.cm_true.reset()
-        self.cm_pred.reset()
+    def on_epoch_end(self,
+                     logger: 'pl.loggers.TensorBoardLogger',
+                     stage: str,
+                     epoch: int) -> None:
+        for name, cm in self.confusion.items():
+            logger.experiment.add_figure(
+                f'{self.name}/{stage}',
+                self.draw_confusion_matrix(cm),
+                global_step=epoch)
+            cm.reset()
 
 class EventDecoder(nn.Module):
     def __init__(self,
@@ -179,8 +182,9 @@ class SemanticDecoder(DecoderBase):
         super().__init__('semantic',
                          planes,
                          classes,
-                         RecallLoss(ignore_index=-1),
+                         RecallLoss(),
                          'multiclass',
+                         confusion=True,
                          ignore_index=-1)
 
         self.net = nn.ModuleDict()
@@ -203,7 +207,7 @@ class SemanticDecoder(DecoderBase):
             metrics[f'semantic_accuracy_class_{stage}/{c}'] = a
         return metrics
 
-class FilterDecoder(nn.Module):
+class FilterDecoder(DecoderBase):
     """NuGraph filter decoder module.
 
     Convolve down to a single node score, to identify and filter out
@@ -213,64 +217,31 @@ class FilterDecoder(nn.Module):
                  node_features: int,
                  planes: list[str],
                  classes: list[str]):
-        super().__init__()
+        super().__init__('filter',
+                         planes,
+                         ['signal', 'noise'],
+                         nn.BCELoss(),
+                         'binary',
+                         confusion=True)
 
-        self.name = 'filter'
-        self.planes = planes
-        self.classes = classes
-        num_classes = len(classes)
-        num_features = num_classes * node_features
+        num_features = len(classes) * node_features
 
         self.net = nn.ModuleDict()
         for p in planes:
-            self.net[p] = nn.Linear(num_features, 1)
-
-        self.loss_func = nn.BCELoss()
-        self.acc_func = tm.Accuracy(task='binary')
-        self.cm_true = tm.ConfusionMatrix(task='binary',
-                                          normalize='true')
-        self.cm_pred = tm.ConfusionMatrix(task='binary',
-                                          normalize='pred')
+            self.net[p] = nn.Sequential(
+                nn.Linear(num_features, 1),
+                nn.Sigmoid())
 
     def forward(self, x: dict[str, Tensor], batch: dict[str, Tensor]) -> dict[str, dict[str, Tensor]]:
-        return { self.name: { p: self.net[p](x[p].flatten(start_dim=1)).squeeze(dim=-1) for p in self.planes }}
+        return { 'x_filter': { p: self.net[p](x[p].flatten(start_dim=1)).squeeze(dim=-1) for p in self.planes }}
 
-    def loss(self,
-             batch,
-             name: str,
-             confusion: bool = False) -> float:
+    def arrange(self, batch) -> tuple[Tensor, Tensor]:
+        x = cat([batch[p].x_filter for p in self.planes], dim=0)
+        y = cat([(batch[p].y_semantic!=-1).float() for p in self.planes], dim=0)
+        return x, y
+
+    def metrics(self, x: Tensor, y: Tensor, stage: str) -> dict[str, Any]:
         metrics = {}
-        x = cat([batch[p].x_f for p in self.planes], dim=0)
-        y = cat([batch[p].y_f for p in self.planes], dim=0)
-        loss = self.loss_func(x, y.float())
-        metrics[f'filter_loss/{name}'] = loss
         acc = 100. * self.acc_func(x, y)
-        metrics[f'filter_accuracy/{name}'] = acc
-        if confusion:
-            self.cm_true.update(x, y)
-            self.cm_pred.update(x, y)
-        return loss, metrics
-
-    def draw_confusion_matrix(self, cm: tm.ConfusionMatrix) -> plt.Figure:
-        '''Produce confusion matrix at end of epoch'''
-        confusion = cm.compute().cpu()
-        fig = plt.figure(figsize=[8,6])
-        sn.heatmap(confusion,
-                   xticklabels=['background','signal'],
-                   yticklabels=['background','signal'],
-                   vmin=0, vmax=1,
-                   annot=True)
-        plt.ylim(0, len(self.classes))
-        plt.xlabel('Assigned label')
-        plt.ylabel('True label')
-        return fig
-
-    def val_epoch_end(self,
-                      logger: 'pl.loggers.TensorBoardLogger',
-                      epoch: int) -> None:
-        logger.experiment.add_figure('filter_efficiency',
-                                     self.draw_confusion_matrix(self.cm_true),
-                                     global_step=epoch)
-        logger.experiment.add_figure('filter_purity',
-                                     self.draw_confusion_matrix(self.cm_pred),
-                                     global_step=epoch)
+        metrics[f'filter_accuracy/{stage}'] = acc.mean()
+        return metrics

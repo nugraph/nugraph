@@ -142,10 +142,6 @@ class NuGraph2(LightningModule):
         self.log('loss/train', total_loss, batch_size=batch.num_graphs, prog_bar=True)
         return total_loss
 
-    def on_validation_epoch_start(self) -> None:
-        for decoder in self.decoders:
-            decoder.reset_confusion_matrix()
-
     def validation_step(self,
                         batch,
                         batch_idx: int) -> None:
@@ -158,25 +154,23 @@ class NuGraph2(LightningModule):
         self.log('loss/val', total_loss, batch_size=batch.num_graphs)
 
     def on_validation_epoch_end(self) -> None:
+        epoch = self.trainer.current_epoch + 1
         for decoder in self.decoders:
-            decoder.val_epoch_end(self.logger, self.trainer.current_epoch+1)
-
-    def on_test_epoch_start(self) -> None:
-        for decoder in self.decoders:
-            decoder.reset_confusion_matrix()
+            decoder.on_epoch_end(self.logger, 'val', epoch)
 
     def test_step(self,
                   batch,
                   batch_idx: int = 0) -> None:
-        self(batch)
         for decoder in self.decoders:
-            decoder.loss(batch, 'test', True)
+            loss, metrics = decoder.loss(batch, 'test', True)
+            total_loss += loss
+            self.log_dict(metrics, batch_size=batch.num_graphs)
+        self.log('loss/test', total_loss, batch_size=batch.num_graphs)
 
-    def on_test_epoch_end(self) -> tuple['plt.Figure']:
+    def on_test_epoch_end(self) -> None:
+        epoch = self.trainer.current_epoch + 1
         for decoder in self.decoders:
-            cm_true, cm_pred = decoder.plot_confusion_matrix()
-            cm_true.savefig(f'cm_{decoder.name}_true.pdf')
-            cm_pred.savefig(f'cm_{decoder.name}_pred.pdf')
+            decoder.on_epoch_end(self.logger, 'val', epoch)
 
     def configure_optimizers(self) -> tuple:
         optimizer = AdamW(self.parameters(),
