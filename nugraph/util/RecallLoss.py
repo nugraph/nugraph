@@ -10,9 +10,13 @@ class RecallLoss(torch.nn.Module):
         self.ignore_index = ignore_index
 
     def forward(self, input, target):
+        if input.ndim == 1:
+            input = torch.stack((input, 1-input), dim=-1)
         weight = 1 - recall(input, target, 'multiclass',
                             num_classes=input.size(1),
                             average='none',
                             ignore_index=self.ignore_index)
-        return F.cross_entropy(input, target, weight=weight,
-                               ignore_index=self.ignore_index)
+        ce = F.cross_entropy(input, target, reduction='none',
+                             ignore_index=self.ignore_index)
+        loss = weight[target] * ce
+        return loss.mean()
