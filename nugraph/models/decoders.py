@@ -89,7 +89,7 @@ class DecoderBase(nn.Module, ABC):
                      epoch: int) -> None:
         for name, cm in self.confusion.items():
             logger.experiment.add_figure(
-                f'{self.name}/{stage}',
+                f'{name}/{stage}',
                 self.draw_confusion_matrix(cm),
                 global_step=epoch)
             cm.reset()
