@@ -87,6 +87,7 @@ class DecoderBase(nn.Module, ABC):
                      logger: 'pl.loggers.TensorBoardLogger',
                      stage: str,
                      epoch: int) -> None:
+        if not logger: return
         for name, cm in self.confusion.items():
             logger.experiment.add_figure(
                 f'{name}/{stage}',
