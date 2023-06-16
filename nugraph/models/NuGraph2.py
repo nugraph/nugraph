@@ -161,6 +161,8 @@ class NuGraph2(LightningModule):
     def test_step(self,
                   batch,
                   batch_idx: int = 0) -> None:
+        self.step(batch)
+        total_loss = 0.
         for decoder in self.decoders:
             loss, metrics = decoder.loss(batch, 'test', True)
             total_loss += loss
