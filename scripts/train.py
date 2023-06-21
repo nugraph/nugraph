@@ -1,4 +1,12 @@
 #!/usr/bin/env python
+#SBATCH -J exatrkx_train
+#SBATCH -t 1440
+#SBATCH -p gpu_gce
+#SBATCH -x wcgwn[003-008]
+#SBATCH --gres=gpu:1
+#SBATCH -A fwk
+#SBATCH -q regular
+#SBATCH --cpus-per-task=12
 
 import sys
 import os
