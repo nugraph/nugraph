@@ -4,6 +4,7 @@ from abc import ABC
 
 from torch import Tensor, cat
 import torch.nn as nn
+from torch_geometric.nn.aggr import SoftmaxAggregation
 
 import torchmetrics as tm
 
@@ -95,81 +96,6 @@ class DecoderBase(nn.Module, ABC):
                 global_step=epoch)
             cm.reset()
 
-class EventDecoder(nn.Module):
-    def __init__(self,
-                 node_features: int,
-                 planes: list[str],
-                 classes: list[str],
-                 event_classes: list[str]):
-        super().__init__()
-
-        self.name = 'event'
-        self.planes = planes
-        self.classes = event_classes
-        num_planes = len(planes)
-        num_classes = len(classes)
-        num_features = num_planes * num_classes * node_features
-
-        self.pool = nn.ModuleDict()
-        for p in planes:
-            self.pool[p] = pyg.nn.aggr.SoftmaxAggregation(learn=True)
-        self.net = nn.Sequential(
-            nn.Linear(in_features=num_features,
-                      out_features=len(event_classes)))
-
-        self.loss_func = FocalLoss(gamma=gamma)
-        self.acc_func = tm.Accuracy(task='multiclass',
-                                    num_classes=len(event_classes))
-        self.cm_true = tm.ConfusionMatrix(task='multiclass',
-                                          num_classes=len(event_classes),
-                                          normalize='true')
-        self.cm_pred = tm.ConfusionMatrix(task='multiclass',
-                                          num_classes=len(event_classes),
-                                          normalize='pred')
-
-    def forward(self, x: dict[str, Tensor], batch: dict[str, Tensor]) -> dict[str, dict[str, Tensor]]:
-        return { self.name: { p: self.pool[p](x[p],flatten(1), batch[p])} }
-
-    def loss(self,
-             batch,
-             name: str,
-             confusion: bool = False) -> float:
-        metrics = {}
-        x = batch['evt'].x
-        y = batch['evt'].y
-        loss = self.loss_func(x, y)
-        metrics[f'event_loss/{name}'] = loss
-        acc = 100. * self.acc_func(x, y)
-        metrics[f'event_accuracy/{name}'] = acc
-        if confusion:
-            self.cm_true.update(x, y)
-            self.cm_pred.update(x, y)
-        return loss, metrics
-
-    def draw_confusion_matrix(self, cm: tm.ConfusionMatrix) -> plt.Figure:
-        '''Produce confusion matrix at end of epoch'''
-        confusion = cm.compute().cpu()
-        fig = plt.figure(figsize=[8,6])
-        sn.heatmap(confusion,
-                   xticklabels=self.classes,
-                   yticklabels=self.classes,
-                   vmin=0, vmax=1,
-                   annot=True)
-        plt.ylim(0, len(self.classes))
-        plt.xlabel('Assigned label')
-        plt.ylabel('True label')
-        return fig
-
-    def val_epoch_end(self,
-                      logger: 'pl.loggers.TensorBoardLogger',
-                      epoch: int) -> None:
-        logger.experiment.add_figure('event_efficiency',
-                                     self.draw_confusion_matrix(self.cm_true),
-                                     global_step=epoch)
-        logger.experiment.add_figure('event_purity',
-                                     self.draw_confusion_matrix(self.cm_pred),
-                                     global_step=epoch)
-
 class SemanticDecoder(DecoderBase):
     """NuGraph semantic decoder module.
 
@@ -245,4 +171,50 @@ class FilterDecoder(DecoderBase):
         metrics = {}
         acc = 100. * self.acc_func(x, y)
         metrics[f'filter_accuracy/{stage}'] = acc.mean()
+        return metrics
+
+class EventDecoder(DecoderBase):
+    '''NuGraph event decoder module.
+
+    Convolve graph node features down to a single classification score
+    for the entire event
+    '''
+    def __init__(self,
+                 node_features: int,
+                 planes: list[str],
+                 semantic_classes: list[str],
+                 event_classes: list[str]):
+        super().__init__('event',
+                         planes,
+                         event_classes,
+                         RecallLoss(),
+                         'multiclass',
+                         confusion=True)
+
+        self.pool = nn.ModuleDict()
+        for p in planes:
+            self.pool[p] = SoftmaxAggregation(learn=True)
+        self.net = nn.Sequential(
+            nn.Linear(in_features=len(planes) * len(semantic_classes) * node_features,
+                      out_features=len(event_classes)))
+
+    def forward(self, x: dict[str, Tensor], batch: dict[str, Tensor]) -> dict[str, dict[str, Tensor]]:
+        x = [ pool(x[p].flatten(1), batch[p]) for p, pool in self.pool.items() ]
+        for xi in x: print(xi.shape)
+        x = cat(x, dim=1)
+        print(x.shape)
+        x = self.net(x)
+        print(x.shape)
+        return { 'x': { 'evt': x }}
+
+    def arrange(self, batch) -> tuple[Tensor, Tensor]:
+        print(batch['evt'].y)
+        return batch['evt'].x, batch['evt'].y
+
+    def metrics(self, x: Tensor, y: Tensor, stage: str) -> dict[str, Any]:
+        metrics = {}
+        acc = 100. * self.acc_func(x, y)
+        metrics[f'event_accuracy/{stage}'] = acc.mean()
+        for c, a in zip(self.classes, acc):
+            metrics[f'event_accuracy_class_{stage}/{c}'] = a
         return metrics
