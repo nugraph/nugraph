@@ -1,6 +1,7 @@
 from argparse import ArgumentParser
 import warnings
 
+import sys
 import h5py
 import tqdm
 
@@ -37,7 +38,7 @@ class H5DataModule(LightningDataModule):
                 self.event_classes = f['event_classes'].asstr()[()].tolist()
             except:
                 print('Metadata not found in file! "planes", "semantic_classes" and "event classes" are required.')
-                exit()
+                sys.exit()
 
             # load sample splits
             try:
@@ -46,7 +47,7 @@ class H5DataModule(LightningDataModule):
                 test_samples = f['samples/validation'].asstr()[()]
             except:
                 print('Sample splits not found in file! Call "generate_samples" to create them.')
-                exit()
+                sys.exit()
 
             # load feature normalisations
             try:
@@ -55,7 +56,7 @@ class H5DataModule(LightningDataModule):
                     norm[p] = tensor(f[f'norm/{p}'][()])
             except:
                 print('Feature normalisations not found in file! Call "generate_norm" to create them.')
-                exit()
+                sys.exit()
 
         transform = Compose((PositionFeatures(self.planes),
                              FeatureNorm(self.planes, norm)))
@@ -89,7 +90,7 @@ class H5DataModule(LightningDataModule):
                 planes = f['planes'].asstr()[()].tolist()
             except:
                 print('Metadata not found in file! "planes" is required.')
-                exit()
+                sys.exit()
 
             loader = DataLoader(H5Dataset(data_path,
                                           list(f['dataset'].keys()),
