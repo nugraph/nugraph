@@ -200,15 +200,9 @@ class EventDecoder(DecoderBase):
 
     def forward(self, x: dict[str, Tensor], batch: dict[str, Tensor]) -> dict[str, dict[str, Tensor]]:
         x = [ pool(x[p].flatten(1), batch[p]) for p, pool in self.pool.items() ]
-        for xi in x: print(xi.shape)
-        x = cat(x, dim=1)
-        print(x.shape)
-        x = self.net(x)
-        print(x.shape)
-        return { 'x': { 'evt': x }}
+        return { 'x': { 'evt': self.net(cat(x, dim=1)) }}
 
     def arrange(self, batch) -> tuple[Tensor, Tensor]:
-        print(batch['evt'].y)
         return batch['evt'].x, batch['evt'].y
 
     def metrics(self, x: Tensor, y: Tensor, stage: str) -> dict[str, Any]:
