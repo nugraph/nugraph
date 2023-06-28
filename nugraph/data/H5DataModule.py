@@ -35,10 +35,13 @@ class H5DataModule(LightningDataModule):
             try:
                 self.planes = f['planes'].asstr()[()].tolist()
                 self.semantic_classes = f['semantic_classes'].asstr()[()].tolist()
-                self.event_classes = f['event_classes'].asstr()[()].tolist()
             except:
-                print('Metadata not found in file! "planes", "semantic_classes" and "event classes" are required.')
+                print('Metadata not found in file! "planes" and "semantic_classes" are required.')
                 sys.exit()
+
+            # load optional event labels
+            if 'event_classes' in f:
+                self.event_classes = f['event_classes'].asstr()[()].tolist()
 
             # load sample splits
             try:
