@@ -42,6 +42,8 @@ class H5DataModule(LightningDataModule):
             # load optional event labels
             if 'event_classes' in f:
                 self.event_classes = f['event_classes'].asstr()[()].tolist()
+            else:
+                self.event_classes = None
 
             # load sample splits
             try:
