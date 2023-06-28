@@ -3,3 +3,4 @@ from .FocalLoss import FocalLoss
 from .RecallLoss import RecallLoss
 from .PositionFeatures import PositionFeatures
 from .FeatureNorm import FeatureNorm, FeatureNormMetric
+from .scriptutils import set_device
