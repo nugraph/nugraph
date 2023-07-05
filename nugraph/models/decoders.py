@@ -222,7 +222,6 @@ class InstanceDecoder(DecoderBase):
                          planes,
                          event_classes,
                          RecallLoss(),
-                         Focalloss(),
                          'multiclass',
                          confusion=False)
 
@@ -237,7 +236,7 @@ class InstanceDecoder(DecoderBase):
     def forward(self, x: dict[str, Tensor], batch: dict[str, Tensor]) -> dict[str, dict[str, Tensor]]:
         return {'x_instance': {p: self.net[p](x[p].flatten(start_dim=1)).squeeze(dim=-1) for p in self.net.keys()}}
 
-    def arrange(self, batch: Dict[str, Tensor]) -> tuple[Tensor, Tensor]:
+    def arrange(self, batch: dict[str, Tensor]) -> tuple[Tensor, Tensor]:
         x = torch.cat([batch[p]['x_instance'] for p in self.planes], dim=0)
         y = torch.cat([batch[p]['y_instance'] for p in self.planes], dim=0)
         return x, y
