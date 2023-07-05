@@ -8,7 +8,9 @@
 #SBATCH -q regular
 #SBATCH --cpus-per-task=12
 
-import sys
+from nugraph.util import set_device
+set_device()
+
 import os
 import argparse
 import torch
@@ -25,7 +27,7 @@ Data = ng.data.H5DataModule
 Model = ng.models.NuGraph2
 
 def configure():
-    parser = argparse.ArgumentParser(sys.argv[0])
+    parser = argparse.ArgumentParser()
     parser.add_argument('--name', type=str, default=None,
                         help='Training instance name, for logging purposes')
     parser.add_argument('--logdir', type=str, default=None,
@@ -80,15 +82,7 @@ def train(args):
         LearningRateMonitor(logging_interval='step')
     ]
 
-    devices = 'auto'
-    device_count = torch.cuda.device_count()
-    if device_count > 1:
-        devices = { i: torch.cuda.mem_get_info(i)[0] for i in range(device_count) }
-        devices = [ max(devices, key=devices.get) ]
-        print('Multiple GPUs detected, selected device', *devices)
-
-    trainer = pl.Trainer(devices=devices,
-                         max_epochs=args.epochs,
+    trainer = pl.Trainer(max_epochs=args.epochs,
                          limit_train_batches=args.limit_train_batches,
                          limit_val_batches=args.limit_val_batches,
                          logger=logger,

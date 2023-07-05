@@ -1,5 +1,8 @@
 #!/usr/bin/env python
 
+from nugraph.util import set_device
+set_device()
+
 import sys
 import argparse
 import tqdm

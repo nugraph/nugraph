@@ -1,5 +1,8 @@
 #!/usr/bin/env python
 
+from nugraph.util import set_device
+set_device()
+
 import sys
 import os
 import argparse
@@ -13,8 +16,6 @@ Model = ng.models.NuGraph2
 
 def configure():
     parser = argparse.ArgumentParser(sys.argv[0])
-    parser.add_argument('--devices', nargs='+', type=int, default=None,
-                        help='List of devices to run inference with')
     parser.add_argument('--checkpoint', type=str, default=None,
                         help='Checkpoint file to resume training from')
     parser.add_argument('--outdir', type=str, required=True,
@@ -29,21 +30,13 @@ def plot(args):
 
     # Load dataset
     nudata = Data(args.data_path,
-                  batch_size=args.batch_size,
-                  planes=['u','v','y'],
-                  classes=['MIP','HIP','shower','michel','diffuse'])
+                  batch_size=args.batch_size)
 
     if args.checkpoint is not None:
         model = Model.load_from_checkpoint(args.checkpoint)
         model.freeze()
 
-        if args.devices is None:
-            print('No devices specified – running inference on CPU')
-
-        accelerator = 'cpu' if args.devices is None else 'gpu'
-        trainer = pl.Trainer(accelerator=accelerator,
-                             devices=args.devices,
-                             limit_predict_batches=args.limit_predict_batches,
+        trainer = pl.Trainer(limit_predict_batches=args.limit_predict_batches,
                              logger=None)
 
     plot = pynuml.plot.GraphPlot(planes=nudata.planes, classes=nudata.classes)
