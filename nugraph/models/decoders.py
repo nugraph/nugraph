@@ -234,6 +234,7 @@ class FilterDecoder(DecoderBase):
                 nn.Sigmoid())
 
     def forward(self, x: dict[str, Tensor], batch: dict[str, Tensor]) -> dict[str, dict[str, Tensor]]:
+        'flatten in the case of filter because we want to collapse multidimensional tensor to single node score'
         return { 'x_filter': { p: self.net[p](x[p].flatten(start_dim=1)).squeeze(dim=-1) for p in self.planes }}
 
     def arrange(self, batch) -> tuple[Tensor, Tensor]:
@@ -246,3 +247,38 @@ class FilterDecoder(DecoderBase):
         acc = 100. * self.acc_func(x, y)
         metrics[f'filter_accuracy/{stage}'] = acc.mean()
         return metrics
+    
+class VertexDecoder(DecoderBase):
+    """
+    """
+    def __init__(self,
+                 node_features: int,
+                 planes: list[str],
+                 classes: list[str]):
+        super().__init__('vertex',
+                         planes,
+                         classes,
+                         loss_func: 'loss_func',
+                         task: 'task',
+                         confusion=True)
+        '''self.net = nn.ModuleDict()'''        
+        self.net = LSTMAggregation(in_channels = len(planes) * node_features, 
+                                          out_channels=node_features)
+
+    def forward(self, x: dict[str, Tensor], batch: dict[str, Tensor]) -> dict[str,dict[str, Tensor]]:
+        merged_tensors = [x[p] for p in self.planes]
+        merged_tensor = cat(merged_tensors, dim = 0)
+        flattened_tensor = merged_tensor.flatten(1)
+        res = self.net(flattened_tensor)
+        return { 'x_vtx': { 'evt': self.net(flattened_tensor) }}
+    
+    def arrange(self, batch) -> tuple[Tensor, Tensor]:
+        'dunno if x_vertex is correct name'
+        'also assuming one of them is our prediction and one is truth'
+        x = cat([batch[p].x_vtx for p in self.planes], dim=0)
+        y = cat([batch[p].y_vtx for p in self.planes], dim=0)
+        return x, y
+    
+    def metrics(self, x: Tensor, y: Tensor, stage: str) -> dict[str, Any]:
+        return {}
+        
