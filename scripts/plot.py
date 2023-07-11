@@ -1,8 +1,5 @@
 #!/usr/bin/env python
 
-from nugraph.util import set_device
-set_device()
-
 import os
 import argparse
 import pytorch_lightning as pl
@@ -57,7 +54,9 @@ def plot(args):
         model = Model.load_from_checkpoint(args.checkpoint)
         model.freeze()
 
-        trainer = pl.Trainer(limit_predict_batches=args.limit_predict_batches,
+        accelerator, devices = ng.util.configure_device()
+        trainer = pl.Trainer(accelerator=accelerator, devices=devices,
+                             limit_predict_batches=args.limit_predict_batches,
                              logger=None)
 
     plot = pynuml.plot.GraphPlot(planes=nudata.planes,
