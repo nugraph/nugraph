@@ -8,9 +8,6 @@
 #SBATCH -q regular
 #SBATCH --cpus-per-task=12
 
-from nugraph.util import set_device
-set_device()
-
 import os
 import argparse
 import torch
@@ -82,7 +79,9 @@ def train(args):
         LearningRateMonitor(logging_interval='step')
     ]
 
-    trainer = pl.Trainer(max_epochs=args.epochs,
+    accelerator, devices = ng.util.configure_device()
+    trainer = pl.Trainer(accelerator=accelerator, devices=devices,
+                         max_epochs=args.epochs,
                          limit_train_batches=args.limit_train_batches,
                          limit_val_batches=args.limit_val_batches,
                          logger=logger,

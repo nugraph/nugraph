@@ -1,8 +1,5 @@
 #!/usr/bin/env python
 
-from nugraph.util import set_device
-set_device()
-
 import sys
 import os
 import time
@@ -28,7 +25,9 @@ def test(args):
 
     model = Model.load_from_checkpoint(args.checkpoint, event_head=False)
 
-    trainer = pl.Trainer(logger=None)
+    accelerator, devices = ng.util.configure_device()
+    trainer = pl.Trainer(accelerator=accelerator, devices=devices,
+                         logger=None)
     start = time.time()
     trainer.test(model, datamodule=nudata)
     end = time.time()
