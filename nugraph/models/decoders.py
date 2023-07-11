@@ -20,37 +20,13 @@ class DecoderBase(nn.Module, ABC):
                  name: str,
                  planes: list[str],
                  classes: list[str],
-                 loss_func: Callable,
-                 task: str,
-                 confusion: bool = False,
-                 ignore_index: int = None):
+                 loss_func: Callable):
         super().__init__()
-
         self.name = name
         self.planes = planes
         self.classes = classes
-
         self.loss_func = loss_func
-
-        self.task = task
-
-        self.acc_func = tm.Accuracy(task=task,
-                                    num_classes=len(classes),
-                                    average='none',
-                                    ignore_index=ignore_index)
-
         self.confusion = nn.ModuleDict()
-        if confusion:
-            self.confusion[f'{self.name}_recall'] = tm.ConfusionMatrix(
-                task=task,
-                num_classes=len(classes),
-                normalize='true',
-                ignore_index=ignore_index)
-            self.confusion[f'{self.name}_precision'] = tm.ConfusionMatrix(
-                task=task,
-                num_classes=len(classes),
-                normalize='pred',
-                ignore_index=ignore_index)
 
     def arrange(self, batch) -> tuple[Tensor, Tensor]:
         raise NotImplementedError
@@ -65,7 +41,7 @@ class DecoderBase(nn.Module, ABC):
         x, y = self.arrange(batch)
         metrics = self.metrics(x, y, stage)
         loss = self.loss_func(x, y)
-        metrics[f'{self.name}_loss/{stage}'] = loss
+        metrics[f'loss_{self.name}/{stage}'] = loss
         for cm in self.confusion.values():
             cm.update(x, y)
         return loss, metrics
@@ -105,20 +81,29 @@ class SemanticDecoder(DecoderBase):
     def __init__(self,
                  node_features: int,
                  planes: list[str],
-                 classes: list[str]):
-        super().__init__('semantic',
-                         planes,
-                         classes,
-                         RecallLoss(),
-                         'multiclass',
-                         confusion=True,
-                         ignore_index=-1)
+                 semantic_classes: list[str]):
+        super().__init__('semantic', planes, semantic_classes, RecallLoss())
+
+        # torchmetrics arguments
+        metric_args = {
+            'task': 'multiclass',
+            'num_classes': len(semantic_classes),
+            'ignore_index': -1
+        }
+
+        self.recall = tm.Recall(**metric_args)
+        self.precision = tm.Precision(**metric_args)
+        self.confusion['recall_semantic_matrix'] = tm.ConfusionMatrix(
+            normalize='true', **metric_args)
+        self.confusion['precision_semantic_matrix'] = tm.ConfusionMatrix(
+            normalize='pred', **metric_args)
 
         self.net = nn.ModuleDict()
         for p in planes:
-            self.net[p] = ClassLinear(node_features, 1, len(classes))
+            self.net[p] = ClassLinear(node_features, 1, len(semantic_classes))
 
-    def forward(self, x: dict[str, Tensor], batch: dict[str, Tensor]) -> dict[str, dict[str, Tensor]]:
+    def forward(self, x: dict[str, Tensor],
+                batch: dict[str, Tensor]) -> dict[str, dict[str, Tensor]]:
         return { 'x_semantic': { p: self.net[p](x[p]).squeeze(dim=-1) for p in self.planes } }
 
     def arrange(self, batch) -> tuple[Tensor, Tensor]:
@@ -127,12 +112,10 @@ class SemanticDecoder(DecoderBase):
         return x, y
 
     def metrics(self, x: Tensor, y: Tensor, stage: str) -> dict[str, Any]:
-        metrics = {}
-        acc = 100. * self.acc_func(x, y)
-        metrics[f'semantic_accuracy/{stage}'] = acc.mean()
-        for c, a in zip(self.classes, acc):
-            metrics[f'semantic_accuracy_class_{stage}/{c}'] = a
-        return metrics
+        return {
+            f'recall_semantic/{stage}': self.recall(x, y),
+            f'precision_semantic/{stage}': self.precision(x, y)
+        }
 
 class FilterDecoder(DecoderBase):
     """NuGraph filter decoder module.
@@ -143,23 +126,30 @@ class FilterDecoder(DecoderBase):
     def __init__(self,
                  node_features: int,
                  planes: list[str],
-                 classes: list[str]):
-        super().__init__('filter',
-                         planes,
-                         ('noise', 'signal'),
-                         nn.BCELoss(),
-                         'binary',
-                         confusion=True)
+                 semantic_classes: list[str]):
+        super().__init__('filter', planes, ('noise', 'signal'), nn.BCELoss())
 
-        num_features = len(classes) * node_features
+        # torchmetrics arguments
+        metric_args = {
+            'task': 'binary'
+        }
 
+        self.recall = tm.Recall(**metric_args)
+        self.precision = tm.Precision(**metric_args)
+        self.confusion['recall_filter_matrix'] = tm.ConfusionMatrix(
+            normalize='true', **metric_args)
+        self.confusion['precision_filter_matrix'] = tm.ConfusionMatrix(
+            normalize='pred', **metric_args)
+
+        num_features = len(semantic_classes) * node_features
         self.net = nn.ModuleDict()
         for p in planes:
             self.net[p] = nn.Sequential(
                 nn.Linear(num_features, 1),
                 nn.Sigmoid())
 
-    def forward(self, x: dict[str, Tensor], batch: dict[str, Tensor]) -> dict[str, dict[str, Tensor]]:
+    def forward(self, x: dict[str, Tensor],
+                batch: dict[str, Tensor]) -> dict[str, dict[str, Tensor]]:
         return { 'x_filter': { p: self.net[p](x[p].flatten(start_dim=1)).squeeze(dim=-1) for p in self.planes }}
 
     def arrange(self, batch) -> tuple[Tensor, Tensor]:
@@ -168,10 +158,10 @@ class FilterDecoder(DecoderBase):
         return x, y
 
     def metrics(self, x: Tensor, y: Tensor, stage: str) -> dict[str, Any]:
-        metrics = {}
-        acc = 100. * self.acc_func(x, y)
-        metrics[f'filter_accuracy/{stage}'] = acc.mean()
-        return metrics
+        return {
+            f'recall_filter/{stage}': self.recall(x, y),
+            f'precision_filter/{stage}': self.precision(x, y)
+        }
 
 class EventDecoder(DecoderBase):
     '''NuGraph event decoder module.
@@ -187,9 +177,20 @@ class EventDecoder(DecoderBase):
         super().__init__('event',
                          planes,
                          event_classes,
-                         RecallLoss(),
-                         'multiclass',
-                         confusion=True)
+                         RecallLoss())
+
+        # torchmetrics arguments
+        metric_args = {
+            'task': 'multiclass',
+            'num_classes': len(event_classes)
+        }
+
+        self.recall = tm.Recall(**metric_args)
+        self.precision = tm.Precision(**metric_args)
+        self.confusion['recall_event_matrix'] = tm.ConfusionMatrix(
+            normalize='true', **metric_args)
+        self.confusion['precision_event_matrix'] = tm.ConfusionMatrix(
+            normalize='pred', **metric_args)
 
         self.pool = nn.ModuleDict()
         for p in planes:
@@ -198,7 +199,8 @@ class EventDecoder(DecoderBase):
             nn.Linear(in_features=len(planes) * len(semantic_classes) * node_features,
                       out_features=len(event_classes)))
 
-    def forward(self, x: dict[str, Tensor], batch: dict[str, Tensor]) -> dict[str, dict[str, Tensor]]:
+    def forward(self, x: dict[str, Tensor],
+                batch: dict[str, Tensor]) -> dict[str, dict[str, Tensor]]:
         x = [ pool(x[p].flatten(1), batch[p]) for p, pool in self.pool.items() ]
         return { 'x': { 'evt': self.net(cat(x, dim=1)) }}
 
@@ -206,12 +208,10 @@ class EventDecoder(DecoderBase):
         return batch['evt'].x, batch['evt'].y
 
     def metrics(self, x: Tensor, y: Tensor, stage: str) -> dict[str, Any]:
-        metrics = {}
-        acc = 100. * self.acc_func(x, y)
-        metrics[f'event_accuracy/{stage}'] = acc.mean()
-        for c, a in zip(self.classes, acc):
-            metrics[f'event_accuracy_class_{stage}/{c}'] = a
-        return metrics
+        return {
+            f'recall_event/{stage}': self.recall(x, y),
+            f'precision_event/{stage}': self.precision(x, y)
+        }
 
 class InstanceDecoder(DecoderBase):
     def __init__(self,

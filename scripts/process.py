@@ -22,6 +22,7 @@ def process(args):
             file=f,
             semantic_labeller=pynuml.labels.SimpleLabels(),
             event_labeller=pynuml.labels.FlavorLabels(),
+            label_vertex=True,
             filter_hits=args.filter_hits)
 
     # create output file stream
