@@ -1,9 +1,13 @@
-def set_device():
-    import os
-    from subprocess import run
-    
-    cmd = 'nvidia-smi --query-gpu=index,memory.free --format=csv,noheader,nounits'
-    cmd += ' | sort -t, -nk2 -r | awk -F , \'FNR == 1 {print $1}\''
-    output = run(cmd, shell=True, capture_output=True)
-    device = int(output.stdout)
-    os.environ['CUDA_VISIBLE_DEVICES'] = str(device)
+import os
+from pynvml.smi import nvidia_smi
+
+def configure_device(cpu: bool = False) -> tuple[str, str | list[int]]:
+    if not cpu:
+        try:
+            nvsmi = nvidia_smi.getInstance()
+            info = nvsmi.DeviceQuery('index,memory.free')['gpu']
+            info.sort(key=lambda m: m['fb_memory_usage']['free'], reverse=True)
+            return 'auto', [int(info[0]['minor_number'])]
+        except:
+            pass
+    return 'cpu', 'auto'
