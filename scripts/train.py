@@ -1,12 +1,4 @@
 #!/usr/bin/env python
-#SBATCH -J exatrkx_train
-#SBATCH -t 1440
-#SBATCH -p gpu_gce
-#SBATCH -x wcgwn[003-008]
-#SBATCH --gres=gpu:1
-#SBATCH -A fwk
-#SBATCH -q regular
-#SBATCH --cpus-per-task=12
 
 import sys
 import os
@@ -76,7 +68,11 @@ def train(args):
                                           default_hp_metric=False)
 
     callbacks = [
-        LearningRateMonitor(logging_interval='step')
+        LearningRateMonitor(logging_interval='step'),
+    ]
+
+    plugins = [
+        SLURMEnvironment(requeue_signal=signal.SIGUSR1),
     ]
 
     devices = 'auto'
@@ -90,9 +86,8 @@ def train(args):
                          max_epochs=args.epochs,
                          limit_train_batches=args.limit_train_batches,
                          limit_val_batches=args.limit_val_batches,
-                         logger=logger,
-                         profiler=args.profiler,
-                         callbacks=callbacks)
+                         logger=logger, profiler=args.profiler,
+                         callbacks=callbacks, plugins=plugins)
 
     trainer.fit(model, datamodule=nudata, ckpt_path=args.resume)
 
