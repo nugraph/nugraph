@@ -238,8 +238,8 @@ class VertexDecoder(DecoderBase):
     def arrange(self, batch) -> tuple[Tensor, Tensor]:
         'dunno if x_vertex is correct name'
         'also assuming one of them is our prediction and one is truth'
-        x = cat([batch[p].x_vtx for p in self.planes], dim=0)
-        y = cat([batch[p].y_vtx for p in self.planes], dim=0)
+        x = batch['evt'].x_vtx
+        y = batch['evt'].y_vtx
         return x, y
 
     def metrics(self, x: Tensor, y: Tensor, stage: str) -> dict[str, Any]:
