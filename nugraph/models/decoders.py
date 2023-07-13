@@ -226,9 +226,8 @@ class VertexDecoder(DecoderBase):
                          loss_func: 'loss_func',
                          task: 'task',
                          confusion=True)
-        '''self.net = nn.ModuleDict()'''        
-        self.net = LSTMAggregation(in_channels = len(planes) * node_features, 
-                                          out_channels=node_features)
+        self.net = LSTMAggregation(in_channels = len(planes) * node_features,
+                                   out_channels=node_features)
 
     def forward(self, x: dict[str, Tensor], batch: dict[str, Tensor]) -> dict[str,dict[str, Tensor]]:
         merged_tensors = [x[p] for p in self.planes]
@@ -236,13 +235,13 @@ class VertexDecoder(DecoderBase):
         flattened_tensor = merged_tensor.flatten(1)
         res = self.net(flattened_tensor)
         return { 'x_vtx': { 'evt': self.net(flattened_tensor) }}
-    
+
     def arrange(self, batch) -> tuple[Tensor, Tensor]:
         'dunno if x_vertex is correct name'
         'also assuming one of them is our prediction and one is truth'
         x = cat([batch[p].x_vtx for p in self.planes], dim=0)
         y = cat([batch[p].y_vtx for p in self.planes], dim=0)
         return x, y
-    
+
     def metrics(self, x: Tensor, y: Tensor, stage: str) -> dict[str, Any]:
         return {}
