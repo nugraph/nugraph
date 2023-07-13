@@ -219,13 +219,11 @@ class VertexDecoder(DecoderBase):
     def __init__(self,
                  node_features: int,
                  planes: list[str],
-                 classes: list[str]):
+                 semantic_classes: list[str]):
         super().__init__('vertex',
                          planes,
-                         classes,
-                         loss_func: 'loss_func',
-                         task: 'task',
-                         confusion=True)
+                         semantic_classes,
+                         loss_func: 'loss_func'):
         self.net = LSTMAggregation(in_channels = len(planes) * node_features,
                                    out_channels=node_features)
 
