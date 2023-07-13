@@ -160,3 +160,11 @@ cython_debug/
 #.idea/
 
 logs
+
+# image extensions
+*.html
+*.png
+*.pdf
+
+# checkpoint files
+*.ckpt
