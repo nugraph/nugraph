@@ -4,7 +4,7 @@ from abc import ABC
 
 from torch import Tensor, cat
 import torch.nn as nn
-from torch_geometric.nn.aggr import SoftmaxAggregation
+from torch_geometric.nn.aggr import SoftmaxAggregation, LSTMAggregation
 
 import torchmetrics as tm
 
