@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH -J exatrkx_train
-#SBATCH -t 10
+#SBATCH -t 1440
 #SBATCH -p gpu_gce
 #SBATCH --gres=gpu:1
 #SBATCH -A fwk
