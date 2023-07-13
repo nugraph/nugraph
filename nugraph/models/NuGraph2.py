@@ -22,7 +22,7 @@ class NuGraph2(LightningModule):
                  edge_features: int = 8,
                  sp_features: int = 8,
                  planes: list[str] = ['u','v','y'],
-                 classes: list[str] = ['MIP','HIP','shower','michel','diffuse'],
+                 semantic_classes: list[str] = ['MIP','HIP','shower','michel','diffuse'],
                  event_classes: list[str] = ['numu','nue','nc'],
                  num_iters: int = 5,
                  event_head: bool = True,
@@ -37,7 +37,7 @@ class NuGraph2(LightningModule):
         self.save_hyperparameters()
 
         self.planes = planes
-        self.classes = classes
+        self.semantic_classes = semantic_classes
         self.event_classes = event_classes
         self.num_iters = num_iters
         self.lr = lr
@@ -45,19 +45,19 @@ class NuGraph2(LightningModule):
         self.encoder = Encoder(in_features,
                                node_features,
                                planes,
-                               classes)
+                               semantic_classes)
 
         self.plane_net = PlaneNet(in_features,
                                   node_features,
                                   edge_features,
-                                  len(classes),
+                                  len(semantic_classes),
                                   planes,
                                   checkpoint=checkpoint)
 
         self.nexus_net = NexusNet(node_features,
                                   edge_features,
                                   sp_features,
-                                  len(classes),
+                                  len(semantic_classes),
                                   planes,
                                   checkpoint=checkpoint)
 
@@ -67,7 +67,7 @@ class NuGraph2(LightningModule):
             self.event_decoder = EventDecoder(
                 node_features,
                 planes,
-                classes,
+                semantic_classes,
                 event_classes)
             self.decoders.append(self.event_decoder)
 
@@ -75,14 +75,14 @@ class NuGraph2(LightningModule):
             self.semantic_decoder = SemanticDecoder(
                 node_features,
                 planes,
-                classes)
+                semantic_classes)
             self.decoders.append(self.semantic_decoder)
 
         if filter_head:
             self.filter_decoder = FilterDecoder(
                 node_features,
                 planes,
-                classes)
+                semantic_classes)
             self.decoders.append(self.filter_decoder)
 
         if len(self.decoders) == 0:
@@ -123,7 +123,7 @@ class NuGraph2(LightningModule):
             'loss': {'loss': [ 'Multiline', [ 'loss/train', 'loss/val' ]]},
             'acc': {}
         }
-        for c in self.classes:
+        for c in self.semantic_classes:
             scalars['acc'][c] = [ 'Multiline', [
                 f'semantic_accuracy_class_train/{c}',
                 f'semantic_accuracy_class_val/{c}'

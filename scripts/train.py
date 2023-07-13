@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 
-import sys
 import os
 import argparse
 import torch
@@ -17,7 +16,7 @@ Data = ng.data.H5DataModule
 Model = ng.models.NuGraph2
 
 def configure():
-    parser = argparse.ArgumentParser(sys.argv[0])
+    parser = argparse.ArgumentParser()
     parser.add_argument('--name', type=str, default=None,
                         help='Training instance name, for logging purposes')
     parser.add_argument('--logdir', type=str, default=None,
@@ -44,7 +43,8 @@ def train(args):
                       edge_features=args.edge_feats,
                       sp_features=args.sp_feats,
                       planes=nudata.planes,
-                      classes=nudata.classes,
+                      semantic_classes=nudata.semantic_classes,
+                      event_classes=nudata.event_classes,
                       num_iters=5,
                       event_head=args.event,
                       semantic_head=args.semantic,
@@ -75,14 +75,8 @@ def train(args):
         SLURMEnvironment(requeue_signal=signal.SIGUSR1),
     ]
 
-    devices = 'auto'
-    device_count = torch.cuda.device_count()
-    if device_count > 1:
-        devices = { i: torch.cuda.mem_get_info(i)[0] for i in range(device_count) }
-        devices = [ max(devices, key=devices.get) ]
-        print('Multiple GPUs detected, selected device', *devices)
-
-    trainer = pl.Trainer(devices=devices,
+    accelerator, devices = ng.util.configure_device()
+    trainer = pl.Trainer(accelerator=accelerator, devices=devices,
                          max_epochs=args.epochs,
                          limit_train_batches=args.limit_train_batches,
                          limit_val_batches=args.limit_val_batches,

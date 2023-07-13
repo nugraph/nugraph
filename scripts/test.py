@@ -15,8 +15,6 @@ def configure():
     parser = argparse.ArgumentParser(sys.argv[0])
     parser.add_argument('--checkpoint', type=str, required=True,
                         help='Checkpoint file for trained model')
-    parser.add_argument('--devices', nargs='+', type=int, default=None,
-                        help='List of devices to test with')
     parser = Data.add_data_args(parser)
     return parser.parse_args()
 
@@ -27,12 +25,8 @@ def test(args):
 
     model = Model.load_from_checkpoint(args.checkpoint, event_head=False)
 
-    if args.devices is None:
-        print('No devices specified – running inference on CPU')
-
-    accelerator = 'cpu' if args.devices is None else 'gpu'
-    trainer = pl.Trainer(accelerator=accelerator,
-                         devices=args.devices,
+    accelerator, devices = ng.util.configure_device()
+    trainer = pl.Trainer(accelerator=accelerator, devices=devices,
                          logger=None)
     start = time.time()
     trainer.test(model, datamodule=nudata)
