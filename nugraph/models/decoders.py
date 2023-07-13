@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 import seaborn as sn
 
 from .linear import ClassLinear
-from ..util import FocalLoss, RecallLoss
+from ..util import FocalLoss, RecallLoss, LogCoshLoss
 
 class DecoderBase(nn.Module, ABC):
     '''Base class for all NuGraph decoders'''
@@ -223,7 +223,7 @@ class VertexDecoder(DecoderBase):
         super().__init__('vertex',
                          planes,
                          semantic_classes,
-                         loss_func: 'loss_func'):
+                         LogCoshLoss())
         self.net = LSTMAggregation(in_channels = len(planes) * node_features,
                                    out_channels=node_features)
 
