@@ -207,6 +207,8 @@ class NuGraph2(LightningModule):
                            help='Enable semantic segmentation head')
         model.add_argument('--filter', action='store_true', default=False,
                            help='Enable background filter head')
+        model.add_argument('--vertex', action='store_true', default=False,
+                           help='Enable vertex regression head')
         return parser
 
     @staticmethod

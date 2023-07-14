@@ -49,6 +49,7 @@ def train(args):
                       event_head=args.event,
                       semantic_head=args.semantic,
                       filter_head=args.filter,
+                      vertex_head=args.vertex,
                       checkpoint=not args.no_checkpointing,
                       lr=args.learning_rate)
         name = args.name
