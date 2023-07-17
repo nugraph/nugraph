@@ -226,7 +226,7 @@ class VertexDecoder(DecoderBase):
                          LogCoshLoss())
         in_features = len(semantic_classes) * node_features
         self.net = LSTMAggregation(in_channels=in_features,
-                                   out_channels=node_features)
+                                   out_channels=3)
 
     def forward(self, x: dict[str, Tensor], batch: dict[str, Tensor]) -> dict[str,dict[str, Tensor]]:
         merged_tensors = [x[p] for p in self.planes]
