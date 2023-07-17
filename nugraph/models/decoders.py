@@ -243,4 +243,9 @@ class VertexDecoder(DecoderBase):
         return x, y
 
     def metrics(self, x: Tensor, y: Tensor, stage: str) -> dict[str, Any]:
-        return (x-y).abs().mean(dim=0)
+        xyz = (x-y).abs().mean(dim=0)
+        return {
+            f'x-accuracy/{stage}': xyz[0],
+            f'y-accuracy/{stage}': xyz[1],
+            f'z-accuracy/{stage}': xyz[2]
+        }
