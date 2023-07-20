@@ -225,14 +225,15 @@ class VertexDecoder(DecoderBase):
                          semantic_classes,
                          LogCoshLoss())
         in_features = len(semantic_classes) * node_features
-        self.net = LSTMAggregation(in_channels=in_features,
-                                   out_channels=3)
+        self.net = nn.Sequential(LSTMAggregation(in_channels=in_features,
+                                   out_channels= 64), 
+                                   nn.Linear(in_features = 64,
+                                             out_features = 3))
 
     def forward(self, x: dict[str, Tensor], batch: dict[str, Tensor]) -> dict[str,dict[str, Tensor]]:
         merged_tensors = [x[p] for p in self.planes]
         merged_tensor = cat(merged_tensors, dim = 0)
         flattened_tensor = merged_tensor.flatten(1)
-        res = self.net(flattened_tensor)
         return { 'x_vtx': { 'evt': self.net(flattened_tensor) }}
 
     def arrange(self, batch) -> tuple[Tensor, Tensor]:
