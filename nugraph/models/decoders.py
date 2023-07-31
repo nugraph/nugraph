@@ -226,9 +226,11 @@ class VertexDecoder(DecoderBase):
                          LogCoshLoss())
         in_features = len(semantic_classes) * node_features
         self.net = nn.Sequential(LSTMAggregation(in_channels=in_features,
-                                   out_channels= 128),
+                                   out_channels= 64),
+                                   nn.Linear(in_features = 64,
+                                             out_features = 256),
                                    nn.ReLU(), 
-                                   nn.Linear(in_features = 128,
+                                   nn.Linear(in_features = 256,
                                              out_features = 3))
 
     def forward(self, x: dict[str, Tensor], batch: dict[str, Tensor]) -> dict[str,dict[str, Tensor]]:
