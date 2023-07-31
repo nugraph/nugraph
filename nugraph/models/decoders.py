@@ -10,6 +10,7 @@ import torchmetrics as tm
 
 import matplotlib.pyplot as plt
 import seaborn as sn
+import math
 
 from .linear import ClassLinear
 from ..util import FocalLoss, RecallLoss, LogCoshLoss
@@ -249,7 +250,8 @@ class VertexDecoder(DecoderBase):
     def metrics(self, x: Tensor, y: Tensor, stage: str) -> dict[str, Any]:
         xyz = (x-y).abs().mean(dim=0)
         return {
-            f'x-accuracy/{stage}': xyz[0],
-            f'y-accuracy/{stage}': xyz[1],
-            f'z-accuracy/{stage}': xyz[2]
+            f'x-resolution/{stage}': xyz[0],
+            f'y-resolution/{stage}': xyz[1],
+            f'z-resolution/{stage}': xyz[2],
+            f'3d-resolution/{stage}': math.sqrt(((xyz[0])**2) + ((xyz[1])**2) + ((xyz[2])**2))
         }
