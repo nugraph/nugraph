@@ -21,12 +21,14 @@ class DecoderBase(nn.Module, ABC):
                  name: str,
                  planes: list[str],
                  classes: list[str],
-                 loss_func: Callable):
+                 loss_func: Callable,
+                 weight: float=1.0):
         super().__init__()
         self.name = name
         self.planes = planes
         self.classes = classes
         self.loss_func = loss_func
+        self.weight = weight
         self.confusion = nn.ModuleDict()
 
     def arrange(self, batch) -> tuple[Tensor, Tensor]:
@@ -41,7 +43,7 @@ class DecoderBase(nn.Module, ABC):
              confusion: bool = False):
         x, y = self.arrange(batch)
         metrics = self.metrics(x, y, stage)
-        loss = self.loss_func(x, y)
+        loss = self.weight * self.loss_func(x, y)
         metrics[f'loss_{self.name}/{stage}'] = loss
         for cm in self.confusion.values():
             cm.update(x, y)
@@ -128,7 +130,11 @@ class FilterDecoder(DecoderBase):
                  node_features: int,
                  planes: list[str],
                  semantic_classes: list[str]):
-        super().__init__('filter', planes, ('noise', 'signal'), nn.BCELoss())
+        super().__init__('filter',
+                         planes,
+                         ('noise', 'signal'),
+                         nn.BCELoss(),
+                         weight=0.1)
 
         # torchmetrics arguments
         metric_args = {
