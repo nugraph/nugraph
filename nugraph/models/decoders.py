@@ -225,20 +225,20 @@ class VertexDecoder(DecoderBase):
     """
     def __init__(self,
                  node_features: int,
+                 vertex_features: int,
                  planes: list[str],
                  semantic_classes: list[str]):
         super().__init__('vertex',
                          planes,
                          semantic_classes,
-                         LogCoshLoss())
+                         LogCoshLoss(),
+                         weight=1e-3)
         in_features = len(semantic_classes) * node_features
-        self.net = nn.Sequential(LSTMAggregation(in_channels=in_features,
-                                   out_channels= 64),
-                                   nn.Linear(in_features = 64,
-                                             out_features = 256),
-                                   nn.ReLU(), 
-                                   nn.Linear(in_features = 256,
-                                             out_features = 3))
+        self.net = nn.Sequential(
+            LSTMAggregation(in_channels=in_features,
+                            out_channels=vertex_features),
+            nn.Linear(in_features=vertex_features,
+                      out_features=3))
 
     def forward(self, x: dict[str, Tensor], batch: dict[str, Tensor]) -> dict[str,dict[str, Tensor]]:
         merged_tensors = [x[p] for p in self.planes]
@@ -259,5 +259,5 @@ class VertexDecoder(DecoderBase):
             f'x-resolution/{stage}': xyz[0],
             f'y-resolution/{stage}': xyz[1],
             f'z-resolution/{stage}': xyz[2],
-            f'3d-resolution/{stage}': math.sqrt(((xyz[0])**2) + ((xyz[1])**2) + ((xyz[2])**2))
+            f'3d-resolution/{stage}': xyz.square().sum().sqrt()
         }
