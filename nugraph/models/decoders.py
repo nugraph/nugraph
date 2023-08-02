@@ -234,21 +234,23 @@ class VertexDecoder(DecoderBase):
                          LogCoshLoss(),
                          weight=1e-3)
         in_features = len(semantic_classes) * node_features
+        self.lstm = nn.ModuleDict()
+        for p in planes:
+            self.lstm[p] = LSTMAggregation(in_channels=in_features,
+                                           out_channels=vertex_features)
         self.net = nn.Sequential(
-            LSTMAggregation(in_channels=in_features,
-                            out_channels=vertex_features),
+            nn.Linear(in_features=len(planes) * vertex_features,
+                      out_features=vertex_features),
+            nn.ReLU(),
             nn.Linear(in_features=vertex_features,
                       out_features=3))
 
     def forward(self, x: dict[str, Tensor], batch: dict[str, Tensor]) -> dict[str,dict[str, Tensor]]:
-        merged_tensors = [x[p] for p in self.planes]
-        merged_tensor = cat(merged_tensors, dim = 0)
-        flattened_tensor = merged_tensor.flatten(1)
-        return { 'x_vtx': { 'evt': self.net(flattened_tensor) }}
+        x = [ net(x[p].flatten(1), index=batch[p]) for p, net in self.lstm.items() ]
+        x = cat(x, dim=1)
+        return { 'x_vtx': { 'evt': self.net(x) }}
 
     def arrange(self, batch) -> tuple[Tensor, Tensor]:
-        'dunno if x_vertex is correct name'
-        'also assuming one of them is our prediction and one is truth'
         x = batch['evt'].x_vtx
         y = batch['evt'].y_vtx
         return x, y
