@@ -14,6 +14,10 @@ from pytorch_lightning import LightningDataModule
 from ..data import H5Dataset
 from ..util import PositionFeatures, FeatureNormMetric, FeatureNorm
 
+from ..data import BalanceSampler
+from ..data import SkewSampler
+from ..data import OutlierSampler
+
 class H5DataModule(LightningDataModule):
     """PyTorch Lightning data module for neutrino graph data."""
     def __init__(self,
@@ -114,9 +118,32 @@ class H5DataModule(LightningDataModule):
                 f[f'norm/{p}'] = metrics[p].compute()
 
     def train_dataloader(self) -> DataLoader:
+        if self.shuffle_scheme == 'random':
+            shuffle = True
+            sampler = None
+
+        elif self.shuffle_scheme == 'balance':
+            shuffle = False
+            sampler = BalanceSampler.BalanceSampler(
+                        data_source=self.train_dataset,
+                        batch_size=self.batch_size)
+
+        elif self.shuffle_scheme == 'skew':
+            shuffle = False
+            sampler = SkewSampler.SkewSampler(
+                        data_source=self.train_dataset,
+                        batch_size=self.batch_size)
+
+        elif self.shuffle_scheme == 'outlier':
+            shuffle = False
+            sampler = OutlierSampler.OutlierSampler(
+                        data_source=self.train_dataset,
+                        batch_size=self.batch_size)
+
         return DataLoader(self.train_dataset,
                           batch_size=self.batch_size,
-                          drop_last=True, shuffle=True, pin_memory=True)
+                          sampler=sampler, drop_last=True, 
+                          shuffle=shuffle, pin_memory=True)
 
     def val_dataloader(self) -> DataLoader:
         return DataLoader(self.val_dataset,

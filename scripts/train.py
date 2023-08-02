@@ -33,6 +33,8 @@ def configure():
                         help='Checkpoint file to resume training from')
     parser.add_argument('--profiler', type=str, default=None,
                         help='Enable requested profiler')
+    parser.add_argument('--shuffle_scheme', type=str, default='random',
+                       help='Dataset shuffling scheme to use')
     parser = Data.add_data_args(parser)
     parser = Model.add_model_args(parser)
     parser = Model.add_train_args(parser)
