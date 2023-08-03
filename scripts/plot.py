@@ -4,6 +4,7 @@ import os
 import argparse
 import pytorch_lightning as pl
 import pynuml
+import torch
 import nugraph as ng
 import time
 
@@ -30,6 +31,8 @@ def configure():
                         help='Write PDF files')
     parser.add_argument('--limit-predict-batches', type=int, default=10,
                         help='Number of batches to plot')
+    parser.add_argument('--device', type=str, default='gpu',
+                        help='Device to use for Model')
     parser = Data.add_data_args(parser)
     return parser.parse_args()
 
@@ -49,9 +52,10 @@ def plot(args):
     # Load dataset
     nudata = Data(args.data_path,
                   batch_size=args.batch_size)
+    test_dataset = nudata.test_dataloader()
 
     if args.checkpoint is not None:
-        model = Model.load_from_checkpoint(args.checkpoint)
+        model = Model.load_from_checkpoint(args.checkpoint, map_location=torch.device(args.device))
         model.freeze()
 
         accelerator, devices = ng.util.configure_device()
@@ -63,7 +67,7 @@ def plot(args):
                                  classes=nudata.semantic_classes)
 
     if args.checkpoint is None:
-        for i, batch in enumerate(nudata.test_dataloader()):
+        for i, batch in enumerate(test_dataset):
             if args.limit_predict_batches is not None and i >= args.limit_predict_batches:
                 break
             for data in batch.to_data_list():
@@ -77,8 +81,16 @@ def plot(args):
                     save(plot, data, args.outdir, 'filter', 'true', 'none',
                          args.write_html, args.write_png, args.write_pdf)
     else: 
-        for batch in trainer.predict(model, nudata.test_dataloader()):
-            for data in batch:
+        out = trainer.predict(model, test_dataset)
+        for i,batch in enumerate(test_dataset):
+            if args.limit_predict_batches is not None and i >= args.limit_predict_batches:
+                break
+            bout = out[i][0]
+            offset = 0
+            for ie,data in enumerate(batch.to_data_list()):
+                for p in ['u','v','y']:
+                    data[p]['x_semantic'] = bout[offset:offset+len(data[p]['y_semantic'])]
+                    offset = offset+len(data[p]['y_semantic'])
                 md = data['metadata']
                 name = f'r{md.run.item()}_sr{md.subrun.item()}_evt{md.event.item()}'
                 if args.semantic:
