@@ -86,11 +86,10 @@ def plot(args):
             if args.limit_predict_batches is not None and i >= args.limit_predict_batches:
                 break
             bout = out[i][0]
-            offset = 0
+            offsets = {'u': batch['u']['ptr'], 'v': batch['v']['ptr'], 'y': batch['y']['ptr']}
             for ie,data in enumerate(batch.to_data_list()):
                 for p in ['u','v','y']:
-                    data[p]['x_semantic'] = bout[offset:offset+len(data[p]['y_semantic'])]
-                    offset = offset+len(data[p]['y_semantic'])
+                    data[p]['x_semantic'] = bout[offsets[p][ie]:offsets[p][ie+1]]
                 md = data['metadata']
                 name = f'r{md.run.item()}_sr{md.subrun.item()}_evt{md.event.item()}'
                 if args.semantic:
