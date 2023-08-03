@@ -19,6 +19,8 @@ def configure():
     parser = argparse.ArgumentParser()
     parser.add_argument('--name', type=str, default=None,
                         help='Training instance name, for logging purposes')
+    parser.add_argument('--version', type=str, default=None,
+                        help='Training version name, for logging purposes')
     parser.add_argument('--logdir', type=str, default=None,
                         help='Output directory to write logs to')
     parser.add_argument('--resume', type=str, default=None,
@@ -55,7 +57,7 @@ def train(args):
                       lr=args.learning_rate)
         name = args.name
         logdir = args.logdir
-        version = None
+        version = args.version
         os.makedirs(os.path.join(logdir, args.name), exist_ok=True)
     elif args.resume is not None and args.name is None and args.logdir is None:
         model = Model.load_from_checkpoint(args.resume)
