@@ -169,6 +169,16 @@ class NuGraph2(LightningModule):
             self.log_dict(metrics, batch_size=batch.num_graphs)
         self.log('loss/test', total_loss, batch_size=batch.num_graphs)
 
+    def predict_step(self,
+                  batch,
+                  batch_idx: int = 0) -> None:
+        self.step(batch)
+        ret = []
+        for decoder in self.decoders:
+            x, y = decoder.arrange(batch)
+            ret.append(x)
+        return ret
+
     def on_test_epoch_end(self) -> None:
         epoch = self.trainer.current_epoch + 1
         for decoder in self.decoders:
