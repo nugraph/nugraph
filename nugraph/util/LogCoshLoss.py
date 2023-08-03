@@ -8,5 +8,7 @@ class LogCoshLoss(torch.nn.Module):
         super().__init__()
         
     def forward(self, input: Tensor, target: Tensor) -> Tensor:
-        x = input - target
+        assert input.shape == target.shape
+        assert input.ndim == 2
+        x = (input - target).square().sum(dim=1).sqrt()
         return (x + F.softplus(-2. * x) - math.log(2.0)).mean()
