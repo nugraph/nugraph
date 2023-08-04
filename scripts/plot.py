@@ -81,15 +81,13 @@ def plot(args):
                     save(plot, data, args.outdir, 'filter', 'true', 'none',
                          args.write_html, args.write_png, args.write_pdf)
     else: 
-        out = trainer.predict(model, test_dataset)
-        for i,batch in enumerate(test_dataset):
-            if args.limit_predict_batches is not None and i >= args.limit_predict_batches:
-                break
-            bout = out[i][0]
+        for batch in trainer.predict(model, nudata.test_dataloader()):
+            #somehow the x_semantic table is lost when iterating over the batch, so need to add it back
             offsets = {'u': batch['u']['ptr'], 'v': batch['v']['ptr'], 'y': batch['y']['ptr']}
+            x_semantics = {'u': batch['u']['x_semantic'], 'v': batch['v']['x_semantic'], 'y': batch['y']['x_semantic']}
             for ie,data in enumerate(batch.to_data_list()):
                 for p in ['u','v','y']:
-                    data[p]['x_semantic'] = bout[offsets[p][ie]:offsets[p][ie+1]]
+                    data[p]['x_semantic'] = x_semantics[p][offsets[p][ie]:offsets[p][ie+1]]
                 md = data['metadata']
                 name = f'r{md.run.item()}_sr{md.subrun.item()}_evt{md.event.item()}'
                 if args.semantic:

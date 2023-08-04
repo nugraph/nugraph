@@ -173,11 +173,7 @@ class NuGraph2(LightningModule):
                   batch,
                   batch_idx: int = 0) -> None:
         self.step(batch)
-        ret = []
-        for decoder in self.decoders:
-            x, y = decoder.arrange(batch)
-            ret.append(x)
-        return ret
+        return batch
 
     def on_test_epoch_end(self) -> None:
         epoch = self.trainer.current_epoch + 1
