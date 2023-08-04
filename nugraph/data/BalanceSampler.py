@@ -37,10 +37,6 @@ class BalanceSampler(Sampler):
                 dataset_idx = curr_bin[bin_idx]
                 bal_indices.append(dataset_idx)
         
-        #for i in range(self.batch_size):
-            #print('Current bin: ', curr_bin)
-
-        #print('Indices: ', indices)
         return iter(indices)
 
     def __len__(self):

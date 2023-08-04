@@ -10,18 +10,19 @@ class OutlierSampler(Sampler):
         self.outlier_num = 50
 
     def __iter__(self):
+        # Create an shuffled index array the size of the dataset
         dset_len = len(self.data_source)
         indices = np.arange(dset_len)
         outlier_indices = indices[dset_len-self.outlier_num:dset_len]
         indices = indices[:dset_len-self.outlier_num]
         np.random.shuffle(indices)
 
-        print('Outlier indices: ', outlier_indices)
+        # Insert one outlier per batch to balance batch size in bytes
         for i, outlier in enumerate(outlier_indices):
             index = (i * self.batch_size) % dset_len
             indices = np.insert(indices, index, outlier)
 
-        print('Indices: ', indices)
+        # Return the array of indices
         return iter(indices)
 
     def __len__(self):
