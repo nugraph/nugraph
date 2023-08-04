@@ -23,6 +23,7 @@ class H5DataModule(LightningDataModule):
     def __init__(self,
                  data_path: str,
                  batch_size: int,
+                 shuffle_scheme: str = 'random',
                  prepare: bool = False):
         super().__init__()
 
@@ -32,6 +33,7 @@ class H5DataModule(LightningDataModule):
 
         self.filename = data_path
         self.batch_size = batch_size
+        self.shuffle_scheme = shuffle_scheme
 
         with h5py.File(self.filename) as f:
 
