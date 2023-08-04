@@ -52,7 +52,6 @@ def plot(args):
     # Load dataset
     nudata = Data(args.data_path,
                   batch_size=args.batch_size)
-    test_dataset = nudata.test_dataloader()
 
     if args.checkpoint is not None:
         model = Model.load_from_checkpoint(args.checkpoint, map_location=torch.device(args.device))
@@ -67,7 +66,7 @@ def plot(args):
                                  classes=nudata.semantic_classes)
 
     if args.checkpoint is None:
-        for i, batch in enumerate(test_dataset):
+        for i, batch in enumerate(nudata.test_dataloader()):
             if args.limit_predict_batches is not None and i >= args.limit_predict_batches:
                 break
             for data in batch.to_data_list():
