@@ -70,7 +70,7 @@ def test(args):
         df['run'] = r
         df['subrun'] = s
         df['event'] = e
-        df.to_hdf(args.outfile, 'hits', format='table') # requires adding pytables to conda env
+        df.to_hdf(args.outfile, 'hits', append=True, format='table') # requires adding pytables to conda env
 
 
 if __name__ == '__main__':
