@@ -7,19 +7,19 @@ class SkewSampler(Sampler):
     def __init__(self, data_source, batch_size):
         self.data_source = data_source
         self.batch_size = batch_size
-        self.outlier_num = 50
+        self.skew_num = 50
 
     def __iter__(self):
         dset_len = len(self.data_source)
         indices = np.arange(dset_len)
         # Fill with outliers only
-        div = int(math.floor(dset_len / self.batch_size))
-        rem = dset_len % self.batch_size 
-        outlier_indices = indices[dset_len-self.batch_size:dset_len]
-        for i in range(div):
-            indices[i*self.batch_size:(i+1)*self.batch_size] = outlier_indices
-        indices[-rem:]= outlier_indices[:rem]
-        #outliers = indices[dset_len - self.outlier_num:dset_len]
+        if self.skew_num < dset_len:
+            div = int(math.floor(dset_len / self.skew_num))
+            rem = dset_len % self.skew_num
+            outlier_indices = indices[dset_len-self.skew_num:dset_len]
+            for i in range(div):
+                indices[i*self.skew_num:(i+1)*self.skew_num] = outlier_indices
+            indices[-rem:]= outlier_indices[:rem]
         return iter(indices)
 
     def __len__(self):
