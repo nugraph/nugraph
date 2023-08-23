@@ -2,7 +2,7 @@ from typing import Any, Callable
 
 from abc import ABC
 
-from torch import Tensor, cat, zeros
+from torch import Tensor, tensor, cat
 import torch.nn as nn
 from torch_geometric.nn.aggr import SoftmaxAggregation, LSTMAggregation
 
@@ -22,14 +22,15 @@ class DecoderBase(nn.Module, ABC):
                  planes: list[str],
                  classes: list[str],
                  loss_func: Callable,
-                 weight: float):
+                 weight: float,
+                 temperature: float):
         super().__init__()
         self.name = name
         self.planes = planes
         self.classes = classes
         self.loss_func = loss_func
         self.weight = weight
-        self.temp = nn.Parameter(zeros(1))
+        self.temp = nn.Parameter(tensor(temperature))
         self.confusion = nn.ModuleDict()
 
     def arrange(self, batch) -> tuple[Tensor, Tensor]:
@@ -93,7 +94,8 @@ class SemanticDecoder(DecoderBase):
                          planes,
                          semantic_classes,
                          RecallLoss(),
-                         weight=2)
+                         weight=2.,
+                         temperature=-1.)
 
         # torchmetrics arguments
         metric_args = {
@@ -142,7 +144,8 @@ class FilterDecoder(DecoderBase):
                          planes,
                          ('noise', 'signal'),
                          nn.BCELoss(),
-                         weight=2)
+                         weight=2.,
+                         temperature=-1.)
 
         # torchmetrics arguments
         metric_args = {
@@ -193,7 +196,8 @@ class EventDecoder(DecoderBase):
                          planes,
                          event_classes,
                          RecallLoss(),
-                         weight=2)
+                         weight=2.,
+                         temperature=-1.)
 
         # torchmetrics arguments
         metric_args = {
@@ -241,7 +245,8 @@ class VertexDecoder(DecoderBase):
                          planes,
                          semantic_classes,
                          LogCoshLoss(),
-                         weight=1)
+                         weight=1.,
+                         temperature=5.)
         in_features = len(semantic_classes) * node_features
         self.lstm = nn.ModuleDict()
         for p in planes:
