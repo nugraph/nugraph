@@ -2,7 +2,7 @@ from typing import Any, Callable
 
 from abc import ABC
 
-from torch import Tensor, cat
+from torch import Tensor, cat, zeros
 import torch.nn as nn
 from torch_geometric.nn.aggr import SoftmaxAggregation, LSTMAggregation
 
@@ -22,13 +22,14 @@ class DecoderBase(nn.Module, ABC):
                  planes: list[str],
                  classes: list[str],
                  loss_func: Callable,
-                 weight: float=1.0):
+                 weight: float):
         super().__init__()
         self.name = name
         self.planes = planes
         self.classes = classes
         self.loss_func = loss_func
         self.weight = weight
+        self.temp = nn.Parameter(zeros(1))
         self.confusion = nn.ModuleDict()
 
     def arrange(self, batch) -> tuple[Tensor, Tensor]:
@@ -43,8 +44,11 @@ class DecoderBase(nn.Module, ABC):
              confusion: bool = False):
         x, y = self.arrange(batch)
         metrics = self.metrics(x, y, stage)
-        loss = self.weight * self.loss_func(x, y)
+        loss = self.weight * (-1 * self.temp).exp() * self.loss_func(x, y)
         metrics[f'loss_{self.name}/{stage}'] = loss
+        loss += self.temp
+        if stage == 'train':
+            metrics[f'temperature/{self.name}'] = self.temp
         for cm in self.confusion.values():
             cm.update(x, y)
         return loss, metrics
@@ -85,7 +89,11 @@ class SemanticDecoder(DecoderBase):
                  node_features: int,
                  planes: list[str],
                  semantic_classes: list[str]):
-        super().__init__('semantic', planes, semantic_classes, RecallLoss())
+        super().__init__('semantic',
+                         planes,
+                         semantic_classes,
+                         RecallLoss(),
+                         weight=2)
 
         # torchmetrics arguments
         metric_args = {
@@ -134,7 +142,7 @@ class FilterDecoder(DecoderBase):
                          planes,
                          ('noise', 'signal'),
                          nn.BCELoss(),
-                         weight=0.1)
+                         weight=2)
 
         # torchmetrics arguments
         metric_args = {
@@ -184,7 +192,8 @@ class EventDecoder(DecoderBase):
         super().__init__('event',
                          planes,
                          event_classes,
-                         RecallLoss())
+                         RecallLoss(),
+                         weight=2)
 
         # torchmetrics arguments
         metric_args = {
@@ -232,7 +241,7 @@ class VertexDecoder(DecoderBase):
                          planes,
                          semantic_classes,
                          LogCoshLoss(),
-                         weight=1e-3)
+                         weight=1)
         in_features = len(semantic_classes) * node_features
         self.lstm = nn.ModuleDict()
         for p in planes:
