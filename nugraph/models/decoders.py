@@ -47,12 +47,11 @@ class DecoderBase(nn.Module, ABC):
         metrics = self.metrics(x, y, stage)
         loss = self.weight * (-1 * self.temp).exp() * self.loss_func(x, y)
         metrics[f'loss_{self.name}/{stage}'] = loss
-        loss += self.temp
         if stage == 'train':
             metrics[f'temperature/{self.name}'] = self.temp
         for cm in self.confusion.values():
             cm.update(x, y)
-        return loss, metrics
+        return loss + self.temp, metrics
 
     def draw_confusion_matrix(self, cm: tm.ConfusionMatrix) -> plt.Figure:
         '''Produce confusion matrix at end of epoch'''
