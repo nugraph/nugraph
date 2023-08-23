@@ -271,8 +271,8 @@ class VertexDecoder(DecoderBase):
     def metrics(self, x: Tensor, y: Tensor, stage: str) -> dict[str, Any]:
         xyz = (x-y).abs().mean(dim=0)
         return {
-            f'x-resolution/{stage}': xyz[0],
-            f'y-resolution/{stage}': xyz[1],
-            f'z-resolution/{stage}': xyz[2],
-            f'3d-resolution/{stage}': xyz.square().sum().sqrt()
+            f'vertex-resolution-x/{stage}': xyz[0],
+            f'vertex-resolution-y/{stage}': xyz[1],
+            f'vertex-resolution-z/{stage}': xyz[2],
+            f'vertex-resolution/{stage}': xyz.square().sum().sqrt()
         }
