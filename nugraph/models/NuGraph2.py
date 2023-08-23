@@ -5,6 +5,7 @@ from torch import Tensor, cat, empty
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import OneCycleLR
 from pytorch_lightning import LightningModule
+from torch_geometric.data import Batch, HeteroData
 
 from .encoder import Encoder
 from .plane import PlaneNet
@@ -116,14 +117,24 @@ class NuGraph2(LightningModule):
             ret.update(decoder(m, batch))
         return ret
 
-    def step(self, batch):
+    def step(self, data: HeteroData | Batch):
+
+        # if it's a single data instance, convert to batch manually
+        if isinstance(data, HeteroData):
+            batch = Batch.from_data_list([data])
+        else:
+            batch = data
+
+        # unpack tensors to pass into forward function
         x = self(batch.collect('x'),
                  { p: batch[p, 'plane', p].edge_index for p in self.planes },
                  { p: batch[p, 'nexus', 'sp'].edge_index for p in self.planes },
                  empty(batch['sp'].num_nodes, 0),
                  { p: batch[p].batch for p in self.planes })
+
+        # append output tensors back onto input data object
         for key, value in x.items():
-            batch.set_value_dict(key, value)
+            data.set_value_dict(key, value)
 
     def on_train_start(self):
         hpmetrics = { 'max_lr': self.hparams.lr }
