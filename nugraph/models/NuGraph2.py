@@ -181,8 +181,8 @@ class NuGraph2(LightningModule):
         self.log('loss/test', total_loss, batch_size=batch.num_graphs)
 
     def predict_step(self,
-                  batch,
-                  batch_idx: int = 0) -> None:
+                     batch: Batch,
+                     batch_idx: int = 0) -> Batch:
         self.step(batch)
         return batch
 
