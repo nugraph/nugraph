@@ -1,7 +1,8 @@
 from argparse import ArgumentParser
 import warnings
 
-from torch import Tensor, cat, empty
+import torch
+from torch import Tensor
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import OneCycleLR
 from pytorch_lightning import LightningModule
@@ -99,7 +100,8 @@ class NuGraph2(LightningModule):
         for _ in range(self.num_iters):
             # shortcut connect features
             for i, p in enumerate(self.planes):
-                m[p] = cat((m[p], x[p].detach().unsqueeze(1).expand(-1, m[p].size(1), -1)), dim=-1)
+                s = x[p].detach().unsqueeze(1).expand(-1, m[p].size(1), -1)
+                m[p] = torch.cat((m[p], s), dim=-1)
             self.plane_net(m, edge_index_plane)
             self.nexus_net(m, edge_index_nexus, nexus)
         ret = {}
@@ -119,7 +121,7 @@ class NuGraph2(LightningModule):
         x = self(batch.collect('x'),
                  { p: batch[p, 'plane', p].edge_index for p in self.planes },
                  { p: batch[p, 'nexus', 'sp'].edge_index for p in self.planes },
-                 empty(batch['sp'].num_nodes, 0),
+                 torch.empty(batch['sp'].num_nodes, 0),
                  { p: batch[p].batch for p in self.planes })
 
         # append output tensors back onto input data object
