@@ -1,12 +1,9 @@
 #!/usr/bin/env python
 
-import os
 import argparse
-import pytorch_lightning as pl
 import pynuml
-import torch
 import nugraph as ng
-import time
+import tqdm
 
 Data = ng.data.H5DataModule
 Model = ng.models.NuGraph2
@@ -23,16 +20,14 @@ def configure():
                         help='Checkpoint file to resume training from')
     parser.add_argument('--outdir', type=str, required=True,
                         help='Output directory to write plots to')
-    parser.add_argument('--write-html', action='store_true', default=False,
+    parser.add_argument('--html', action='store_true', default=False,
                         help='Write HTML files')
-    parser.add_argument('--write-png', action='store_true', default=False,
+    parser.add_argument('--png', action='store_true', default=False,
                         help='Write PNG files')
-    parser.add_argument('--write-pdf', action='store_true', default=False,
+    parser.add_argument('--pdf', action='store_true', default=False,
                         help='Write PDF files')
-    parser.add_argument('--limit-predict-batches', type=int, default=10,
-                        help='Number of batches to plot')
-    parser.add_argument('--device', type=str, default='gpu',
-                        help='Device to use for Model')
+    parser.add_argument('--limit', type=int, default=100,
+                        help='Number of graphs to plot')
     parser = Data.add_data_args(parser)
     return parser.parse_args()
 
@@ -49,61 +44,39 @@ def save(plot: pynuml.plot.GraphPlot, data: 'pyg.data.HeteroData',
 
 def plot(args):
 
-    # Load dataset
     nudata = Data(args.data_path,
                   batch_size=args.batch_size)
 
-    if args.checkpoint is not None:
-        model = Model.load_from_checkpoint(args.checkpoint, map_location=torch.device(args.device))
+    if args.checkpoint:
+        model = Model.load_from_checkpoint(args.checkpoint, map_location='cpu')
         model.freeze()
-
-        accelerator, devices = ng.util.configure_device()
-        trainer = pl.Trainer(accelerator=accelerator, devices=devices,
-                             limit_predict_batches=args.limit_predict_batches,
-                             logger=None)
 
     plot = pynuml.plot.GraphPlot(planes=nudata.planes,
                                  classes=nudata.semantic_classes)
 
-    if args.checkpoint is None:
-        for i, batch in enumerate(nudata.test_dataloader()):
-            if args.limit_predict_batches is not None and i >= args.limit_predict_batches:
-                break
-            for data in batch.to_data_list():
-                if args.semantic:
-                    save(plot, data, args.outdir, 'semantic', 'true', 'true',
-                         args.write_html, args.write_png, args.write_pdf)
-                if args.instance:
-                    save(plot, data, args.outdir, 'instance', 'true', 'true',
-                         args.write_html, args.write_png, args.write_pdf)
-                if args.filter:
-                    save(plot, data, args.outdir, 'filter', 'true', 'none',
-                         args.write_html, args.write_png, args.write_pdf)
-    else: 
-        for batch in trainer.predict(model, nudata.test_dataloader()):
-            #somehow the x_semantic table is lost when iterating over the batch, so need to add it back
-            offsets = {p: batch[p]['ptr'] for p in nudata.planes }
-            x_semantics = {p: batch[p]['x_semantic'] for p in nudata.planes}
-            for ie,data in enumerate(batch.to_data_list()):
-                for p in nudata.planes:
-                    data[p]['x_semantic'] = x_semantics[p][offsets[p][ie]:offsets[p][ie+1]]
-                md = data['metadata']
-                name = f'r{md.run.item()}_sr{md.subrun.item()}_evt{md.event.item()}'
-                if args.semantic:
-                    save(plot, data, args.outdir, 'semantic', 'true', 'true',
-                         args.write_html, args.write_png, args.write_pdf)
+    for i in tqdm.tqdm(range(args.limit)):
+        data = nudata.test_dataset[i]
+        if args.checkpoint:
+            model.step(data)
+        if args.semantic:
+            if args.semantic:
+                save(plot, data, args.outdir, 'semantic', 'true', 'true',
+                     args.html, args.png, args.pdf)
+                if args.checkpoint:
                     save(plot, data, args.outdir, 'semantic', 'pred', 'true',
-                         args.write_html, args.write_png, args.write_pdf)
-                if args.instance:
-                    save(plot, data, args.outdir, 'instance', 'true', 'true',
-                         args.write_html, args.write_png, args.write_pdf)
+                         args.html, args.png, args.pdf)
+            if args.instance:
+                save(plot, data, args.outdir, 'instance', 'true', 'true',
+                     args.html, args.png, args.pdf)
+                if args.checkpoint:
                     save(plot, data, args.outdir, 'instance', 'pred', 'true',
-                         args.write_html, args.write_png, args.write_pdf)
-                if args.filter:
-                    save(plot, data, args.outdir, 'filter', 'true', 'none',
-                         args.write_html, args.write_png, args.write_pdf)
-                    save(plot, data, args.outdir, 'filter', 'pred', 'none',
-                         args.write_html, args.write_png, args.write_pdf)
+                         args.html, args.png, args.pdf)
+            if args.filter:
+                save(plot, data, args.outdir, 'filter', 'true', 'none',
+                     args.html, args.png, args.pdf)
+                if args.checkpoint:
+                    save(plot, data, args.outdir, 'instance', 'pred', 'true',
+                         args.html, args.png, args.pdf)
 
 if __name__ == '__main__':
     args = configure()
