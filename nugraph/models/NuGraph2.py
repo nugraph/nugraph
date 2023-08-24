@@ -1,6 +1,7 @@
 from argparse import ArgumentParser
 import warnings
 
+import torch
 from torch import Tensor, cat, empty
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import OneCycleLR
@@ -140,6 +141,7 @@ class NuGraph2(LightningModule):
             total_loss += loss
             self.log_dict(metrics, batch_size=batch.num_graphs)
         self.log('loss/train', total_loss, batch_size=batch.num_graphs, prog_bar=True)
+
         return total_loss
 
     def validation_step(self,
