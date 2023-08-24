@@ -7,6 +7,7 @@ from torch.optim import AdamW
 from torch.optim.lr_scheduler import OneCycleLR
 from pytorch_lightning import LightningModule
 from torch_geometric.data import Batch, HeteroData
+from torch_geometric.utils import unbatch
 
 from .encoder import Encoder
 from .plane import PlaneNet
@@ -112,10 +113,10 @@ class NuGraph2(LightningModule):
     def step(self, data: HeteroData | Batch):
 
         # if it's a single data instance, convert to batch manually
-        if isinstance(data, HeteroData):
-            batch = Batch.from_data_list([data])
-        else:
+        if isinstance(data, Batch):
             batch = data
+        else:
+            batch = Batch.from_data_list([data])
 
         # unpack tensors to pass into forward function
         x = self(batch.collect('x'),
@@ -125,8 +126,29 @@ class NuGraph2(LightningModule):
                  { p: batch[p].batch for p in self.planes })
 
         # append output tensors back onto input data object
-        for key, value in x.items():
-            data.set_value_dict(key, value)
+        if isinstance(data, Batch):
+            dlist = [ HeteroData() for i in range(data.num_graphs) ]
+            for attr, planes in x.items():
+                for p, t in planes.items():
+                    if t.size(0) == data[p].num_nodes:
+                        tlist = unbatch(t, data[p].batch)
+                    elif t.size(0) == data.num_graphs:
+                        tlist = unbatch(t, torch.arange(data.num_graphs))
+                    else:
+                        print(f'don\'t know how to unbatch attribute {attr}')
+                        exit()
+                    for it_d, it_t in zip(dlist, tlist):
+                        it_d[p][attr] = it_t
+            tmp = Batch.from_data_list(dlist)
+            data.update(tmp)
+            for attr, planes in x.items():
+                for p in planes:
+                    data._slice_dict[p][attr] = tmp._slice_dict[p][attr]
+                    data._inc_dict[p][attr] = tmp._inc_dict[p][attr]
+
+        else:
+            for key, value in x.items():
+                data.set_value_dict(key, value)
 
     def on_train_start(self):
         hpmetrics = { 'max_lr': self.hparams.lr }
