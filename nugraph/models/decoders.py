@@ -23,7 +23,7 @@ class DecoderBase(nn.Module, ABC):
                  classes: list[str],
                  loss_func: Callable,
                  weight: float,
-                 temperature: float):
+                 temperature: float = 0.):
         super().__init__()
         self.name = name
         self.planes = planes
@@ -45,13 +45,14 @@ class DecoderBase(nn.Module, ABC):
              confusion: bool = False):
         x, y = self.arrange(batch)
         metrics = self.metrics(x, y, stage)
-        loss = self.weight * (-1 * self.temp).exp() * self.loss_func(x, y)
+        w = self.weight * (-1 * self.temp).exp()
+        loss = w * self.loss_func(x, y) + self.temp
         metrics[f'loss_{self.name}/{stage}'] = loss
         if stage == 'train':
             metrics[f'temperature/{self.name}'] = self.temp
         for cm in self.confusion.values():
             cm.update(x, y)
-        return loss + self.temp, metrics
+        return loss, metrics
 
     def draw_confusion_matrix(self, cm: tm.ConfusionMatrix) -> plt.Figure:
         '''Produce confusion matrix at end of epoch'''
@@ -93,8 +94,7 @@ class SemanticDecoder(DecoderBase):
                          planes,
                          semantic_classes,
                          RecallLoss(),
-                         weight=2.,
-                         temperature=-1.)
+                         weight=2.)
 
         # torchmetrics arguments
         metric_args = {
@@ -143,8 +143,7 @@ class FilterDecoder(DecoderBase):
                          planes,
                          ('noise', 'signal'),
                          nn.BCELoss(),
-                         weight=2.,
-                         temperature=-1.)
+                         weight=2.)
 
         # torchmetrics arguments
         metric_args = {
@@ -195,8 +194,7 @@ class EventDecoder(DecoderBase):
                          planes,
                          event_classes,
                          RecallLoss(),
-                         weight=2.,
-                         temperature=-1.)
+                         weight=2.)
 
         # torchmetrics arguments
         metric_args = {
