@@ -14,9 +14,7 @@ from pytorch_lightning import LightningDataModule
 from ..data import H5Dataset
 from ..data import SampleSizes
 from ..util import PositionFeatures, FeatureNormMetric, FeatureNorm
-
 from ..data import BalanceSampler
-from ..data import SkewSampler
 
 class H5DataModule(LightningDataModule):
     """PyTorch Lightning data module for neutrino graph data."""
@@ -162,12 +160,6 @@ class H5DataModule(LightningDataModule):
                         sample_sizes=self.train_sample_sizes,
                         batch_size=self.batch_size, 
                         dset_frac=self.dset_frac)
-        elif self.shuffle_scheme == 'skew':
-            shuffle = False
-            sampler = SkewSampler.SkewSampler(
-                        data_source=self.train_dataset,
-                        sample_sizes=self.train_sample_sizes,
-                        batch_size=self.batch_size)
         else:
             shuffle = True
             sampler = None

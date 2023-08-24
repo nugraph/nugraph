@@ -142,20 +142,6 @@ class NuGraph2(LightningModule):
             self.log_dict(metrics, batch_size=batch.num_graphs)
         self.log('loss/train', total_loss, batch_size=batch.num_graphs, prog_bar=True)
 
-        # GPU memory metrics
-        if total_loss.get_device() >= 0:
-            def to_gb(val): return float(val) / float(1073741824)
-            available = to_gb(torch.cuda.get_device_properties(total_loss.device).total_memory)
-            reserved = to_gb(torch.cuda.memory_reserved(total_loss.device))
-            allocated = to_gb(torch.cuda.memory_allocated(total_loss.device))
-            self.log('gpu_memory/reserved', reserved,
-                     batch_size=batch.num_graphs, reduce_fx=torch.max)
-            self.log('gpu_memory/allocated', allocated,
-                     batch_size=batch.num_graphs, reduce_fx=torch.max)
-            self.log('gpu_memory/reserved_frac', reserved/available,
-                     batch_size=batch.num_graphs, reduce_fx=torch.max)
-            print('Reserved GPU mem: ', reserved)
-            print('Allocated GPU mem: ',allocated)
         return total_loss
 
     def validation_step(self,
