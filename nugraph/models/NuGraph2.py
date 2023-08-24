@@ -135,8 +135,7 @@ class NuGraph2(LightningModule):
                     elif t.size(0) == data.num_graphs:
                         tlist = unbatch(t, torch.arange(data.num_graphs))
                     else:
-                        print(f'don\'t know how to unbatch attribute {attr}')
-                        exit()
+                        raise Exception(f'don\'t know how to unbatch attribute {attr}')
                     for it_d, it_t in zip(dlist, tlist):
                         it_d[p][attr] = it_t
             tmp = Batch.from_data_list(dlist)
