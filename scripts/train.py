@@ -33,10 +33,6 @@ def configure():
                         help='Checkpoint file to resume training from')
     parser.add_argument('--profiler', type=str, default=None,
                         help='Enable requested profiler')
-    parser.add_argument('--shuffle_scheme', type=str, default='random',
-                       help='Dataset shuffling scheme to use')
-    parser.add_argument('--dset_frac', type=float, default=0.1,
-                       help='Fraction of dataset to use for workload balancing')
     parser = Data.add_data_args(parser)
     parser = Model.add_model_args(parser)
     parser = Model.add_train_args(parser)
@@ -47,8 +43,7 @@ def train(args):
     torch.manual_seed(1)
 
     # Load dataset
-    nudata = Data(args.data_path, batch_size=args.batch_size, 
-                  shuffle_scheme=args.shuffle_scheme, dset_frac=args.dset_frac)
+    nudata = Data(args.data_path, batch_size=args.batch_size)
 
     if args.name is not None and args.logdir is not None and args.resume is None:
         model = Model(in_features=4,
