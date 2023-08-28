@@ -69,7 +69,6 @@ class H5DataModule(LightningDataModule):
                 print('Sample sizes not found in file! Call "generate_samples" to create them.')
                 sys.exit()
 
-
             # load feature normalisations
             try:
                 norm = {}
@@ -93,12 +92,11 @@ class H5DataModule(LightningDataModule):
     @staticmethod
     def generate_samples(data_path: str):
         with h5py.File(data_path, 'r+') as f:
-            
             samples = list(f['dataset'].keys())
             split = int(0.05 * len(samples))
             splits = [ len(samples)-(2*split), split, split ]
             train, val, test = random_split(samples, splits)
-            
+
             for key in [ 'train', 'validation', 'test' ]:
                 name = f'samples/{key}'
                 if f.get(f'samples/{key}') is not None:

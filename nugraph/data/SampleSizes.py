@@ -9,7 +9,7 @@ class SampleSizes():
         self.f = f
         self.samples = samples
         self.sample_sizes = self.generate_sample_sizes()
-    
+
     def calc_sample_size(self, sample, dataset_names):
         sample_size = 0
         for dataset in dataset_names:
@@ -48,5 +48,3 @@ class SampleSizes():
             sample_size = self.calc_sample_size(processed_sample, dataset_names)
             sample_sizes.append(sample_size)
         return sample_sizes
-
-
