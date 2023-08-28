@@ -17,10 +17,7 @@ class SampleSizes():
             if "_" in store: store = tuple(store.split("_"))
             temp = sample[store][attr]
             temp_size = temp.nelement() * temp.element_size()
-            #print('Number of elements: ', temp.nelement(),
-            #      'Element size: ', temp.element_size())
             sample_size += temp_size
-        #print('Sample size: ', sample_size)
         return sample_size
 
     def load_heterodata(self, f, name: str) -> HeteroData:
