@@ -144,7 +144,6 @@ class H5DataModule(LightningDataModule):
         if self.shuffle == 'balance':
             shuffle = False
             sampler = BalanceSampler.BalanceSampler(
-                        data_source=self.train_dataset,
                         datasize=self.train_datasize,
                         batch_size=self.batch_size, 
                         balance_frac=self.balance_frac)
