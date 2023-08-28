@@ -11,7 +11,7 @@ from torch_geometric.loader import DataLoader
 from torch_geometric.transforms import Compose
 from pytorch_lightning import LightningDataModule
 
-from ..data import H5Dataset, BalanceSampler, SampleSizes
+from ..data import H5Dataset, BalanceSampler
 from ..util import PositionFeatures, FeatureNormMetric, FeatureNorm
 
 class H5DataModule(LightningDataModule):
@@ -93,14 +93,26 @@ class H5DataModule(LightningDataModule):
                 name = f'samples/{key}'
                 if f.get(f'samples/{key}') is not None:
                     del f[f'samples/{key}']
-
             f['samples/train'] = list(train)
             f['samples/validation'] = list(val)
             f['samples/test'] = list(test)
 
+            try:
+                planes = f['planes'].asstr()[()].tolist()
+            except:
+                print('Metadata not found in file! "planes" is required.')
+                sys.exit()
+            transform = PositionFeatures(planes)
+            dataset = H5Dataset(data_path, train, transform)
+            def datasize(data):
+                ret = 0
+                for store in data.stores:
+                    for val in store.values():
+                        ret += val.element_size() * val.nelement()
+                return ret
             if 'datasize/train' in f:
                 del f['datasize/train']
-            f['datasize/train'] = SampleSizes(f, list(train)).sample_sizes
+            f['datasize/train'] = [ datasize(data) for data in tqdm.tqdm(dataset) ]
             
     @staticmethod
     def generate_norm(data_path: str, batch_size: int):
