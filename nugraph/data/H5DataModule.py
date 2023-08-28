@@ -89,10 +89,10 @@ class H5DataModule(LightningDataModule):
             splits = [ len(samples)-(2*split), split, split ]
             train, val, test = random_split(samples, splits)
 
-            for key in [ 'train', 'validation', 'test' ]:
-                name = f'samples/{key}'
-                if f.get(f'samples/{key}') is not None:
-                    del f[f'samples/{key}']
+            for name in [ 'train', 'validation', 'test' ]:
+                key = f'samples/{name}'
+                if key in f:
+                    del f[key]
             f['samples/train'] = list(train)
             f['samples/validation'] = list(val)
             f['samples/test'] = list(test)
@@ -138,7 +138,10 @@ class H5DataModule(LightningDataModule):
                         metrics = { p: FeatureNormMetric(num_feats) for p in planes }
                     metrics[p].update(batch[p].x)
             for p in planes:
-                f[f'norm/{p}'] = metrics[p].compute()
+                key = f'norm/{p}'
+                if key in f:
+                    del f[key]
+                f[key] = metrics[p].compute()
 
     def train_dataloader(self) -> DataLoader:
         if self.shuffle == 'balance':
