@@ -61,7 +61,7 @@ class H5DataModule(LightningDataModule):
                 print('Sample splits not found in file! Call "generate_samples" to create them.')
                 sys.exit()
 
-            # load sample sizes
+            # load data sizes
             try:
                 self.train_datasize = f['datasize/train'][()]
             except:
