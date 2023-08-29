@@ -12,7 +12,7 @@ class BalanceSampler(Sampler):
         # Retrieve dataset size
         dset_len = len(self.datasize)
         # Calculate number of batches in dataset
-        num_batches = np.floor(dset_len / self.batch_size)
+        num_batches = int(np.floor(dset_len / self.batch_size))
 
         # Assign N as a fraction of the dataset length
         num_outliers = int(np.floor(dset_len * self.balance_frac))
