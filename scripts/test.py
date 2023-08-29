@@ -1,9 +1,8 @@
 #!/usr/bin/env python
-
-import sys
 import os
 import time
 import argparse
+import pandas as pd
 import pytorch_lightning as pl
 import nugraph as ng
 import pynuml
@@ -13,7 +12,7 @@ Data = ng.data.H5DataModule
 Model = ng.models.NuGraph2
 
 def configure():
-    parser = argparse.ArgumentParser(sys.argv[0])
+    parser = argparse.ArgumentParser()
     parser.add_argument('--checkpoint', type=str, required=True,
                         help='Checkpoint file for trained model')
     parser.add_argument('--outfile', type=str, required=True,
@@ -46,10 +45,12 @@ def test(args):
     ngraphs = len(nudata.test_dataset)
     print(f'inference for {ngraphs} events is {itime} s (that\'s {itime/ngraphs} s/graph')
 
+    df = []
     for ib, batch in enumerate(tqdm.tqdm(out)):
         for data in batch.to_data_list():
-            df = plot.to_dataframe(data)
-            df.to_hdf(args.outfile, 'hits', append=True, format='table')
+            df.append(plot.to_dataframe(data))
+    df = pd.concat(df)
+    df.to_hdf(args.outfile, 'hits', format='table')
 
 if __name__ == '__main__':
     args = configure()
