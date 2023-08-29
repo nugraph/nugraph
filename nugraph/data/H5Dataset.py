@@ -14,12 +14,9 @@ class H5Dataset(Dataset):
         super().__init__(transform=transform)
         self._interface = io.H5Interface(h5py.File(filename))
         self._samples = samples
-        print('WARNING: temporary hack fix for 3D vertex in DataLoader. this must be fixed in pynuml before merging')
 
     def len(self) -> int:
         return len(self._samples)
 
     def get(self, idx: int) -> 'pyg.data.HeteroData':
-        data = self._interface.load_heterodata(self._samples[idx])
-        data['evt'].y_vtx.unsqueeze_(0)
-        return data
+        return self._interface.load_heterodata(self._samples[idx])
