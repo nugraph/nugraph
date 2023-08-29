@@ -34,20 +34,21 @@ class BalanceSampler(Sampler):
         np.random.shuffle(sample_indices)
 
         # Create as many bins as the number of batches
-        bins = []
-        for i in range(num_batches):
-            bins.append([])
+        bins = [ [] for i in range(num_batches) ]
 
         # Distribute the n-largest sample indices to each bin
         for i, sample_index in enumerate(n_largest_indices):
-            bin_index = i % self.batch_size
-            bins[bin_index].append(sample_index)
+            idx = i % num_batches
+            bins[idx].append(sample_index)
 
         # Distribute the remaining samples to each bin
-        #sample_indices = list(reversed(sample_indices))
+        offset = idx + 1
         for i, sample_index in enumerate(sample_indices):
-            bin_index = i % self.batch_size
-            bins[bin_index].append(sample_index)
+            idx = (i + offset) % num_batches
+            # drop last batch
+            if len(bins[idx]) == self.batch_size:
+                break
+            bins[idx].append(sample_index)
 
         # Shuffle each bin and append to indices array
         indices = []
