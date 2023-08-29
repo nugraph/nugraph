@@ -140,6 +140,7 @@ class NuGraph2(LightningModule):
     def on_train_start(self):
         hpmetrics = { 'max_lr': self.hparams.lr }
         self.logger.log_hyperparams(self.hparams, metrics=hpmetrics)
+        self.max_mem = 0.
 
         scalars = {
             'loss': {'loss': [ 'Multiline', [ 'loss/train', 'loss/val' ]]},
@@ -164,9 +165,10 @@ class NuGraph2(LightningModule):
         self.log('loss/train', total_loss, batch_size=batch.num_graphs, prog_bar=True)
         # GPU memory metric
         if self.device != 'cpu':
-            allocated = torch.cuda.memory_allocated(self.device)
-            allocated = float(allocated) / float(1073741824)
-            self.log('gpu_memory/allocated', allocated,
+            mem = torch.cuda.memory_reserved(self.device)
+            mem = float(mem) / float(1073741824)
+            self.max_mem = max(self.max_mem, mem)
+            self.log('gpu_memory/reserved', self.max_mem,
                      batch_size=batch.num_graphs, reduce_fx=torch.max)
         return total_loss
 
