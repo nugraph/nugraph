@@ -1,40 +1,26 @@
-import torch
-from torch.utils.data.sampler import Sampler
-import random
-import numpy as np
 import sys
-import math
-import heapq
-from random import randrange
-np.set_printoptions(threshold=sys.maxsize)
+import numpy as np
+from torch.utils.data.sampler import Sampler
 
 class BalanceSampler(Sampler):
-    def __init__(self, data_source, sample_sizes, batch_size, dset_frac):
-        self.data_source = data_source
-        self.sample_sizes = list(sample_sizes)
+    def __init__(self, datasize, batch_size, balance_frac):
+        self.datasize = list(datasize)
         self.batch_size = batch_size
-        self.dset_frac = dset_frac
+        self.balance_frac = balance_frac
 
     def __iter__(self):
         # Retrieve dataset size
-        dset_len = len(self.data_source)
+        dset_len = len(self.datasize)
         # Calculate number of batches in dataset
-        num_batches = math.floor(dset_len / self.batch_size)
+        num_batches = int(np.floor(dset_len / self.batch_size))
 
         # Assign N as a fraction of the dataset length
-        num_outliers = int(math.floor(dset_len * self.dset_frac))
+        num_outliers = int(np.floor(dset_len * self.balance_frac))
         if num_outliers > dset_len:
             print('Number of outliers is greater than dataset size')
             sys.exit()
 
-        # Find the largest N values where N = num_outliers
-        n_largest = heapq.nlargest(num_outliers, self.sample_sizes)
-
-        sample_indices = []
-        sorted_sample_sizes = sorted(self.sample_sizes)
-        for size in sorted_sample_sizes:
-            index = self.sample_sizes.index(size)
-            sample_indices.append(index)
+        sample_indices = np.argsort(self.datasize)
 
         # Separate the indices of the samples with the largest sizes
         if num_outliers == 0:
@@ -48,20 +34,21 @@ class BalanceSampler(Sampler):
         np.random.shuffle(sample_indices)
 
         # Create as many bins as the number of batches
-        bins = []
-        for i in range(num_batches):
-            bins.append([])
+        bins = [ [] for i in range(num_batches) ]
 
         # Distribute the n-largest sample indices to each bin
         for i, sample_index in enumerate(n_largest_indices):
-            bin_index = i % self.batch_size
-            bins[bin_index].append(sample_index)
+            idx = i % num_batches
+            bins[idx].append(sample_index)
 
         # Distribute the remaining samples to each bin
-        #sample_indices = list(reversed(sample_indices))
+        offset = idx + 1
         for i, sample_index in enumerate(sample_indices):
-            bin_index = i % self.batch_size
-            bins[bin_index].append(sample_index)
+            idx = (i + offset) % num_batches
+            # drop last batch
+            if len(bins[idx]) == self.batch_size:
+                break
+            bins[idx].append(sample_index)
 
         # Shuffle each bin and append to indices array
         indices = []
@@ -72,4 +59,4 @@ class BalanceSampler(Sampler):
         return iter(indices)
 
     def __len__(self):
-        return len(self.data_source)
+        return len(self.datasize)

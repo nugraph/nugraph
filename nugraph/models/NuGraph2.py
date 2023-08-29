@@ -141,7 +141,12 @@ class NuGraph2(LightningModule):
             total_loss += loss
             self.log_dict(metrics, batch_size=batch.num_graphs)
         self.log('loss/train', total_loss, batch_size=batch.num_graphs, prog_bar=True)
-
+        # GPU memory metric
+        if self.device != 'cpu':
+            allocated = torch.cuda.memory_allocated(self.device)
+            allocated = float(allocated) / float(1073741824)
+            self.log('gpu_memory/allocated', allocated,
+                     batch_size=batch.num_graphs, reduce_fx=torch.max)
         return total_loss
 
     def validation_step(self,
