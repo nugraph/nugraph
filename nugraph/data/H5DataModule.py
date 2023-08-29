@@ -30,6 +30,9 @@ class H5DataModule(LightningDataModule):
 
         self.filename = data_path
         self.batch_size = batch_size
+        if shuffle != 'random' and shuffle != 'balance':
+            print('shuffle argument must be "random" or "balance".')
+            sys.exit()
         self.shuffle = shuffle
         self.balance_frac = balance_frac
 
