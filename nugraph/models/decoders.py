@@ -13,7 +13,7 @@ import seaborn as sn
 import math
 
 from .linear import ClassLinear
-from ..util import FocalLoss, RecallLoss, LogCoshLoss
+from ..util import RecallLoss, LogCoshLoss
 
 class DecoderBase(nn.Module, ABC):
     '''Base class for all NuGraph decoders'''
