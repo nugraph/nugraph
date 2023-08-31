@@ -6,6 +6,8 @@ from torch import Tensor, cat, empty
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import OneCycleLR
 from pytorch_lightning import LightningModule
+from torch_geometric.data import Batch, HeteroData
+from torch_geometric.utils import unbatch
 
 from .encoder import Encoder
 from .plane import PlaneNet
@@ -99,7 +101,8 @@ class NuGraph2(LightningModule):
         for _ in range(self.num_iters):
             # shortcut connect features
             for i, p in enumerate(self.planes):
-                m[p] = cat((m[p], x[p].detach().unsqueeze(1).expand(-1, m[p].size(1), -1)), dim=-1)
+                s = x[p].detach().unsqueeze(1).expand(-1, m[p].size(1), -1)
+                m[p] = torch.cat((m[p], s), dim=-1)
             self.plane_net(m, edge_index_plane)
             self.nexus_net(m, edge_index_nexus, nexus)
         ret = {}
@@ -107,14 +110,44 @@ class NuGraph2(LightningModule):
             ret.update(decoder(m, batch))
         return ret
 
-    def step(self, batch):
+    def step(self, data: HeteroData | Batch):
+
+        # if it's a single data instance, convert to batch manually
+        if isinstance(data, Batch):
+            batch = data
+        else:
+            batch = Batch.from_data_list([data])
+
+        # unpack tensors to pass into forward function
         x = self(batch.collect('x'),
                  { p: batch[p, 'plane', p].edge_index for p in self.planes },
                  { p: batch[p, 'nexus', 'sp'].edge_index for p in self.planes },
-                 empty(batch['sp'].num_nodes, 0),
+                 torch.empty(batch['sp'].num_nodes, 0),
                  { p: batch[p].batch for p in self.planes })
-        for key, value in x.items():
-            batch.set_value_dict(key, value)
+
+        # append output tensors back onto input data object
+        if isinstance(data, Batch):
+            dlist = [ HeteroData() for i in range(data.num_graphs) ]
+            for attr, planes in x.items():
+                for p, t in planes.items():
+                    if t.size(0) == data[p].num_nodes:
+                        tlist = unbatch(t, data[p].batch)
+                    elif t.size(0) == data.num_graphs:
+                        tlist = unbatch(t, torch.arange(data.num_graphs))
+                    else:
+                        raise Exception(f'don\'t know how to unbatch attribute {attr}')
+                    for it_d, it_t in zip(dlist, tlist):
+                        it_d[p][attr] = it_t
+            tmp = Batch.from_data_list(dlist)
+            data.update(tmp)
+            for attr, planes in x.items():
+                for p in planes:
+                    data._slice_dict[p][attr] = tmp._slice_dict[p][attr]
+                    data._inc_dict[p][attr] = tmp._inc_dict[p][attr]
+
+        else:
+            for key, value in x.items():
+                data.set_value_dict(key, value)
 
     def on_train_start(self):
         hpmetrics = { 'max_lr': self.hparams.lr }
@@ -175,6 +208,12 @@ class NuGraph2(LightningModule):
             total_loss += loss
             self.log_dict(metrics, batch_size=batch.num_graphs)
         self.log('loss/test', total_loss, batch_size=batch.num_graphs)
+
+    def predict_step(self,
+                     batch: Batch,
+                     batch_idx: int = 0) -> Batch:
+        self.step(batch)
+        return batch
 
     def on_test_epoch_end(self) -> None:
         epoch = self.trainer.current_epoch + 1
