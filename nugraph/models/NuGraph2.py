@@ -12,7 +12,7 @@ from torch_geometric.utils import unbatch
 from .encoder import Encoder
 from .plane import PlaneNet
 from .nexus import NexusNet
-from .decoders import SemanticDecoder, FilterDecoder, EventDecoder
+from .decoders import SemanticDecoder, FilterDecoder, EventDecoder, VertexDecoder
 
 class NuGraph2(LightningModule):
     """PyTorch Lightning module for model training.
@@ -24,6 +24,7 @@ class NuGraph2(LightningModule):
                  node_features: int = 8,
                  edge_features: int = 8,
                  sp_features: int = 8,
+                 vertex_features: int = 32,
                  planes: list[str] = ['u','v','y'],
                  semantic_classes: list[str] = ['MIP','HIP','shower','michel','diffuse'],
                  event_classes: list[str] = ['numu','nue','nc'],
@@ -31,6 +32,7 @@ class NuGraph2(LightningModule):
                  event_head: bool = True,
                  semantic_head: bool = True,
                  filter_head: bool = False,
+                 vertex_head: bool = False,
                  checkpoint: bool = False,
                  lr: float = 0.001):
         super().__init__()
@@ -87,6 +89,14 @@ class NuGraph2(LightningModule):
                 planes,
                 semantic_classes)
             self.decoders.append(self.filter_decoder)
+            
+        if vertex_head:
+            self.vertex_decoder = VertexDecoder(
+                node_features,
+                vertex_features,
+                planes,
+                semantic_classes)
+            self.decoders.append(self.vertex_decoder)
 
         if len(self.decoders) == 0:
             raise Exception('At least one decoder head must be enabled!')
@@ -152,6 +162,7 @@ class NuGraph2(LightningModule):
     def on_train_start(self):
         hpmetrics = { 'max_lr': self.hparams.lr }
         self.logger.log_hyperparams(self.hparams, metrics=hpmetrics)
+        self.max_mem = 0.
 
         scalars = {
             'loss': {'loss': [ 'Multiline', [ 'loss/train', 'loss/val' ]]},
@@ -176,9 +187,10 @@ class NuGraph2(LightningModule):
         self.log('loss/train', total_loss, batch_size=batch.num_graphs, prog_bar=True)
         # GPU memory metric
         if self.device != 'cpu':
-            allocated = torch.cuda.memory_allocated(self.device)
-            allocated = float(allocated) / float(1073741824)
-            self.log('gpu_memory/allocated', allocated,
+            mem = torch.cuda.memory_reserved(self.device)
+            mem = float(mem) / float(1073741824)
+            self.max_mem = max(self.max_mem, mem)
+            self.log('gpu_memory/reserved', self.max_mem,
                      batch_size=batch.num_graphs, reduce_fx=torch.max)
         return total_loss
 
@@ -239,12 +251,16 @@ class NuGraph2(LightningModule):
                            help='Hidden dimensionality of edge convolutions')
         model.add_argument('--sp-feats', type=int, default=16,
                            help='Hidden dimensionality of spacepoint convolutions')
+        model.add_argument('--vertex-feats', type=int, default=32,
+                           help='Hidden dimensionality of vertex decoder')
         model.add_argument('--event', action='store_true', default=False,
                            help='Enable event classification head')
         model.add_argument('--semantic', action='store_true', default=False,
                            help='Enable semantic segmentation head')
         model.add_argument('--filter', action='store_true', default=False,
                            help='Enable background filter head')
+        model.add_argument('--vertex', action='store_true', default=False,
+                           help='Enable vertex regression head')
         return parser
 
     @staticmethod

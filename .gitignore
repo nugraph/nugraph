@@ -161,7 +161,10 @@ cython_debug/
 
 logs
 
-# image outputs
+# image extensions
 *.html
 *.png
 *.pdf
+
+# checkpoint files
+*.ckpt
