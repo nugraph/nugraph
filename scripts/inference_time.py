@@ -18,8 +18,6 @@ Model = ng.models.NuGraph2
 
 def configure():
     parser = argparse.ArgumentParser(sys.argv[0])
-    parser.add_argument('--device', type=int, required=True,
-                        help='GPU to run inference with')
     parser.add_argument('--checkpoint', type=str, required=True,
                         help='Checkpoint file to resume training from')
     parser.add_argument('--use-existing', default=False, action='store_true',
@@ -42,7 +40,7 @@ def plot(args):
 
     if args.benchmark_cpu:
         nudata = Data(args.data_path, 1)
-        trainer = pl.Trainer(accelerator='cpu')
+        trainer = pl.Trainer(accelerator='cpu', logger=False)
         t0 = time.time()
         trainer.test(model, datamodule=nudata)
         print('inference on CPU takes', (time.time()-t0)/len(nudata.test_dataset), 's/evt')
@@ -56,7 +54,7 @@ def plot(args):
             nudata = Data(args.data_path, batch_size)
             accelerator, devices = ng.util.configure_device()
             trainer = pl.Trainer(accelerator=accelerator,
-                                 devices=devices, logger=None)
+                                 devices=devices, logger=False)
             t0 = time.time()
             trainer.test(model, datamodule=nudata)
             y.append((time.time()-t0)/len(nudata.test_dataset))
