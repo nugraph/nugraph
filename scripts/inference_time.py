@@ -40,7 +40,7 @@ def plot(args):
 
     if args.benchmark_cpu:
         nudata = Data(args.data_path, 1)
-        trainer = pl.Trainer(accelerator='cpu')
+        trainer = pl.Trainer(accelerator='cpu', logger=False)
         t0 = time.time()
         trainer.test(model, datamodule=nudata)
         print('inference on CPU takes', (time.time()-t0)/len(nudata.test_dataset), 's/evt')
