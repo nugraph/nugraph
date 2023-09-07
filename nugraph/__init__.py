@@ -1,5 +1,5 @@
 """NuGraph2: A Graph Neural Network for neutrino physics event reconstruction"""
-__version__ = "23.7.dev"
+__version__ = "23.9.0"
 
 from . import data
 from . import models
