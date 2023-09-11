@@ -89,6 +89,7 @@ def train(args):
                          callbacks=callbacks, plugins=plugins)
 
     trainer.fit(model, datamodule=nudata, ckpt_path=args.resume)
+    trainer.test(datamodule=nudata)
 
 if __name__ == '__main__':
     args = configure()
