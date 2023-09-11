@@ -221,16 +221,16 @@ class NuGraph2(LightningModule):
             self.log_dict(metrics, batch_size=batch.num_graphs)
         self.log('loss/test', total_loss, batch_size=batch.num_graphs)
 
+    def on_test_epoch_end(self) -> None:
+        epoch = self.trainer.current_epoch + 1
+        for decoder in self.decoders:
+            decoder.on_epoch_end(self.logger, 'test', epoch)
+
     def predict_step(self,
                      batch: Batch,
                      batch_idx: int = 0) -> Batch:
         self.step(batch)
         return batch
-
-    def on_test_epoch_end(self) -> None:
-        epoch = self.trainer.current_epoch + 1
-        for decoder in self.decoders:
-            decoder.on_epoch_end(self.logger, 'val', epoch)
 
     def configure_optimizers(self) -> tuple:
         optimizer = AdamW(self.parameters(),
