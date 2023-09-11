@@ -230,7 +230,7 @@ class NuGraph2(LightningModule):
     def on_test_epoch_end(self) -> None:
         epoch = self.trainer.current_epoch + 1
         for decoder in self.decoders:
-            decoder.on_epoch_end(self.logger, 'val', epoch)
+            decoder.on_epoch_end(self.logger, 'test', epoch)
 
     def configure_optimizers(self) -> tuple:
         optimizer = AdamW(self.parameters(),
