@@ -188,6 +188,7 @@ class NuGraph2(LightningModule):
             self.log_dict(metrics, batch_size=batch.num_graphs)
         self.log('loss/train', total_loss, batch_size=batch.num_graphs, prog_bar=True)
         self.log_memory(batch, 'train')
+        return total_loss
 
     def validation_step(self,
                         batch,
