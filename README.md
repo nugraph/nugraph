@@ -10,7 +10,7 @@ Once dependencies are installed, you can simply clone this repository and instal
 
 ```
 git clone git@github.com:exatrkx/NuGraph
-pip install -e ./NuGraph
+pip install --no-deps -e ./NuGraph
 ```
 
 ## Training a model
