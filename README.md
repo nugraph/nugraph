@@ -21,21 +21,32 @@ You can train the model using a processed graph dataset as input by executing th
 scripts/train.py --help
 ```
 
-As an example, to train the network for semantic segmentation on the Wilson cluster at Fermilab one might run
+As an example, to train the network for semantic segmentation on the Heimdall cluster, one might run
 
 ```
-scripts/train.py --data-path /wclustre/fwk/exatrkx/data/uboone/CHEP2023/enhanced-vertex.gnn.h5 \
-                 --semantic --logdir /work1/fwk/$USER/logs --name semantic \
+scripts/train.py --data-path /raid/uboone/CHEP2023/CHEP2023.gnn.h5 \
+                 --logdir /raid/$USER/logs --name default --version semantic-filter \
+                 --semantic --filter
 ```
 
-This command would start a network training using the requested input dataset, training with the semantic head enabled, and writing network parameters and metrics to a subdirectory inside `/work1/fwk/$USER/logs/semantic`.
+This command would start a network training using the requested input dataset, training with the semantic head enabled, and writing network parameters and metrics to the directory `/raid/$USER/logs/default/semantic-filter`.
+
+### Training on SLURM clusters
+
+If you're working on a cluster that uses the SLURM batch submission system, such as the Wilson cluster at Fermilab, then you'll need to submit training via a batch script instead. An example batch script `train_batch.sh` is included in the `scripts` subdirectory. If you're training on the Wilson cluster, you can submit a training job by running
+```
+sbatch scripts/train_batch.sh <args>
+```
+where `<args>` are the same argument you'd pass if you were executing the training script locally.
+
+If you're training on a SLURM environment other than the Wilson cluster, you'll need to edit the SLURM directives in the script appropriately for the cluster you're working on before submitting.
 
 ### Metric logging
 
-In the above example, training outputs including logging metrics would be written to a subdirectory of `/work1/fwk/$USER/logs`. We can use the Tensorboard interface to visualise these metrics and track the network's training progress. You can start Tensorboard using the following command:
+In the above example, training outputs including logging metrics would be written to a subdirectory of `/raid/$USER/logs`. We can use the Tensorboard interface to visualise these metrics and track the network's training progress. You can start Tensorboard using the following command:
 
 ```
-tensorboard --port XXXX --bind_all --logdir /work1/fwk/$USER/logs --samples_per_plugin 'images=200'
+tensorboard --port XXXX --bind_all --logdir /raid/$USER/logs --samples_per_plugin 'images=200'
 ```
 
 In the above example, you should replace `XXXX` with a unique port number of your choosing. Provided you're forwarding that port when working over SSH, you can then access the interface in a local browser at `localhost:XXXX`.
