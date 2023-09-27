@@ -23,7 +23,6 @@ class NuGraph2(LightningModule):
     def __init__(self,
                  in_features: int = 4,
                  node_features: int = 8,
-                 edge_features: int = 8,
                  sp_features: int = 8,
                  vertex_features: int = 32,
                  planes: list[str] = ['u','v','y'],
@@ -55,13 +54,11 @@ class NuGraph2(LightningModule):
 
         self.plane_net = PlaneNet(in_features,
                                   node_features,
-                                  edge_features,
                                   len(semantic_classes),
                                   planes,
                                   checkpoint=checkpoint)
 
         self.nexus_net = NexusNet(node_features,
-                                  edge_features,
                                   sp_features,
                                   len(semantic_classes),
                                   planes,
@@ -263,8 +260,6 @@ class NuGraph2(LightningModule):
         model = parser.add_argument_group('model', 'NuGraph2 model configuration')
         model.add_argument('--node-feats', type=int, default=64,
                            help='Hidden dimensionality of 2D node convolutions')
-        model.add_argument('--edge-feats', type=int, default=16,
-                           help='Hidden dimensionality of edge convolutions')
         model.add_argument('--sp-feats', type=int, default=16,
                            help='Hidden dimensionality of spacepoint convolutions')
         model.add_argument('--vertex-feats', type=int, default=32,

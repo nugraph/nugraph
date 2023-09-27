@@ -11,7 +11,6 @@ from .linear import ClassLinear
 class NexusDown(MessagePassing):
     def __init__(self,
                  node_features: int,
-                 edge_features: int,
                  sp_features: int,
                  num_classes: int,
                  aggr: str = 'mean'):
@@ -19,11 +18,10 @@ class NexusDown(MessagePassing):
 
         self.edge_net = nn.Sequential(
             ClassLinear(node_features+sp_features,
-                        edge_features,
+                        1,
                         num_classes),
-            nn.Tanh(),
-            ClassLinear(edge_features, 1, num_classes),
             nn.Softmax(dim=1))
+
         self.node_net = nn.Sequential(
             ClassLinear(node_features+sp_features,
                         node_features,
@@ -47,7 +45,6 @@ class NexusNet(nn.Module):
     '''Module to project to nexus space and mix detector planes'''
     def __init__(self,
                  node_features: int,
-                 edge_features: int,
                  sp_features: int,
                  num_classes: int,
                  planes: list[str],
@@ -72,7 +69,6 @@ class NexusNet(nn.Module):
         self.nexus_down = nn.ModuleDict()
         for p in planes:
             self.nexus_down[p] = NexusDown(node_features,
-                                           edge_features,
                                            sp_features,
                                            num_classes,
                                            aggr)
