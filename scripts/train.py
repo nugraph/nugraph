@@ -42,8 +42,8 @@ def train(args):
 
     if args.name is not None and args.logdir is not None and args.resume is None:
         model = Model(in_features=4,
-                      node_features=args.node_feats,
-                      sp_features=args.sp_feats,
+                      planar_features=args.planar_feats,
+                      nexus_features=args.nexus_feats,
                       vertex_features=args.vertex_feats,
                       planes=nudata.planes,
                       semantic_classes=nudata.semantic_classes,

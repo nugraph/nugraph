@@ -22,8 +22,8 @@ class NuGraph2(LightningModule):
     inference, and compute training metrics."""
     def __init__(self,
                  in_features: int = 4,
-                 node_features: int = 8,
-                 sp_features: int = 8,
+                 planar_features: int = 8,
+                 nexus_features: int = 8,
                  vertex_features: int = 32,
                  planes: list[str] = ['u','v','y'],
                  semantic_classes: list[str] = ['MIP','HIP','shower','michel','diffuse'],
@@ -48,18 +48,18 @@ class NuGraph2(LightningModule):
         self.lr = lr
 
         self.encoder = Encoder(in_features,
-                               node_features,
+                               planar_features,
                                planes,
                                semantic_classes)
 
         self.plane_net = PlaneNet(in_features,
-                                  node_features,
+                                  planar_features,
                                   len(semantic_classes),
                                   planes,
                                   checkpoint=checkpoint)
 
-        self.nexus_net = NexusNet(node_features,
-                                  sp_features,
+        self.nexus_net = NexusNet(planar_features,
+                                  nexus_features,
                                   len(semantic_classes),
                                   planes,
                                   checkpoint=checkpoint)
@@ -68,7 +68,7 @@ class NuGraph2(LightningModule):
 
         if event_head:
             self.event_decoder = EventDecoder(
-                node_features,
+                planar_features,
                 planes,
                 semantic_classes,
                 event_classes)
@@ -76,21 +76,21 @@ class NuGraph2(LightningModule):
 
         if semantic_head:
             self.semantic_decoder = SemanticDecoder(
-                node_features,
+                planar_features,
                 planes,
                 semantic_classes)
             self.decoders.append(self.semantic_decoder)
 
         if filter_head:
             self.filter_decoder = FilterDecoder(
-                node_features,
+                planar_features,
                 planes,
                 semantic_classes)
             self.decoders.append(self.filter_decoder)
             
         if vertex_head:
             self.vertex_decoder = VertexDecoder(
-                node_features,
+                planar_features,
                 vertex_features,
                 planes,
                 semantic_classes)
@@ -258,10 +258,10 @@ class NuGraph2(LightningModule):
     def add_model_args(parser: ArgumentParser) -> ArgumentParser:
         '''Add argparse argpuments for model structure'''
         model = parser.add_argument_group('model', 'NuGraph2 model configuration')
-        model.add_argument('--node-feats', type=int, default=64,
-                           help='Hidden dimensionality of 2D node convolutions')
-        model.add_argument('--sp-feats', type=int, default=16,
-                           help='Hidden dimensionality of spacepoint convolutions')
+        model.add_argument('--planar-feats', type=int, default=64,
+                           help='Hidden dimensionality of planar convolutions')
+        model.add_argument('--nexus-feats', type=int, default=16,
+                           help='Hidden dimensionality of nexus convolutions')
         model.add_argument('--vertex-feats', type=int, default=32,
                            help='Hidden dimensionality of vertex decoder')
         model.add_argument('--event', action='store_true', default=False,
