@@ -10,27 +10,25 @@ from .linear import ClassLinear
 
 class NexusDown(MessagePassing):
     def __init__(self,
-                 node_features: int,
-                 edge_features: int,
-                 sp_features: int,
+                 planar_features: int,
+                 nexus_features: int,
                  num_classes: int,
                  aggr: str = 'mean'):
         super().__init__(node_dim=0, aggr=aggr, flow='target_to_source')
 
         self.edge_net = nn.Sequential(
-            ClassLinear(node_features+sp_features,
-                        edge_features,
+            ClassLinear(planar_features+nexus_features,
+                        1,
                         num_classes),
-            nn.Tanh(),
-            ClassLinear(edge_features, 1, num_classes),
             nn.Softmax(dim=1))
+
         self.node_net = nn.Sequential(
-            ClassLinear(node_features+sp_features,
-                        node_features,
+            ClassLinear(planar_features+nexus_features,
+                        planar_features,
                         num_classes),
             nn.Tanh(),
-            ClassLinear(node_features,
-                        node_features,
+            ClassLinear(planar_features,
+                        planar_features,
                         num_classes),
             nn.Tanh())
 
@@ -46,9 +44,8 @@ class NexusDown(MessagePassing):
 class NexusNet(nn.Module):
     '''Module to project to nexus space and mix detector planes'''
     def __init__(self,
-                 node_features: int,
-                 edge_features: int,
-                 sp_features: int,
+                 planar_features: int,
+                 nexus_features: int,
                  num_classes: int,
                  planes: list[str],
                  aggr: str = 'mean',
@@ -60,20 +57,19 @@ class NexusNet(nn.Module):
         self.nexus_up = SimpleConv(node_dim=0)
 
         self.nexus_net = nn.Sequential(
-            ClassLinear(len(planes)*node_features,
-                        sp_features,
+            ClassLinear(len(planes)*planar_features,
+                        nexus_features,
                         num_classes),
             nn.Tanh(),
-            ClassLinear(sp_features,
-                        sp_features,
+            ClassLinear(nexus_features,
+                        nexus_features,
                         num_classes),
             nn.Tanh())
 
         self.nexus_down = nn.ModuleDict()
         for p in planes:
-            self.nexus_down[p] = NexusDown(node_features,
-                                           edge_features,
-                                           sp_features,
+            self.nexus_down[p] = NexusDown(planar_features,
+                                           nexus_features,
                                            num_classes,
                                            aggr)
 

@@ -14,29 +14,24 @@ class MessagePassing2D(MessagePassing):
 
     def __init__(self,
                  in_features: int,
-                 node_features: int,
-                 edge_features: int,
+                 planar_features: int,
                  num_classes: int,
                  aggr: str = 'add'):
         super().__init__(node_dim=0, aggr=aggr)
 
         self.edge_net = nn.Sequential(
-            ClassLinear(2 * (in_features + node_features),
-                        edge_features,
-                        num_classes),
-            nn.Tanh(),
-            ClassLinear(edge_features,
+            ClassLinear(2 * (in_features + planar_features),
                         1,
                         num_classes),
             nn.Softmax(dim=1))
 
         self.node_net = nn.Sequential(
-            ClassLinear(2 * (in_features + node_features),
-                        node_features,
+            ClassLinear(2 * (in_features + planar_features),
+                        planar_features,
                         num_classes),
             nn.Tanh(),
-            ClassLinear(node_features,
-                        node_features,
+            ClassLinear(planar_features,
+                        planar_features,
                         num_classes),
             nn.Tanh())
 
@@ -53,8 +48,7 @@ class PlaneNet(nn.Module):
     '''Module to convolve within each detector plane'''
     def __init__(self,
                  in_features: int,
-                 node_features: int,
-                 edge_features: int,
+                 planar_features: int,
                  num_classes: int,
                  planes: list[str],
                  aggr: str = 'add',
@@ -66,8 +60,7 @@ class PlaneNet(nn.Module):
         self.net = nn.ModuleDict()
         for p in planes:
             self.net[p] = MessagePassing2D(in_features,
-                                           node_features,
-                                           edge_features,
+                                           planar_features,
                                            num_classes,
                                            aggr)
 
