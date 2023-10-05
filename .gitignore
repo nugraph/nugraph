@@ -168,3 +168,6 @@ logs
 
 # checkpoint files
 *.ckpt
+
+# specific directories
+workspace
