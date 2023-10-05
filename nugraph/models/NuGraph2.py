@@ -118,7 +118,9 @@ class NuGraph2(LightningModule):
             ret.update(decoder(m, batch))
         return ret
 
-    def step(self, data: HeteroData | Batch):
+    def step(self, data: HeteroData | Batch,
+             stage: str = None,
+             confusion: bool = False):
 
         # if it's a single data instance, convert to batch manually
         if isinstance(data, Batch):
@@ -157,6 +159,16 @@ class NuGraph2(LightningModule):
             for key, value in x.items():
                 data.set_value_dict(key, value)
 
+        total_loss = 0.
+        total_metrics = {}
+        for decoder in self.decoders:
+            loss, metrics = decoder.loss(batch, stage, confusion)
+            total_loss += loss
+            total_metrics.update(metrics)
+            decoder.finalize(batch)
+
+        return total_loss, total_metrics
+
     def on_train_start(self):
         hpmetrics = { 'max_lr': self.hparams.lr }
         self.logger.log_hyperparams(self.hparams, metrics=hpmetrics)
@@ -177,26 +189,16 @@ class NuGraph2(LightningModule):
     def training_step(self,
                       batch,
                       batch_idx: int) -> float:
-        self.step(batch)
-        total_loss = 0.
-        for decoder in self.decoders:
-            loss, metrics = decoder.loss(batch, 'train')
-            total_loss += loss
-            self.log_dict(metrics, batch_size=batch.num_graphs)
-        self.log('loss/train', total_loss, batch_size=batch.num_graphs, prog_bar=True)
+        loss, metrics = self.step(batch, 'train')
+        self.log('loss/train', loss, batch_size=batch.num_graphs, prog_bar=True)
         self.log_memory(batch, 'train')
-        return total_loss
+        return loss
 
     def validation_step(self,
                         batch,
                         batch_idx: int) -> None:
-        self.step(batch)
-        total_loss = 0.
-        for decoder in self.decoders:
-            loss, metrics = decoder.loss(batch, 'val', True)
-            total_loss += loss
-            self.log_dict(metrics, batch_size=batch.num_graphs)
-        self.log('loss/val', total_loss, batch_size=batch.num_graphs)
+        loss, metrics = self.step(batch, 'val', True)
+        self.log('loss/val', loss, batch_size=batch.num_graphs)
 
     def on_validation_epoch_end(self) -> None:
         epoch = self.trainer.current_epoch + 1
@@ -206,14 +208,8 @@ class NuGraph2(LightningModule):
     def test_step(self,
                   batch,
                   batch_idx: int = 0) -> None:
-        self.step(batch)
-        total_loss = 0.
-        for decoder in self.decoders:
-            loss, metrics = decoder.loss(batch, 'test', True)
-            total_loss += loss
-            self.log_dict(metrics, batch_size=batch.num_graphs)
-        self.log('loss/test', total_loss, batch_size=batch.num_graphs)
-        self.log_memory(batch, 'test')
+        loss, metrics = self.step(batch, 'test', True)
+        self.log('loss/test', loss, batch_size=batch.num_graphs)
 
     def on_test_epoch_end(self) -> None:
         epoch = self.trainer.current_epoch + 1
