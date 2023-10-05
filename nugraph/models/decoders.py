@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 import seaborn as sn
 
 from .linear import ClassLinear
-from ..util import FocalLoss, RecallLoss
+from ..util import FocalLoss, RecallLoss, ObjCondensationLoss
 
 class DecoderBase(nn.Module, ABC):
     '''Base class for all NuGraph decoders'''
@@ -221,7 +221,7 @@ class InstanceDecoder(DecoderBase):
         super().__init__('Instance',
                          planes,
                          event_classes,
-                         RecallLoss(),
+                         ObjCondensationLoss(),
                          'multiclass',
                          confusion=False)
 
