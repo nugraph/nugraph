@@ -162,10 +162,10 @@ class NuGraph2(LightningModule):
         total_loss = 0.
         total_metrics = {}
         for decoder in self.decoders:
-            loss, metrics = decoder.loss(batch, stage, confusion)
+            loss, metrics = decoder.loss(data, stage, confusion)
             total_loss += loss
             total_metrics.update(metrics)
-            decoder.finalize(batch)
+            decoder.finalize(data)
 
         return total_loss, total_metrics
 
