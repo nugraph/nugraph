@@ -8,8 +8,8 @@ def configure():
                       help="input HDF5 file")
     args.add_argument("-o", "--outfile", type=str, required=True,
                       help="output HDF5 file pattern")
-    args.add_argument('--filter-hits', action='store_true',
-                      help='filter out background hits and spacepoints')
+    args.add_argument('--label-vertex', action='store_true', default=False,
+                      help='add true vertex label to graphs')
     return args.parse_args()  
 
 def process(args):
@@ -22,8 +22,7 @@ def process(args):
             file=f,
             semantic_labeller=pynuml.labels.SimpleLabels(),
             event_labeller=pynuml.labels.FlavorLabels(),
-            label_vertex=True,
-            filter_hits=args.filter_hits)
+            label_vertex=args.label_vertex)
 
     # create output file stream
     out = pynuml.io.H5Out(args.outfile)

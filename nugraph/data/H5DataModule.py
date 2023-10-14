@@ -11,7 +11,7 @@ from torch_geometric.loader import DataLoader
 from torch_geometric.transforms import Compose
 from pytorch_lightning import LightningDataModule
 
-from ..data import H5Dataset
+from ..data import H5Dataset, BalanceSampler
 from ..util import PositionFeatures, FeatureNormMetric, FeatureNorm
 
 class H5DataModule(LightningDataModule):
@@ -19,6 +19,8 @@ class H5DataModule(LightningDataModule):
     def __init__(self,
                  data_path: str,
                  batch_size: int,
+                 shuffle: str = 'random',
+                 balance_frac: float = 0.1,
                  prepare: bool = False):
         super().__init__()
 
@@ -28,6 +30,11 @@ class H5DataModule(LightningDataModule):
 
         self.filename = data_path
         self.batch_size = batch_size
+        if shuffle != 'random' and shuffle != 'balance':
+            print('shuffle argument must be "random" or "balance".')
+            sys.exit()
+        self.shuffle = shuffle
+        self.balance_frac = balance_frac
 
         with h5py.File(self.filename) as f:
 
@@ -54,6 +61,13 @@ class H5DataModule(LightningDataModule):
                 print('Sample splits not found in file! Call "generate_samples" to create them.')
                 sys.exit()
 
+            # load data sizes
+            try:
+                self.train_datasize = f['datasize/train'][()]
+            except:
+                print('Data size array not found in file! Call "generate_samples" to create it.')
+                sys.exit()
+
             # load feature normalisations
             try:
                 norm = {}
@@ -78,15 +92,31 @@ class H5DataModule(LightningDataModule):
             splits = [ len(samples)-(2*split), split, split ]
             train, val, test = random_split(samples, splits)
 
-            for key in [ 'train', 'validation', 'test' ]:
-                name = f'samples/{key}'
-                if f.get(f'samples/{key}') is not None:
-                    del f[f'samples/{key}']
-
+            for name in [ 'train', 'validation', 'test' ]:
+                key = f'samples/{name}'
+                if key in f:
+                    del f[key]
             f['samples/train'] = list(train)
             f['samples/validation'] = list(val)
             f['samples/test'] = list(test)
 
+            try:
+                planes = f['planes'].asstr()[()].tolist()
+            except:
+                print('Metadata not found in file! "planes" is required.')
+                sys.exit()
+            transform = PositionFeatures(planes)
+            dataset = H5Dataset(data_path, train, transform)
+            def datasize(data):
+                ret = 0
+                for store in data.stores:
+                    for val in store.values():
+                        ret += val.element_size() * val.nelement()
+                return ret
+            if 'datasize/train' in f:
+                del f['datasize/train']
+            f['datasize/train'] = [ datasize(data) for data in tqdm.tqdm(dataset) ]
+            
     @staticmethod
     def generate_norm(data_path: str, batch_size: int):
         with h5py.File(data_path, 'r+') as f:
@@ -111,12 +141,26 @@ class H5DataModule(LightningDataModule):
                         metrics = { p: FeatureNormMetric(num_feats) for p in planes }
                     metrics[p].update(batch[p].x)
             for p in planes:
-                f[f'norm/{p}'] = metrics[p].compute()
+                key = f'norm/{p}'
+                if key in f:
+                    del f[key]
+                f[key] = metrics[p].compute()
 
     def train_dataloader(self) -> DataLoader:
+        if self.shuffle == 'balance':
+            shuffle = False
+            sampler = BalanceSampler.BalanceSampler(
+                        datasize=self.train_datasize,
+                        batch_size=self.batch_size, 
+                        balance_frac=self.balance_frac)
+        else:
+            shuffle = True
+            sampler = None
+
         return DataLoader(self.train_dataset,
                           batch_size=self.batch_size,
-                          drop_last=True, shuffle=True, pin_memory=True)
+                          sampler=sampler, drop_last=True, 
+                          shuffle=shuffle, pin_memory=True)
 
     def val_dataloader(self) -> DataLoader:
         return DataLoader(self.val_dataset,
@@ -130,7 +174,7 @@ class H5DataModule(LightningDataModule):
     def add_data_args(parser: ArgumentParser) -> ArgumentParser:
         data = parser.add_argument_group('data', 'Data module configuration')
         data.add_argument('--data-path', type=str,
-                          default='/data/CHEP2023/filtered.gnn.h5',
+                          default='/raid/uboone/CHEP2023/CHEP2023.gnn.h5',
                           help='Location of input data file')
         data.add_argument('--batch-size', type=int, default=64,
                           help='Size of each batch of graphs')
@@ -138,4 +182,8 @@ class H5DataModule(LightningDataModule):
                           help='Max number of training batches to be used')
         data.add_argument('--limit_val_batches', type=int, default=None,
                           help='Max number of validation batches to be used')
+        data.add_argument('--shuffle', type=str, default='balance',
+                          help='Dataset shuffling scheme to use')
+        data.add_argument('--balance-frac', type=float, default=0.1,
+                          help='Fraction of dataset to use for workload balancing')
         return parser
