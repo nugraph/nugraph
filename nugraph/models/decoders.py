@@ -44,15 +44,21 @@ class DecoderBase(nn.Module, ABC):
              stage: str,
              confusion: bool = False):
         x, y = self.arrange(batch)
-        metrics = self.metrics(x, y, stage)
         w = self.weight * (-1 * self.temp).exp()
         loss = w * self.loss_func(x, y) + self.temp
-        metrics[f'loss_{self.name}/{stage}'] = loss
-        if stage == 'train':
-            metrics[f'temperature/{self.name}'] = self.temp
-        for cm in self.confusion.values():
-            cm.update(x, y)
+        metrics = {}
+        if stage:
+            metrics = self.metrics(x, y, stage)
+            metrics[f'loss_{self.name}/{stage}'] = loss
+            if stage == 'train':
+                metrics[f'temperature/{self.name}'] = self.temp
+            if confusion:
+                for cm in self.confusion.values():
+                    cm.update(x, y)
         return loss, metrics
+
+    def finalize(self, batch) -> None:
+        return
 
     def draw_confusion_matrix(self, cm: tm.ConfusionMatrix) -> plt.Figure:
         '''Produce confusion matrix at end of epoch'''
@@ -128,6 +134,10 @@ class SemanticDecoder(DecoderBase):
             f'recall_semantic/{stage}': self.recall(x, y),
             f'precision_semantic/{stage}': self.precision(x, y)
         }
+
+    def finalize(self, batch) -> None:
+        for p in self.planes:
+            batch[p].x_semantic = batch[p].x_semantic.softmax(dim=1)
 
 class FilterDecoder(DecoderBase):
     """NuGraph filter decoder module.
@@ -229,6 +239,9 @@ class EventDecoder(DecoderBase):
             f'recall_event/{stage}': self.recall(x, y),
             f'precision_event/{stage}': self.precision(x, y)
         }
+
+    def finalize(self, batch) -> None:
+        batch['evt'].x = batch['evt'].x.softmax(dim=1)
 
 class VertexDecoder(DecoderBase):
     """
