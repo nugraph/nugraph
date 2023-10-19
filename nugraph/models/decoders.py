@@ -13,7 +13,7 @@ import seaborn as sn
 import math
 
 from .linear import ClassLinear
-from ..util import RecallLoss, LogCoshLoss
+from ..util import RecallLoss, LogCoshLoss, ObjCondensationLoss
 
 class DecoderBase(nn.Module, ABC):
     '''Base class for all NuGraph decoders'''
@@ -287,3 +287,38 @@ class VertexDecoder(DecoderBase):
             f'vertex-resolution-z/{stage}': xyz[2],
             f'vertex-resolution/{stage}': xyz.square().sum().sqrt()
         }
+
+class InstanceDecoder(DecoderBase):
+    def __init__(self,
+                 node_features: int,
+                 planes: list[str],
+                 classes: list[str]):
+        super().__init__('Instance',
+                         planes,
+                         event_classes,
+                         ObjCondensationLoss(),
+                         'multiclass',
+                         confusion=False)
+
+        num_features = len(classes) * node_features
+
+        self.net = nn.ModuleDict()
+        for p in planes:
+            self.net[p] = nn.Sequential(
+                nn.Linear(num_features, 1),
+                nn.Sigmoid())
+
+    def forward(self, x: dict[str, Tensor], batch: dict[str, Tensor]) -> dict[str, dict[str, Tensor]]:
+        return {'x_instance': {p: self.net[p](x[p].flatten(start_dim=1)).squeeze(dim=-1) for p in self.net.keys()}}
+
+    def arrange(self, batch: dict[str, Tensor]) -> tuple[Tensor, Tensor]:
+        x = torch.cat([batch[p]['x_instance'] for p in self.planes], dim=0)
+        y = torch.cat([batch[p]['y_instance'] for p in self.planes], dim=0)
+        return x, y
+
+    def metrics(self, x: Tensor, y: Tensor, stage: str) -> dict[str, Any]:
+        metrics = {}
+        predictions = self.predict(x)
+        acc = self.acc_func(predictions, y)
+        metrics[f'{self.name}_accuracy/{stage}'] = accuracy
+        return metrics
