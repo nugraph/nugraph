@@ -122,7 +122,7 @@ class SemanticDecoder(DecoderBase):
 
     def forward(self, x: dict[str, Tensor],
                 batch: dict[str, Tensor]) -> dict[str, dict[str, Tensor]]:
-        return { 'x_semantic': { p: self.net[p](x[p]).squeeze(dim=-1) for p in self.planes } }
+        return { 'x_semantic': { p: v(x[p]).squeeze(dim=-1) for p, v in self.net.items() } }
 
     def arrange(self, batch) -> tuple[Tensor, Tensor]:
         x = cat([batch[p].x_semantic for p in self.planes], dim=0)
@@ -176,7 +176,7 @@ class FilterDecoder(DecoderBase):
 
     def forward(self, x: dict[str, Tensor],
                 batch: dict[str, Tensor]) -> dict[str, dict[str, Tensor]]:
-        return { 'x_filter': { p: self.net[p](x[p].flatten(start_dim=1)).squeeze(dim=-1) for p in self.planes }}
+        return { 'x_filter': { p: v(x[p].flatten(start_dim=1)).squeeze(dim=-1) for p, v in self.net.items() }}
 
     def arrange(self, batch) -> tuple[Tensor, Tensor]:
         x = cat([batch[p].x_filter for p in self.planes], dim=0)

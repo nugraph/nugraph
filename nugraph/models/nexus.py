@@ -1,14 +1,18 @@
 from typing import Any, Callable
 
+import torch
 from torch import Tensor, cat
 import torch.nn as nn
-from torch.utils.checkpoint import checkpoint
+#from torch.utils.checkpoint import checkpoint
 
 from torch_geometric.nn import MessagePassing, SimpleConv
 
 from .linear import ClassLinear
 
 class NexusDown(MessagePassing):
+
+    propagate_type = { 'x': Tensor, 'n': Tensor }
+
     def __init__(self,
                  planar_features: int,
                  nexus_features: int,
@@ -33,7 +37,7 @@ class NexusDown(MessagePassing):
             nn.Tanh())
 
     def forward(self, x: Tensor, edge_index: Tensor, n: Tensor) -> Tensor:
-        return self.propagate(x=x, n=n, edge_index=edge_index)
+        return self.propagate(x=x, n=n, edge_index=edge_index, size=None)
 
     def message(self, x_i: Tensor, n_j: Tensor) -> Tensor:
         return self.edge_net(cat((x_i, n_j), dim=-1).detach()) * n_j
@@ -52,9 +56,9 @@ class NexusNet(nn.Module):
                  checkpoint: bool = True):
         super().__init__()
 
-        self.checkpoint = checkpoint
+        #self.checkpoint = checkpoint
 
-        self.nexus_up = SimpleConv(node_dim=0)
+        self.nexus_up = SimpleConv(node_dim=0).jittable()
 
         self.nexus_net = nn.Sequential(
             ClassLinear(len(planes)*planar_features,
@@ -71,24 +75,27 @@ class NexusNet(nn.Module):
             self.nexus_down[p] = NexusDown(planar_features,
                                            nexus_features,
                                            num_classes,
-                                           aggr)
+                                           aggr).jittable()
 
-    def ckpt(self, fn: Callable, *args) -> Any:
-        if self.checkpoint and self.training:
-            return checkpoint(fn, *args)
-        else:
-            return fn(*args)
+    #def ckpt(self, fn: Callable, *args) -> Any:
+    #    if self.checkpoint and self.training:
+    #        return checkpoint(fn, *args)
+    #    else:
+    #        return fn(*args)
 
     def forward(self, x: dict[str, Tensor], edge_index: dict[str, Tensor], nexus: Tensor) -> None:
 
         # project up to nexus space
-        n = [None] * len(self.nexus_down)
+        n: List[Tensor] = [torch.empty(0) for i in range(0,len(self.nexus_down))] #[None] * len(self.nexus_down) -- needs to be initialized to the correct type, then it's overwritten
         for i, p in enumerate(self.nexus_down):
             n[i] = self.nexus_up(x=(x[p], nexus), edge_index=edge_index[p])
 
         # convolve in nexus space
-        n = self.ckpt(self.nexus_net, cat(n, dim=-1))
+        #n = self.ckpt(self.nexus_net, cat(n, dim=-1))
+        n = self.nexus_net(cat(n, dim=-1))
 
         # project back down to planes
-        for p in self.nexus_down:
-            x[p] = self.ckpt(self.nexus_down[p], x[p], edge_index[p], n)
+        #for p in self.nexus_down:
+        #    x[p] = self.ckpt(self.nexus_down[p], x[p], edge_index[p], n)
+        for p, v in self.nexus_down.items():
+            x[p] = v(x[p], edge_index[p], n)

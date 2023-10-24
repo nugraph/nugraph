@@ -7,6 +7,7 @@ import pytorch_lightning as pl
 import nugraph as ng
 import pynuml
 import tqdm
+import torch
 
 Data = ng.data.H5DataModule
 Model = ng.models.NuGraph2
@@ -28,18 +29,23 @@ def test(args):
     print('using checkpoint =',args.checkpoint)
     model = Model.load_from_checkpoint(args.checkpoint, map_location='cpu')
 
+    script = model.to_torchscript()
+    print(script)
+    torch.jit.save(script, "model.pt")
+
     print('output file =',args.outfile)
     if os.path.isfile(args.outfile):
         raise Exception(f'file {args.outfile} already exists!')
 
     accelerator, devices = ng.util.configure_device()
-    trainer = pl.Trainer(accelerator=accelerator, devices=devices,
+    trainer = pl.Trainer(accelerator=accelerator, devices=devices,limit_predict_batches=1,
                          logger=False)
     plot = pynuml.plot.GraphPlot(planes=nudata.planes,
                                  classes=nudata.semantic_classes)
 
     start = time.time()
     out = trainer.predict(model, dataloaders=nudata.test_dataloader())
+    #print(out)
     end = time.time()
     itime = end - start
     ngraphs = len(nudata.test_dataset)
@@ -48,9 +54,12 @@ def test(args):
     df = []
     for ib, batch in enumerate(tqdm.tqdm(out)):
         for data in batch.to_data_list():
-            df.append(plot.to_dataframe(data))
+            print(data)
+            df.append(plot.to_dataframe_evt(data))
+            print(df)
     df = pd.concat(df)
-    df.to_hdf(args.outfile, 'hits', format='table')
+    #df.to_hdf(args.outfile, 'hits', format='table')
+    df.to_hdf(args.outfile, 'evt', format='table')
 
 if __name__ == '__main__':
     args = configure()

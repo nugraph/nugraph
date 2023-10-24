@@ -2,7 +2,8 @@ from typing import Any, Callable
 
 from torch import Tensor, cat
 import torch.nn as nn
-from torch.utils.checkpoint import checkpoint
+#import torch_sparse #conda install pytorch-sparse -c pyg
+#from torch.utils.checkpoint import checkpoint
 
 from torch_geometric.nn import MessagePassing
 
@@ -35,13 +36,13 @@ class MessagePassing2D(MessagePassing):
                         num_classes),
             nn.Tanh())
 
-    def forward(self, x: Tensor, edge_index: Tensor):
+    def forward(self, x: Tensor, edge_index: Tensor) -> Tensor:
         return self.propagate(edge_index, x=x, size=None)
 
-    def message(self, x_i: Tensor, x_j: Tensor):
+    def message(self, x_i: Tensor, x_j: Tensor) -> Tensor:
         return self.edge_net(cat((x_i, x_j), dim=-1).detach()) * x_j
 
-    def update(self, aggr_out: Tensor, x: Tensor):
+    def update(self, aggr_out: Tensor, x: Tensor) -> Tensor:
         return self.node_net(cat((x, aggr_out), dim=-1))
 
 class PlaneNet(nn.Module):
@@ -55,21 +56,25 @@ class PlaneNet(nn.Module):
                  checkpoint: bool = True):
         super().__init__()
 
-        self.checkpoint = checkpoint
+        #self.checkpoint = checkpoint
 
         self.net = nn.ModuleDict()
         for p in planes:
             self.net[p] = MessagePassing2D(in_features,
                                            planar_features,
                                            num_classes,
-                                           aggr)
+                                           aggr).jittable()
 
-    def ckpt(self, fn: Callable, *args) -> Any:
-        if self.checkpoint and self.training:
-            return checkpoint(fn, *args)
-        else:
-            return fn(*args)
+    #def ckpt(self, fn: Callable, *args) -> Any:
+        #if self.checkpoint and self.training:
+        #    return checkpoint(fn, *args)
+        #else:
+        #    return fn(*args)
+        #return fn(*args)
 
     def forward(self, x: dict[str, Tensor], edge_index: dict[str, Tensor]) -> None:
-        for p in self.net:
-            x[p] = self.ckpt(self.net[p], x[p], edge_index[p])
+        #for p in self.net:
+        for p, v in self.net.items():
+            #x[p] = self.ckpt(self.net[p], x[p], edge_index[p])
+            #print(p)
+            x[p] = v(x[p], edge_index[p])
