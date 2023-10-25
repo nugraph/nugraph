@@ -38,7 +38,7 @@ def test(args):
         raise Exception(f'file {args.outfile} already exists!')
 
     accelerator, devices = ng.util.configure_device()
-    trainer = pl.Trainer(accelerator=accelerator, devices=devices,limit_predict_batches=1,
+    trainer = pl.Trainer(accelerator=accelerator, devices=devices,#limit_predict_batches=1,
                          logger=False)
     plot = pynuml.plot.GraphPlot(planes=nudata.planes,
                                  classes=nudata.semantic_classes)
@@ -54,12 +54,13 @@ def test(args):
     df = []
     for ib, batch in enumerate(tqdm.tqdm(out)):
         for data in batch.to_data_list():
-            print(data)
-            df.append(plot.to_dataframe_evt(data))
-            print(df)
+            #print(data)
+            df.append(plot.to_dataframe(data))
+            #df.append(plot.to_dataframe_evt(data))
+            #print(df)
     df = pd.concat(df)
-    #df.to_hdf(args.outfile, 'hits', format='table')
-    df.to_hdf(args.outfile, 'evt', format='table')
+    df.to_hdf(args.outfile, 'hits', format='table')
+    #df.to_hdf(args.outfile, 'evt', format='table')
 
 if __name__ == '__main__':
     args = configure()
