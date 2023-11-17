@@ -15,7 +15,7 @@ classifiers = [
 dependencies = [
     "matplotlib",
     "plotly",
-    "pynuml>=23.9.0",
+    "pynuml>=23.11.0",
     "pynvml",
     "seaborn",
     "torch>=1.12.1",
