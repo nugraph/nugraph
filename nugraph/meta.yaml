@@ -1,0 +1,48 @@
+{% set name = "nugraph" %}
+{% set version = "23.11.0" %}
+
+package:
+  name: {{ name|lower }}
+  version: {{ version }}
+
+source:
+  url: https://pypi.io/packages/source/{{ name[0] }}/{{ name }}/nugraph-{{ version }}.tar.gz
+  sha256: a1e01a8c3143fc8db2cf8a3584d192a738d89eb865b1d52cd2994b24bd4175ec
+
+build:
+  noarch: python
+  script: {{ PYTHON }} -m pip install . -vv
+  number: 0
+
+requirements:
+  host:
+    - python >=3.10
+    - flit >=3.2,<4
+    - pip
+  run:
+    - python >=3.10
+    - matplotlib-base
+    - plotly
+    - pynuml >=23.11.0
+    - pynvml
+    - seaborn
+    - pytorch >=1.12.1
+    - pyg >=2.1.0
+    - pytorch-lightning >=1.7.1
+
+test:
+  imports:
+    - nugraph
+  commands:
+    - pip check
+  requires:
+    - pip
+
+about:
+  summary: 'NuGraph2: A Graph Neural Network for neutrino physics event reconstruction'
+  license: MIT
+  license_file: LICENSE
+
+extra:
+  recipe-maintainers:
+    - vhewes
