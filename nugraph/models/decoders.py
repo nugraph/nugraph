@@ -291,34 +291,53 @@ class VertexDecoder(DecoderBase):
 class InstanceDecoder(DecoderBase):
     def __init__(self,
                  node_features: int,
+                 instance_features: int,
                  planes: list[str],
-                 classes: list[str]):
-        super().__init__('Instance',
+                 semantic_classes: list[str]):
+        super().__init__('instance',
                          planes,
-                         event_classes,
+                         semantic_classes,
                          ObjCondensationLoss(),
-                         'multiclass',
-                         confusion=False)
+                         weight=1.)
 
-        num_features = len(classes) * node_features
+        num_features = len(semantic_classes) * node_features
 
-        self.net = nn.ModuleDict()
+        self.net_coords = nn.ModuleDict()
+        self.net_filter = nn.ModuleDict()
         for p in planes:
-            self.net[p] = nn.Sequential(
+            self.net_filter[p] = nn.Sequential(
                 nn.Linear(num_features, 1),
-                nn.Sigmoid())
+                nn.Sigmoid(),
+            )
+            self.net_coords[p] = nn.Linear(num_features, instance_features)
 
     def forward(self, x: dict[str, Tensor], batch: dict[str, Tensor]) -> dict[str, dict[str, Tensor]]:
-        return {'x_instance': {p: self.net[p](x[p].flatten(start_dim=1)).squeeze(dim=-1) for p in self.net.keys()}}
+
+        # empty output dictionary
+        ret = {
+            'x_instance_coords': {},
+            'x_instance_filter': {},
+        }
+
+        for p in self.net_filter.keys():
+
+            # flatten out categorical embedding
+            x_plane = x[p].flatten(start_dim=1)
+
+            # project to object condensation space
+            ret['x_instance_coords'][p] = self.net_coords[p](x_plane)
+
+            # calculate filter
+            ret['x_instance_filter'][p] = self.net_filter[p](x_plane).squeeze(dim=1)
+
+        return ret
 
     def arrange(self, batch: dict[str, Tensor]) -> tuple[Tensor, Tensor]:
-        x = torch.cat([batch[p]['x_instance'] for p in self.planes], dim=0)
-        y = torch.cat([batch[p]['y_instance'] for p in self.planes], dim=0)
-        return x, y
+        x_coords = cat([batch[p]['x_instance_coords'] for p in self.planes], dim=0)
+        x_filter = cat([batch[p]['x_instance_filter'] for p in self.planes], dim=0)
+        y = cat([batch[p]['y_instance'] for p in self.planes], dim=0)
+        return (x_coords, x_filter), y
 
     def metrics(self, x: Tensor, y: Tensor, stage: str) -> dict[str, Any]:
         metrics = {}
-        predictions = self.predict(x)
-        acc = self.acc_func(predictions, y)
-        metrics[f'{self.name}_accuracy/{stage}'] = accuracy
         return metrics
