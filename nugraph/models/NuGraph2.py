@@ -13,7 +13,7 @@ from torch_geometric.utils import unbatch
 from .encoder import Encoder
 from .plane import PlaneNet
 from .nexus import NexusNet
-from .decoders import SemanticDecoder, FilterDecoder, EventDecoder, VertexDecoder
+from .decoders import SemanticDecoder, FilterDecoder, EventDecoder, VertexDecoder, InstanceDecoder
 
 class NuGraph2(LightningModule):
     """PyTorch Lightning module for model training.
@@ -25,6 +25,7 @@ class NuGraph2(LightningModule):
                  planar_features: int = 64,
                  nexus_features: int = 16,
                  vertex_features: int = 32,
+                 instance_features: int = 3,
                  planes: list[str] = ['u','v','y'],
                  semantic_classes: list[str] = ['MIP','HIP','shower','michel','diffuse'],
                  event_classes: list[str] = ['numu','nue','nc'],
@@ -33,6 +34,7 @@ class NuGraph2(LightningModule):
                  semantic_head: bool = True,
                  filter_head: bool = True,
                  vertex_head: bool = False,
+                 instance_head: bool = False,
                  checkpoint: bool = False,
                  lr: float = 0.001):
         super().__init__()
@@ -95,6 +97,15 @@ class NuGraph2(LightningModule):
                 planes,
                 semantic_classes)
             self.decoders.append(self.vertex_decoder)
+
+        if instance_head:
+            self.instance_decoder = InstanceDecoder(
+                planar_features,
+                instance_features,
+                planes,
+                semantic_classes,
+            )
+            self.decoders.append(self.instance_decoder)
 
         if len(self.decoders) == 0:
             raise Exception('At least one decoder head must be enabled!')
