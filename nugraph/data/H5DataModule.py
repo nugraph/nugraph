@@ -174,7 +174,7 @@ class H5DataModule(LightningDataModule):
     def add_data_args(parser: ArgumentParser) -> ArgumentParser:
         data = parser.add_argument_group('data', 'Data module configuration')
         data.add_argument('--data-path', type=str,
-                          default='/raid/uboone/CHEP2023/CHEP2023.gnn.h5',
+                          default='/raid/uboone/NuGraph2/NG2-paper.gnn.h5',
                           help='Location of input data file')
         data.add_argument('--batch-size', type=int, default=64,
                           help='Size of each batch of graphs')
