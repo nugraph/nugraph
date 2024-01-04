@@ -5,6 +5,7 @@ from abc import ABC
 from torch import Tensor, tensor, cat
 import torch.nn as nn
 from torch_geometric.nn.aggr import SoftmaxAggregation, LSTMAggregation
+from torch_geometric.nn.resolver import aggregation_resolver as aggr_resolver
 
 import torchmetrics as tm
 
@@ -248,7 +249,9 @@ class VertexDecoder(DecoderBase):
     """
     def __init__(self,
                  node_features: int,
-                 vertex_features: int,
+                 aggr: str,
+                 lstm_features: int,
+                 mlp_features: list[int],
                  planes: list[str],
                  semantic_classes: list[str]):
         super().__init__('vertex',
@@ -258,19 +261,30 @@ class VertexDecoder(DecoderBase):
                          weight=1.,
                          temperature=5.)
         in_features = len(semantic_classes) * node_features
-        self.lstm = nn.ModuleDict()
-        for p in planes:
-            self.lstm[p] = LSTMAggregation(in_channels=in_features,
-                                           out_channels=vertex_features)
-        self.net = nn.Sequential(
-            nn.Linear(in_features=len(planes) * vertex_features,
-                      out_features=vertex_features),
-            nn.ReLU(),
-            nn.Linear(in_features=vertex_features,
-                      out_features=3))
+
+        # initialise aggregation function
+        self.aggr = nn.ModuleDict()
+        aggr_kwargs = {}
+        if aggr == 'lstm':
+            aggr_kwargs = {
+                'in_channels': in_features,
+                'out_channels': lstm_features,
+            }
+            in_features = lstm_features
+        for p in self.planes:
+            self.aggr[p] = aggr_resolver(aggr, **(aggr_kwargs or {}))
+
+        # initialise MLP
+        net = []
+        feats = [ len(self.planes) * in_features ] + mlp_features + [ 3 ]
+        for f_in, f_out in zip(feats[:-1], feats[1:]):
+            net.append(nn.Linear(in_features=f_in, out_features=f_out))
+            net.append(nn.ReLU())
+        del net[-1] # remove last activation function
+        self.net = nn.Sequential(*net)
 
     def forward(self, x: dict[str, Tensor], batch: dict[str, Tensor]) -> dict[str,dict[str, Tensor]]:
-        x = [ net(x[p].flatten(1), index=batch[p]) for p, net in self.lstm.items() ]
+        x = [ net(x[p].flatten(1), index=batch[p]) for p, net in self.aggr.items() ]
         x = cat(x, dim=1)
         return { 'x_vtx': { 'evt': self.net(x) }}
 

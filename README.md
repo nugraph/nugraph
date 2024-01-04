@@ -24,7 +24,7 @@ scripts/train.py --help
 As an example, to train the network for semantic segmentation on the Heimdall cluster, one might run
 
 ```
-scripts/train.py --data-path /raid/uboone/CHEP2023/CHEP2023.gnn.h5 \
+scripts/train.py --data-path /raid/uboone/NuGraph2/NG2-paper.gnn.h5 \
                  --logdir /raid/$USER/logs --name default --version semantic-filter \
                  --semantic --filter
 ```

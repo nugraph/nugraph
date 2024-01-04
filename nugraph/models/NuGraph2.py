@@ -24,8 +24,10 @@ class NuGraph2(LightningModule):
                  in_features: int = 4,
                  planar_features: int = 64,
                  nexus_features: int = 16,
-                 vertex_features: int = 32,
                  instance_features: int = 3,
+                 vertex_aggr: str = 'lstm',
+                 vertex_lstm_features: int = 64,
+                 vertex_mlp_features: list[int] = [ 64 ],
                  planes: list[str] = ['u','v','y'],
                  semantic_classes: list[str] = ['MIP','HIP','shower','michel','diffuse'],
                  event_classes: list[str] = ['numu','nue','nc'],
@@ -93,7 +95,9 @@ class NuGraph2(LightningModule):
         if vertex_head:
             self.vertex_decoder = VertexDecoder(
                 planar_features,
-                vertex_features,
+                vertex_aggr,
+                vertex_lstm_features,
+                vertex_mlp_features,
                 planes,
                 semantic_classes)
             self.decoders.append(self.vertex_decoder)
@@ -273,7 +277,11 @@ class NuGraph2(LightningModule):
                            help='Hidden dimensionality of planar convolutions')
         model.add_argument('--nexus-feats', type=int, default=16,
                            help='Hidden dimensionality of nexus convolutions')
-        model.add_argument('--vertex-feats', type=int, default=32,
+        model.add_argument('--vertex-aggr', type=str, default='lstm',
+                           help='Aggregation function for vertex decoder')
+        model.add_argument('--vertex-lstm-feats', type=int, default=32,
+                           help='Hidden dimensionality of vertex LSTM aggregation')
+        model.add_argument('--vertex-mlp-feats', type=int, nargs='*', default=[32],
                            help='Hidden dimensionality of vertex decoder')
         model.add_argument('--event', action='store_true', default=False,
                            help='Enable event classification head')
