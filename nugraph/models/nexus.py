@@ -6,31 +6,26 @@ from torch.utils.checkpoint import checkpoint
 
 from torch_geometric.nn import MessagePassing, SimpleConv
 
-from .linear import ClassLinear
-
 class NexusDown(MessagePassing):
     def __init__(self,
                  planar_features: int,
                  nexus_features: int,
-                 num_classes: int,
                  aggr: str = 'mean'):
         super().__init__(node_dim=0, aggr=aggr, flow='target_to_source')
 
+        feats = planar_features + nexus_features
+
         self.edge_net = nn.Sequential(
-            ClassLinear(planar_features+nexus_features,
-                        1,
-                        num_classes),
-            nn.Softmax(dim=1))
+            nn.Linear(feats, 1),
+            nn.Sigmoid(),
+        )
 
         self.node_net = nn.Sequential(
-            ClassLinear(planar_features+nexus_features,
-                        planar_features,
-                        num_classes),
+            nn.Linear(feats, planar_features),
             nn.Tanh(),
-            ClassLinear(planar_features,
-                        planar_features,
-                        num_classes),
-            nn.Tanh())
+            nn.Linear(planar_features, planar_features),
+            nn.Tanh(),
+        )
 
     def forward(self, x: Tensor, edge_index: Tensor, n: Tensor) -> Tensor:
         return self.propagate(x=x, n=n, edge_index=edge_index)
@@ -46,7 +41,6 @@ class NexusNet(nn.Module):
     def __init__(self,
                  planar_features: int,
                  nexus_features: int,
-                 num_classes: int,
                  planes: list[str],
                  aggr: str = 'mean',
                  checkpoint: bool = True):
@@ -57,20 +51,16 @@ class NexusNet(nn.Module):
         self.nexus_up = SimpleConv(node_dim=0)
 
         self.nexus_net = nn.Sequential(
-            ClassLinear(len(planes)*planar_features,
-                        nexus_features,
-                        num_classes),
+            nn.Linear(len(planes)*planar_features, nexus_features),
             nn.Tanh(),
-            ClassLinear(nexus_features,
-                        nexus_features,
-                        num_classes),
-            nn.Tanh())
+            nn.Linear(nexus_features, nexus_features),
+            nn.Tanh(),
+        )
 
         self.nexus_down = nn.ModuleDict()
         for p in planes:
             self.nexus_down[p] = NexusDown(planar_features,
                                            nexus_features,
-                                           num_classes,
                                            aggr)
 
     def ckpt(self, fn: Callable, *args) -> Any:

@@ -52,17 +52,15 @@ class NuGraph2(LightningModule):
         self.encoder = Encoder(in_features,
                                planar_features,
                                planes,
-                               semantic_classes)
+                              )
 
         self.plane_net = PlaneNet(in_features,
                                   planar_features,
-                                  len(semantic_classes),
                                   planes,
                                   checkpoint=checkpoint)
 
         self.nexus_net = NexusNet(planar_features,
                                   nexus_features,
-                                  len(semantic_classes),
                                   planes,
                                   checkpoint=checkpoint)
 
@@ -87,7 +85,7 @@ class NuGraph2(LightningModule):
             self.filter_decoder = FilterDecoder(
                 planar_features,
                 planes,
-                semantic_classes)
+            )
             self.decoders.append(self.filter_decoder)
             
         if vertex_head:
@@ -113,8 +111,7 @@ class NuGraph2(LightningModule):
         for _ in range(self.num_iters):
             # shortcut connect features
             for i, p in enumerate(self.planes):
-                s = x[p].detach().unsqueeze(1).expand(-1, m[p].size(1), -1)
-                m[p] = torch.cat((m[p], s), dim=-1)
+                m[p] = torch.cat((m[p], x[p]), dim=-1)
             self.plane_net(m, edge_index_plane)
             self.nexus_net(m, edge_index_nexus, nexus)
         ret = {}
