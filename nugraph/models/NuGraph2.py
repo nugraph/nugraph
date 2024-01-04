@@ -277,6 +277,8 @@ class NuGraph2(LightningModule):
                            help='Hidden dimensionality of planar convolutions')
         model.add_argument('--nexus-feats', type=int, default=16,
                            help='Hidden dimensionality of nexus convolutions')
+        model.add_argument('--instance-feats', type=int, default=3,
+                           help='Hidden dimensionality of object condensation')
         model.add_argument('--vertex-aggr', type=str, default='lstm',
                            help='Aggregation function for vertex decoder')
         model.add_argument('--vertex-lstm-feats', type=int, default=32,
@@ -289,6 +291,8 @@ class NuGraph2(LightningModule):
                            help='Enable semantic segmentation head')
         model.add_argument('--filter', action='store_true', default=False,
                            help='Enable background filter head')
+        model.add_argument('--instance', action='store_true', default=False,
+                           help='Enable instance segmentation head')
         model.add_argument('--vertex', action='store_true', default=False,
                            help='Enable vertex regression head')
         return parser

@@ -44,6 +44,7 @@ def train(args):
         model = Model(in_features=4,
                       planar_features=args.planar_feats,
                       nexus_features=args.nexus_feats,
+                      instance_features=args.instance_feats,
                       vertex_aggr=args.vertex_aggr,
                       vertex_lstm_features=args.vertex_lstm_feats,
                       vertex_mlp_features=args.vertex_mlp_feats,
@@ -54,6 +55,7 @@ def train(args):
                       event_head=args.event,
                       semantic_head=args.semantic,
                       filter_head=args.filter,
+                      instance_head=args.instance,
                       vertex_head=args.vertex,
                       checkpoint=not args.no_checkpointing,
                       lr=args.learning_rate)
