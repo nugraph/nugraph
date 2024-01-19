@@ -22,8 +22,8 @@ class NuGraph2(LightningModule):
     inference, and compute training metrics."""
     def __init__(self,
                  in_features: int = 4,
-                 planar_features: int = 64,
-                 nexus_features: int = 16,
+                 planar_features: int = 128,
+                 nexus_features: int = 32,
                  vertex_aggr: str = 'lstm',
                  vertex_lstm_features: int = 64,
                  vertex_mlp_features: list[int] = [ 64 ],
@@ -259,9 +259,9 @@ class NuGraph2(LightningModule):
     def add_model_args(parser: ArgumentParser) -> ArgumentParser:
         '''Add argparse argpuments for model structure'''
         model = parser.add_argument_group('model', 'NuGraph2 model configuration')
-        model.add_argument('--planar-feats', type=int, default=64,
+        model.add_argument('--planar-feats', type=int, default=128,
                            help='Hidden dimensionality of planar convolutions')
-        model.add_argument('--nexus-feats', type=int, default=16,
+        model.add_argument('--nexus-feats', type=int, default=32,
                            help='Hidden dimensionality of nexus convolutions')
         model.add_argument('--vertex-aggr', type=str, default='lstm',
                            help='Aggregation function for vertex decoder')
