@@ -70,7 +70,6 @@ class NuGraph2(LightningModule):
             self.event_decoder = EventDecoder(
                 planar_features,
                 planes,
-                semantic_classes,
                 event_classes)
             self.decoders.append(self.event_decoder)
 
