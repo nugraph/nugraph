@@ -22,8 +22,8 @@ class NuGraph2(LightningModule):
     inference, and compute training metrics."""
     def __init__(self,
                  in_features: int = 4,
-                 planar_features: int = 64,
-                 nexus_features: int = 16,
+                 planar_features: int = 128,
+                 nexus_features: int = 32,
                  vertex_aggr: str = 'lstm',
                  vertex_lstm_features: int = 64,
                  vertex_mlp_features: list[int] = [ 64 ],
@@ -52,17 +52,15 @@ class NuGraph2(LightningModule):
         self.encoder = Encoder(in_features,
                                planar_features,
                                planes,
-                               semantic_classes)
+                              )
 
         self.plane_net = PlaneNet(in_features,
                                   planar_features,
-                                  len(semantic_classes),
                                   planes,
                                   checkpoint=checkpoint)
 
         self.nexus_net = NexusNet(planar_features,
                                   nexus_features,
-                                  len(semantic_classes),
                                   planes,
                                   checkpoint=checkpoint)
 
@@ -72,7 +70,6 @@ class NuGraph2(LightningModule):
             self.event_decoder = EventDecoder(
                 planar_features,
                 planes,
-                semantic_classes,
                 event_classes)
             self.decoders.append(self.event_decoder)
 
@@ -87,7 +84,7 @@ class NuGraph2(LightningModule):
             self.filter_decoder = FilterDecoder(
                 planar_features,
                 planes,
-                semantic_classes)
+            )
             self.decoders.append(self.filter_decoder)
             
         if vertex_head:
@@ -113,8 +110,7 @@ class NuGraph2(LightningModule):
         for _ in range(self.num_iters):
             # shortcut connect features
             for i, p in enumerate(self.planes):
-                s = x[p].detach().unsqueeze(1).expand(-1, m[p].size(1), -1)
-                m[p] = torch.cat((m[p], s), dim=-1)
+                m[p] = torch.cat((m[p], x[p]), dim=-1)
             self.plane_net(m, edge_index_plane)
             self.nexus_net(m, edge_index_nexus, nexus)
         ret = {}
@@ -262,9 +258,9 @@ class NuGraph2(LightningModule):
     def add_model_args(parser: ArgumentParser) -> ArgumentParser:
         '''Add argparse argpuments for model structure'''
         model = parser.add_argument_group('model', 'NuGraph2 model configuration')
-        model.add_argument('--planar-feats', type=int, default=64,
+        model.add_argument('--planar-feats', type=int, default=128,
                            help='Hidden dimensionality of planar convolutions')
-        model.add_argument('--nexus-feats', type=int, default=16,
+        model.add_argument('--nexus-feats', type=int, default=32,
                            help='Hidden dimensionality of nexus convolutions')
         model.add_argument('--vertex-aggr', type=str, default='lstm',
                            help='Aggregation function for vertex decoder')

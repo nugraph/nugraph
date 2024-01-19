@@ -13,7 +13,6 @@ import matplotlib.pyplot as plt
 import seaborn as sn
 import math
 
-from .linear import ClassLinear
 from ..util import RecallLoss, LogCoshLoss, ObjCondensationLoss
 
 class DecoderBase(nn.Module, ABC):
@@ -119,11 +118,11 @@ class SemanticDecoder(DecoderBase):
 
         self.net = nn.ModuleDict()
         for p in planes:
-            self.net[p] = ClassLinear(node_features, 1, len(semantic_classes))
+            self.net[p] = nn.Linear(node_features, len(semantic_classes))
 
     def forward(self, x: dict[str, Tensor],
                 batch: dict[str, Tensor]) -> dict[str, dict[str, Tensor]]:
-        return { 'x_semantic': { p: self.net[p](x[p]).squeeze(dim=-1) for p in self.planes } }
+        return { 'x_semantic': { p: self.net[p](x[p]) for p in self.planes } }
 
     def arrange(self, batch) -> tuple[Tensor, Tensor]:
         x = cat([batch[p].x_semantic for p in self.planes], dim=0)
@@ -149,7 +148,7 @@ class FilterDecoder(DecoderBase):
     def __init__(self,
                  node_features: int,
                  planes: list[str],
-                 semantic_classes: list[str]):
+                ):
         super().__init__('filter',
                          planes,
                          ('noise', 'signal'),
@@ -168,16 +167,16 @@ class FilterDecoder(DecoderBase):
         self.confusion['precision_filter_matrix'] = tm.ConfusionMatrix(
             normalize='pred', **metric_args)
 
-        num_features = len(semantic_classes) * node_features
         self.net = nn.ModuleDict()
         for p in planes:
             self.net[p] = nn.Sequential(
-                nn.Linear(num_features, 1),
-                nn.Sigmoid())
+                nn.Linear(node_features, 1),
+                nn.Sigmoid(),
+            )
 
     def forward(self, x: dict[str, Tensor],
                 batch: dict[str, Tensor]) -> dict[str, dict[str, Tensor]]:
-        return { 'x_filter': { p: self.net[p](x[p].flatten(start_dim=1)).squeeze(dim=-1) for p in self.planes }}
+        return { 'x_filter': { p: self.net[p](x[p]).squeeze(dim=-1) for p in self.planes }}
 
     def arrange(self, batch) -> tuple[Tensor, Tensor]:
         x = cat([batch[p].x_filter for p in self.planes], dim=0)
@@ -199,7 +198,6 @@ class EventDecoder(DecoderBase):
     def __init__(self,
                  node_features: int,
                  planes: list[str],
-                 semantic_classes: list[str],
                  event_classes: list[str]):
         super().__init__('event',
                          planes,
@@ -224,12 +222,12 @@ class EventDecoder(DecoderBase):
         for p in planes:
             self.pool[p] = SoftmaxAggregation(learn=True)
         self.net = nn.Sequential(
-            nn.Linear(in_features=len(planes) * len(semantic_classes) * node_features,
+            nn.Linear(in_features=len(planes) * node_features,
                       out_features=len(event_classes)))
 
     def forward(self, x: dict[str, Tensor],
                 batch: dict[str, Tensor]) -> dict[str, dict[str, Tensor]]:
-        x = [ pool(x[p].flatten(1), batch[p]) for p, pool in self.pool.items() ]
+        x = [ pool(x[p], batch[p]) for p, pool in self.pool.items() ]
         return { 'x': { 'evt': self.net(cat(x, dim=1)) }}
 
     def arrange(self, batch) -> tuple[Tensor, Tensor]:
@@ -260,14 +258,13 @@ class VertexDecoder(DecoderBase):
                          LogCoshLoss(),
                          weight=1.,
                          temperature=5.)
-        in_features = len(semantic_classes) * node_features
 
         # initialise aggregation function
         self.aggr = nn.ModuleDict()
         aggr_kwargs = {}
         if aggr == 'lstm':
             aggr_kwargs = {
-                'in_channels': in_features,
+                'in_channels': node_features,
                 'out_channels': lstm_features,
             }
             in_features = lstm_features
@@ -276,7 +273,7 @@ class VertexDecoder(DecoderBase):
 
         # initialise MLP
         net = []
-        feats = [ len(self.planes) * in_features ] + mlp_features + [ 3 ]
+        feats = [ len(self.planes) * node_features ] + mlp_features + [ 3 ]
         for f_in, f_out in zip(feats[:-1], feats[1:]):
             net.append(nn.Linear(in_features=f_in, out_features=f_out))
             net.append(nn.ReLU())
@@ -284,7 +281,7 @@ class VertexDecoder(DecoderBase):
         self.net = nn.Sequential(*net)
 
     def forward(self, x: dict[str, Tensor], batch: dict[str, Tensor]) -> dict[str,dict[str, Tensor]]:
-        x = [ net(x[p].flatten(1), index=batch[p]) for p, net in self.aggr.items() ]
+        x = [ net(x[p], index=batch[p]) for p, net in self.aggr.items() ]
         x = cat(x, dim=1)
         return { 'x_vtx': { 'evt': self.net(x) }}
 

@@ -6,8 +6,6 @@ from torch.utils.checkpoint import checkpoint
 
 from torch_geometric.nn import MessagePassing
 
-from .linear import ClassLinear
-
 class MessagePassing2D(MessagePassing):
 
     propagate_type = { 'x': Tensor }
@@ -15,25 +13,22 @@ class MessagePassing2D(MessagePassing):
     def __init__(self,
                  in_features: int,
                  planar_features: int,
-                 num_classes: int,
                  aggr: str = 'add'):
         super().__init__(node_dim=0, aggr=aggr)
 
+        feats = 2 * (in_features + planar_features)
+
         self.edge_net = nn.Sequential(
-            ClassLinear(2 * (in_features + planar_features),
-                        1,
-                        num_classes),
-            nn.Softmax(dim=1))
+            nn.Linear(feats, 1),
+            nn.Sigmoid(),
+        )
 
         self.node_net = nn.Sequential(
-            ClassLinear(2 * (in_features + planar_features),
-                        planar_features,
-                        num_classes),
+            nn.Linear(feats, planar_features),
             nn.Tanh(),
-            ClassLinear(planar_features,
-                        planar_features,
-                        num_classes),
-            nn.Tanh())
+            nn.Linear(planar_features, planar_features),
+            nn.Tanh(),
+        )
 
     def forward(self, x: Tensor, edge_index: Tensor):
         return self.propagate(edge_index, x=x, size=None)
@@ -49,7 +44,6 @@ class PlaneNet(nn.Module):
     def __init__(self,
                  in_features: int,
                  planar_features: int,
-                 num_classes: int,
                  planes: list[str],
                  aggr: str = 'add',
                  checkpoint: bool = True):
@@ -61,7 +55,6 @@ class PlaneNet(nn.Module):
         for p in planes:
             self.net[p] = MessagePassing2D(in_features,
                                            planar_features,
-                                           num_classes,
                                            aggr)
 
     def ckpt(self, fn: Callable, *args) -> Any:
