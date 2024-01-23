@@ -13,6 +13,7 @@ from torch_geometric.utils import unbatch
 from .encoder import Encoder
 from .plane import PlaneNet
 from .nexus import NexusNet
+from .interaction import InteractionNet
 from .decoders import SemanticDecoder, FilterDecoder, EventDecoder, VertexDecoder
 
 class NuGraph2(LightningModule):
@@ -64,13 +65,12 @@ class NuGraph2(LightningModule):
                                   planes,
                                   checkpoint=checkpoint)
 
+        self.interaction_net = InteractionNet(planar_features, 32, planes)
+
         self.decoders = []
 
         if event_head:
-            self.event_decoder = EventDecoder(
-                planar_features,
-                planes,
-                event_classes)
+            self.event_decoder = EventDecoder(32, planes, event_classes)
             self.decoders.append(self.event_decoder)
 
         if semantic_head:
@@ -107,15 +107,17 @@ class NuGraph2(LightningModule):
                 nexus: Tensor,
                 batch: dict[str, Tensor]) -> dict[str, Tensor]:
         m = self.encoder(x)
+        # edge_index_interaction = { p: torch.stack([b])], dim=0) for p, b in batch.items() }
         for _ in range(self.num_iters):
             # shortcut connect features
             for i, p in enumerate(self.planes):
                 m[p] = torch.cat((m[p], x[p]), dim=-1)
             self.plane_net(m, edge_index_plane)
             self.nexus_net(m, edge_index_nexus, nexus)
+            e = self.interaction_net(m, batch)
         ret = {}
         for decoder in self.decoders:
-            ret.update(decoder(m, batch))
+            ret.update(decoder(m, e, batch))
         return ret
 
     def step(self, data: HeteroData | Batch,

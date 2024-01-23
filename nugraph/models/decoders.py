@@ -120,7 +120,7 @@ class SemanticDecoder(DecoderBase):
         for p in planes:
             self.net[p] = nn.Linear(node_features, len(semantic_classes))
 
-    def forward(self, x: dict[str, Tensor],
+    def forward(self, x: dict[str, Tensor], e: Tensor,
                 batch: dict[str, Tensor]) -> dict[str, dict[str, Tensor]]:
         return { 'x_semantic': { p: self.net[p](x[p]) for p in self.planes } }
 
@@ -174,7 +174,7 @@ class FilterDecoder(DecoderBase):
                 nn.Sigmoid(),
             )
 
-    def forward(self, x: dict[str, Tensor],
+    def forward(self, x: dict[str, Tensor], e: Tensor,
                 batch: dict[str, Tensor]) -> dict[str, dict[str, Tensor]]:
         return { 'x_filter': { p: self.net[p](x[p]).squeeze(dim=-1) for p in self.planes }}
 
@@ -196,7 +196,7 @@ class EventDecoder(DecoderBase):
     for the entire event
     '''
     def __init__(self,
-                 node_features: int,
+                 interaction_features: int,
                  planes: list[str],
                  event_classes: list[str]):
         super().__init__('event',
@@ -218,17 +218,12 @@ class EventDecoder(DecoderBase):
         self.confusion['precision_event_matrix'] = tm.ConfusionMatrix(
             normalize='pred', **metric_args)
 
-        self.pool = nn.ModuleDict()
-        for p in planes:
-            self.pool[p] = SoftmaxAggregation(learn=True)
-        self.net = nn.Sequential(
-            nn.Linear(in_features=len(planes) * node_features,
-                      out_features=len(event_classes)))
+        self.net = nn.Linear(in_features=interaction_features,
+                             out_features=len(event_classes))
 
-    def forward(self, x: dict[str, Tensor],
+    def forward(self, x: dict[str, Tensor], e: Tensor,
                 batch: dict[str, Tensor]) -> dict[str, dict[str, Tensor]]:
-        x = [ pool(x[p], batch[p]) for p, pool in self.pool.items() ]
-        return { 'x': { 'evt': self.net(cat(x, dim=1)) }}
+        return { 'x': { 'evt': self.net(e) } }
 
     def arrange(self, batch) -> tuple[Tensor, Tensor]:
         return batch['evt'].x, batch['evt'].y
@@ -280,7 +275,8 @@ class VertexDecoder(DecoderBase):
         del net[-1] # remove last activation function
         self.net = nn.Sequential(*net)
 
-    def forward(self, x: dict[str, Tensor], batch: dict[str, Tensor]) -> dict[str,dict[str, Tensor]]:
+    def forward(self, x: dict[str, Tensor], e: Tensor,
+                batch: dict[str, Tensor]) -> dict[str,dict[str, Tensor]]:
         x = [ net(x[p], index=batch[p]) for p, net in self.aggr.items() ]
         x = cat(x, dim=1)
         return { 'x_vtx': { 'evt': self.net(x) }}
@@ -319,7 +315,8 @@ class InstanceDecoder(DecoderBase):
                 nn.Linear(num_features, 1),
                 nn.Sigmoid())
 
-    def forward(self, x: dict[str, Tensor], batch: dict[str, Tensor]) -> dict[str, dict[str, Tensor]]:
+    def forward(self, x: dict[str, Tensor], e: Tensor,
+                batch: dict[str, Tensor]) -> dict[str, dict[str, Tensor]]:
         return {'x_instance': {p: self.net[p](x[p].flatten(start_dim=1)).squeeze(dim=-1) for p in self.net.keys()}}
 
     def arrange(self, batch: dict[str, Tensor]) -> tuple[Tensor, Tensor]:
