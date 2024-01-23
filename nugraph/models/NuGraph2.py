@@ -104,7 +104,6 @@ class NuGraph2(LightningModule):
                 planar_features,
                 instance_features,
                 planes,
-                semantic_classes,
             )
             self.decoders.append(self.instance_decoder)
 

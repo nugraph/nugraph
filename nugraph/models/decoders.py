@@ -303,24 +303,21 @@ class InstanceDecoder(DecoderBase):
     def __init__(self,
                  node_features: int,
                  instance_features: int,
-                 planes: list[str],
-                 semantic_classes: list[str]):
+                 planes: list[str]):
         super().__init__('instance',
                          planes,
-                         semantic_classes,
+                         None,
                          ObjCondensationLoss(),
                          weight=1.)
-
-        num_features = len(semantic_classes) * node_features
 
         self.net_coords = nn.ModuleDict()
         self.net_filter = nn.ModuleDict()
         for p in planes:
             self.net_filter[p] = nn.Sequential(
-                nn.Linear(num_features, 1),
+                nn.Linear(node_features, 1),
                 nn.Sigmoid(),
             )
-            self.net_coords[p] = nn.Linear(num_features, instance_features)
+            self.net_coords[p] = nn.Linear(node_features, instance_features)
 
     def forward(self, x: dict[str, Tensor], batch: dict[str, Tensor]) -> dict[str, dict[str, Tensor]]:
 
@@ -332,14 +329,11 @@ class InstanceDecoder(DecoderBase):
 
         for p in self.net_filter.keys():
 
-            # flatten out categorical embedding
-            x_plane = x[p].flatten(start_dim=1)
-
             # project to object condensation space
-            ret['x_instance_coords'][p] = self.net_coords[p](x_plane)
+            ret['x_instance_coords'][p] = self.net_coords[p](x[p])
 
             # calculate filter
-            ret['x_instance_filter'][p] = self.net_filter[p](x_plane).squeeze(dim=1)
+            ret['x_instance_filter'][p] = self.net_filter[p](x[p]).squeeze(dim=1)
 
         return ret
 
