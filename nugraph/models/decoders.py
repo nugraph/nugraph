@@ -318,6 +318,7 @@ class InstanceDecoder(DecoderBase):
                 nn.Sigmoid(),
             )
             self.net_coords[p] = nn.Linear(node_features, instance_features)
+        self.dfs = []
 
     def forward(self, x: dict[str, Tensor], batch: dict[str, Tensor]) -> dict[str, dict[str, Tensor]]:
 
@@ -337,12 +338,48 @@ class InstanceDecoder(DecoderBase):
 
         return ret
 
+    def loss(self,
+             batch: 'pyg.HeteroData',
+             stage: str,
+             confusion: bool = False):
+        x, y = self.arrange(batch)
+        w = self.weight * (-1 * self.temp).exp()
+        loss = w * self.loss_func(x, y) + self.temp
+
+        if stage == 'val':
+            for data in batch.to_data_list():
+                if len(self.dfs) >= 100:
+                    break
+                self.dfs.append(self.draw_event_display(data))
+
+        return loss, {}
+
     def arrange(self, batch: dict[str, Tensor]) -> tuple[Tensor, Tensor]:
         x_coords = cat([batch[p]['x_instance_coords'] for p in self.planes], dim=0)
         x_filter = cat([batch[p]['x_instance_filter'] for p in self.planes], dim=0)
         y = cat([batch[p]['y_instance'] for p in self.planes], dim=0)
         return (x_coords, x_filter), y
+    
+    def draw_event_display(self, data: 'pyg.HeteroData'):
+        import pandas as pd
+        df = pd.DataFrame({
+            "x": cat([data[p].x_instance_coords[:,0] for p in self.planes], dim=0).cpu(),
+            "y": cat([data[p].x_instance_coords[:,1] for p in self.planes], dim=0).cpu(),
+            "instance": cat([data[p].y_instance for p in self.planes], dim=0).cpu(),
+        })
+        return df
 
-    def metrics(self, x: Tensor, y: Tensor, stage: str) -> dict[str, Any]:
-        metrics = {}
-        return metrics
+    def on_epoch_end(self,
+                     logger: 'pl.loggers.TensorBoardLogger',
+                     stage: str,
+                     epoch: int) -> None:
+        if not logger: return
+        if stage == 'val':
+            for i, df in enumerate(self.dfs):
+                fig = plt.figure(figsize=[8,6])
+                sn.scatterplot(x=df.x, y=df.y, hue=df.instance)
+                logger.experiment.add_figure(
+                    f'objcon/evt-{i+1}',
+                    fig, global_step=epoch
+                )
+        self.dfs = []
