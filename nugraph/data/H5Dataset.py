@@ -12,7 +12,7 @@ class H5Dataset(Dataset):
                  samples: list[str],
                  transform: Optional[Callable] = None):
         super().__init__(transform=transform)
-        self._interface = io.H5Interface(h5py.File(filename))
+        self._interface = io.H5Interface(h5py.File(filename, driver='core'))
         self._samples = samples
 
     def len(self) -> int:
