@@ -70,8 +70,8 @@ class DecoderBase(nn.Module, ABC):
                    vmin=0, vmax=1,
                    annot=True)
         plt.ylim(0, len(self.classes))
-        plt.xlabel('Assigned label')
-        plt.ylabel('True label')
+        plt.xlabel('True label')
+        plt.ylabel('Assigned label')
         return fig
 
     def on_epoch_end(self,
