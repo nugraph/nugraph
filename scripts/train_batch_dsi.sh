@@ -16,7 +16,7 @@
 #SBATCH --error=/home/%u/%A.err
 
 # If there are existing checkpoint files, specify ckpt_dir
-ckpt_dir=/net/projects/fermi-gnn/jiheeyou/vertex/attentional-mlp-64-sementic-filter/checkpoints/
+ckpt_dir=/net/projects/fermi-gnn/%u/vertex/attentional-mlp-64-sementic-filter/checkpoints/
 files=$(ls -t $ckpt_dir)
 latest_file=$(echo "$files" | head -n 1) # Get the first (latest) file
 ckpt_path=$ckpt_dir$latest_file # Construct the full path to the most recent checkpoint file
