@@ -253,7 +253,8 @@ class VertexDecoder(DecoderBase):
                  lstm_features: int,
                  mlp_features: list[int],
                  planes: list[str],
-                 semantic_classes: list[str]):
+                 semantic_classes: list[str],
+                 aggr_in : int = 8):
         super().__init__('vertex',
                          planes,
                          semantic_classes,
@@ -264,19 +265,31 @@ class VertexDecoder(DecoderBase):
 
         # initialise aggregation function
         self.aggr = nn.ModuleDict()
+        self.linear = nn.ModuleDict()
         aggr_kwargs = {}
         if aggr == 'lstm':
             aggr_kwargs = {
-                'in_channels': in_features,
+                'in_channels': aggr_in,
                 'out_channels': lstm_features,
             }
             in_features = lstm_features
+        
+        if aggr == 'SetTransformer':
+            aggr_kwargs = {
+                'channels': aggr_in,
+                'num_encoder_blocks' : 1,
+                'num_decoder_blocks' :1,
+                'heads' : 2,
+                'dropout' : 0.2
+            }
         for p in self.planes:
+            self.linear[p] = nn.Linear(in_features =in_features, out_features = aggr_in)
             self.aggr[p] = aggr_resolver(aggr, **(aggr_kwargs or {}))
 
         # initialise MLP
+        mlp_in_features = aggr_in
         net = []
-        feats = [ len(self.planes) * in_features ] + mlp_features + [ 3 ]
+        feats = [ len(self.planes) * mlp_in_features ] + mlp_features + [ 3 ]
         for f_in, f_out in zip(feats[:-1], feats[1:]):
             net.append(nn.Linear(in_features=f_in, out_features=f_out))
             net.append(nn.ReLU())
@@ -284,6 +297,7 @@ class VertexDecoder(DecoderBase):
         self.net = nn.Sequential(*net)
 
     def forward(self, x: dict[str, Tensor], batch: dict[str, Tensor]) -> dict[str,dict[str, Tensor]]:
+        x = { p:net(x[p].flatten(1)) for p, net in self.linear.items() }
         x = [ net(x[p].flatten(1), index=batch[p]) for p, net in self.aggr.items() ]
         x = cat(x, dim=1)
         return { 'x_vtx': { 'evt': self.net(x) }}
