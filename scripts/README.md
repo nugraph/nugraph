@@ -22,7 +22,7 @@ Make sure to be at your home directory on the cluster (e.g. /home/username).
     ```
 
 ### Data Source
-We will be using the MicroBoone dataset. This link(https://microboone.fnal.gov/documents-publications/public-datasets/) contains more information on the data. The data file is located at /net/projects/fermi-gnn/CHEP2023.gnn.h5 -- make sure you have access to the data (you can check by running touch /net/projects/fermi-gnn/CHEP2023.gnn.h5).
+We will be using the MicroBoone dataset. This [link](https://microboone.fnal.gov/documents-publications/public-datasets/) contains more information on the data. The data file is located at /net/projects/fermi-gnn/CHEP2023.gnn.h5 -- make sure you have access to the data (you can check by running touch /net/projects/fermi-gnn/CHEP2023.gnn.h5).
 
 ### Train models in interactive session
 Some lessons we learned: requesting 60G memory is enough, and GPU is necessary.
@@ -55,7 +55,9 @@ scripts/train.py \
 Edit train_batch_dsi.sh accordingly, then:
 #### LSTM aggregator
 Submit the following command in terminal. Edit --version and --vertex-mlp-feats as necessary.
+'''
 sbatch scripts/train_batch_dsi.sh --version lstm-32-mlp-64-sementic-filter --vertex-mlp-feats 64 --vertex-aggr lstm --vertex-lstm-feats 32 --semantic --filter
+'''
 #### mean aggregator
 Submit the following command in terminal. Edit --version and --vertex-mlp-feats as necessary.
 sbatch scripts/train_batch_dsi.sh --version mean-mlp-64-sementic-filter --vertex-mlp-feats 64 --vertex-aggr mean --semantic --filter
