@@ -1,4 +1,4 @@
-
+This is a Readme written by the W24 Clinic group. We updated NuGraph/scripts/train_batch_dsi.sh and NuGraph/nugraph/models/decoders.py
 Reference to last quarter's README.md: [link](https://github.com/exatrkx/NuGraph/blob/vertex-param-search/README.md)
 
 ### Environment Setup
