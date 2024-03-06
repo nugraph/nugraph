@@ -3,18 +3,18 @@ Reference to last quarter's README.md: [link](https://github.com/exatrkx/NuGraph
 
 ### Environment Setup
 
-[TODO]insert instructions on how to prepare for installation such as: make sure to have Anaconda installed, make sure to have access to the data, be at your home directory on the cluster...
+Make sure to be at your home directory on the cluster (e.g. /home/username).
 
-1. installing dependencies with Anaconda Client
+1. Installing dependencies with Anaconda Client
 
-    [TODO]insert background of the numl-dsi environment...
+    numl-dsi environment contains pytorch packages dependenceis for nugraph library.
     ```
     conda install -y anaconda-client
     conda env create numl/numl-dsi
     ```
-2. installing NuGraph in editable mode
+2. Installing NuGraph in editable mode
 
-    [TODO]insert explanation on why NuGraph needs to be installed again...
+    this allows you to access Fermilab researchers' latest update to nugraph library.
     ```
     git clone git@github.com:exatrkx/NuGraph.git
     conda activate numl-dsi
@@ -22,13 +22,10 @@ Reference to last quarter's README.md: [link](https://github.com/exatrkx/NuGraph
     ```
 
 ### Data Source
-[TODO]insert description of data
-
-### Helpful External Links
-[TODO]insert helpful links, maybe better to separate them in sections
+We will be using the MicroBoone dataset. This link(https://microboone.fnal.gov/documents-publications/public-datasets/) contains more information on the data. The data file is located at /net/projects/fermi-gnn/CHEP2023.gnn.h5 -- make sure you have access to the data (you can check by running touch /net/projects/fermi-gnn/CHEP2023.gnn.h5).
 
 ### Train models in interactive session
-[TODO]insert on lessons learned when using interactive session
+Some lessons we learned: requesting 60G memory is enough, and GPU is necessary.
 1. Request a compute node
 
 ```
@@ -37,7 +34,6 @@ srun --pty \
     --partition=general \
     --nodes=1 \
     --gres=gpu:1 \
-    --constraint=a100 \
     --cpus-per-gpu=8 \
     --mem-per-cpu=60G 
     bash
@@ -56,21 +52,20 @@ scripts/train.py \
 ```
 
 ### Train models with scripts
-[TODO]insert instructions and scripts under each section
-
-***There should be description for every file created this quarter***
+Edit train_batch_dsi.sh accordingly, then:
 #### LSTM aggregator
+Submit the following command in terminal. Edit --version and --vertex-mlp-feats as necessary.
+sbatch scripts/train_batch_dsi.sh --version lstm-32-mlp-64-sementic-filter --vertex-mlp-feats 64 --vertex-aggr lstm --vertex-lstm-feats 32 --semantic --filter
 #### mean aggregator
+Submit the following command in terminal. Edit --version and --vertex-mlp-feats as necessary.
+sbatch scripts/train_batch_dsi.sh --version mean-mlp-64-sementic-filter --vertex-mlp-feats 64 --vertex-aggr mean --semantic --filter
 #### attentional aggregator
+Submit the following command in terminal. Edit --version and --vertex-mlp-feats as necessary.
+sbatch scripts/train_batch_dsi.sh --version attentional-mlp-64-sementic-filter --vertex-mlp-feats 64 --vertex-aggr attn --semantic --filter
 #### set transformer aggregator
 
 ### Compare models with Tensorboard
-1. Into Terminal: 
-```tensorboard --port XXXX --bind_all --logdir /net/projects/fermi-2/logs --samples_per_plugin ‘images=200’```
-Insert random numbers for XXXX which you think no one else will use
-2. Copy and paste the created link into a web browser
+1. Insert random numbers for XXXX which you think no one else will use, and run from terminal (numl-dsi should be activated):
+tensorboard --port XXXX --bind_all --logdir (Fill in your log directory address) --samples_per_plugin images=200
 
-### Contacts
-- name and email
-- name and email
-- name and email
+2. Copy and paste the created link into a web browser
