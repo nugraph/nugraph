@@ -4,7 +4,7 @@ from abc import ABC
 
 from torch import Tensor, tensor, cat
 import torch.nn as nn
-from torch_geometric.nn.aggr import SoftmaxAggregation, LSTMAggregation, AttentionalAggregation
+from torch_geometric.nn.aggr import SoftmaxAggregation, LSTMAggregation, AttentionalAggregation, AttentionalAggregation
 from torch_geometric.nn.resolver import aggregation_resolver as aggr_resolver
 
 import torchmetrics as tm
@@ -290,6 +290,14 @@ class VertexDecoder(DecoderBase):
                 'heads' : 2,
                 'dropout' : 0.2
             }
+        elif aggr == 'attn':
+            # AttentionalAggregation needs to specify gate_nn
+            # Currently gate_nn is a simple gate neural network with 3 layers
+            gate_nn = nn.Sequential(
+                nn.Linear(in_features=in_features, out_features=64),
+                nn.ReLU(),
+                nn.Linear(in_features=64, out_features=1))  # Output shape will be [-1, 1]
+            aggr = AttentionalAggregation(gate_nn = gate_nn)
         for p in self.planes:
             self.linear[p] = nn.Linear(in_features =in_features, out_features = aggr_in)
             self.aggr[p] = aggr_resolver(aggr, **(aggr_kwargs or {}))
