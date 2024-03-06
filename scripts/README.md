@@ -72,6 +72,8 @@ sbatch scripts/train_batch_dsi.sh --version attentional-mlp-64-sementic-filter -
 
 ### Compare models with Tensorboard
 1. Insert random numbers for XXXX which you think no one else will use, and run from terminal (numl-dsi should be activated):
-tensorboard --port XXXX --bind_all --logdir (Fill in your log directory address) --samples_per_plugin images=200
+```
+tensorboard --port XXXX --bind_all --logdir <path-to-logs-folder> --samples_per_plugin images=200
+```
 
-2. Copy and paste the created link into a web browser
+3. Copy and paste the created link into a web browser
