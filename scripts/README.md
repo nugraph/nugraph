@@ -53,29 +53,29 @@ scripts/train.py \
 ### Train models with scripts
 Edit train_batch_dsi.sh accordingly, then:
 #### LSTM aggregator
-Submit the following command in terminal. Edit --version and --vertex-mlp-feats as necessary.
+Submit the following command in terminal. Edit --logdir, --name, --version and --vertex-mlp-feats as necessary.
 ```
-sbatch scripts/train_batch_dsi.sh --version lstm-32-mlp-64-sementic-filter --vertex-mlp-feats 64 --vertex-aggr lstm --vertex-lstm-feats 32 --semantic --filter
+sbatch scripts/train_batch_dsi.sh --logdir <path/to/logdir>  --name <Name> --version lstm-32-mlp-64-sementic-filter --vertex-mlp-feats 64 --vertex-aggr lstm --vertex-lstm-feats 32 --semantic --filter
 ```
 #### mean aggregator
-Submit the following command in terminal. Edit --version and --vertex-mlp-feats as necessary.
+Submit the following command in terminal. Edit --logdir, --name, --version and --vertex-mlp-feats as necessary.
 ```
-sbatch scripts/train_batch_dsi.sh --version mean-mlp-64-sementic-filter --vertex-mlp-feats 64 --vertex-aggr mean --semantic --filter
+sbatch scripts/train_batch_dsi.sh --logdir <path/to/logdir>  --name <Name> --version mean-mlp-64-sementic-filter --vertex-mlp-feats 64 --vertex-aggr mean --semantic --filter
 ```
 #### Power mean aggregator
-Submit the following command in terminal. Edit --version and --vertex-mlp-feats as necessary.
+Submit the following command in terminal. Edit --logdir, --name, --version and --vertex-mlp-feats as necessary.
 ```
-sbatch scripts/train_batch_dsi.sh --version mean-mlp-64-sementic-filter --vertex-mlp-feats 64 --vertex-aggr powermean --semantic --filter
+sbatch scripts/train_batch_dsi.sh --logdir <path/to/logdir>  --name <Name> --version mean-mlp-64-sementic-filter --vertex-mlp-feats 64 --vertex-aggr powermean --semantic --filter
 ```
 #### attentional aggregator
-Submit the following command in terminal. Edit --version and --vertex-mlp-feats as necessary.
+Submit the following command in terminal. Edit --logdir, --name, --version and --vertex-mlp-feats as necessary.
 ```
-sbatch scripts/train_batch_dsi.sh --version attentional-mlp-64-sementic-filter --vertex-mlp-feats 64 --vertex-aggr attn --semantic --filter
+sbatch scripts/train_batch_dsi.sh --logdir <path/to/logdir>  --name <Name> --version attentional-mlp-64-sementic-filter --vertex-mlp-feats 64 --vertex-aggr attn --semantic --filter
 ```
 #### set transformer aggregator
-Submit the following command in terminal. Edit --version and --vertex-mlp-feats as necessary.
+Submit the following command in terminal. Edit --logdir, --name, --version and --vertex-mlp-feats as necessary.
 ```
-sbatch scripts/train_batch_dsi.sh --version mean-mlp-64-sementic-filter --vertex-mlp-feats 64 --vertex-aggr SetTransformer --semantic --filter
+sbatch scripts/train_batch_dsi.sh --logdir <path/to/logdir>  --name <Name> --version mean-mlp-64-sementic-filter --vertex-mlp-feats 64 --vertex-aggr SetTransformer --semantic --filter
 ```
 
 ### Compare models with Tensorboard
