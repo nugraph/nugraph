@@ -294,7 +294,7 @@ class VertexDecoder(DecoderBase):
             # AttentionalAggregation needs to specify gate_nn
             # Currently gate_nn is a simple gate neural network with 3 layers
             gate_nn = nn.Sequential(
-                nn.Linear(in_features=in_features, out_features=64),
+                nn.Linear(in_features=aggr_in, out_features=64),
                 nn.ReLU(),
                 nn.Linear(in_features=64, out_features=1))  # Output shape will be [-1, 1]
             aggr = AttentionalAggregation(gate_nn = gate_nn)
