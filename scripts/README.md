@@ -55,15 +55,19 @@ scripts/train.py \
 Edit train_batch_dsi.sh accordingly, then:
 #### LSTM aggregator
 Submit the following command in terminal. Edit --version and --vertex-mlp-feats as necessary.
-'''
+```
 sbatch scripts/train_batch_dsi.sh --version lstm-32-mlp-64-sementic-filter --vertex-mlp-feats 64 --vertex-aggr lstm --vertex-lstm-feats 32 --semantic --filter
-'''
+```
 #### mean aggregator
 Submit the following command in terminal. Edit --version and --vertex-mlp-feats as necessary.
+```
 sbatch scripts/train_batch_dsi.sh --version mean-mlp-64-sementic-filter --vertex-mlp-feats 64 --vertex-aggr mean --semantic --filter
+```
 #### attentional aggregator
 Submit the following command in terminal. Edit --version and --vertex-mlp-feats as necessary.
+```
 sbatch scripts/train_batch_dsi.sh --version attentional-mlp-64-sementic-filter --vertex-mlp-feats 64 --vertex-aggr attn --semantic --filter
+```
 #### set transformer aggregator
 
 ### Compare models with Tensorboard
