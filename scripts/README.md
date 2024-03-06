@@ -62,12 +62,21 @@ Submit the following command in terminal. Edit --version and --vertex-mlp-feats 
 ```
 sbatch scripts/train_batch_dsi.sh --version mean-mlp-64-sementic-filter --vertex-mlp-feats 64 --vertex-aggr mean --semantic --filter
 ```
+#### Power mean aggregator
+Submit the following command in terminal. Edit --version and --vertex-mlp-feats as necessary.
+```
+sbatch scripts/train_batch_dsi.sh --version mean-mlp-64-sementic-filter --vertex-mlp-feats 64 --vertex-aggr powermean --semantic --filter
+```
 #### attentional aggregator
 Submit the following command in terminal. Edit --version and --vertex-mlp-feats as necessary.
 ```
 sbatch scripts/train_batch_dsi.sh --version attentional-mlp-64-sementic-filter --vertex-mlp-feats 64 --vertex-aggr attn --semantic --filter
 ```
 #### set transformer aggregator
+Submit the following command in terminal. Edit --version and --vertex-mlp-feats as necessary.
+```
+sbatch scripts/train_batch_dsi.sh --version mean-mlp-64-sementic-filter --vertex-mlp-feats 64 --vertex-aggr SetTransformer --semantic --filter
+```
 
 ### Compare models with Tensorboard
 1. Insert random numbers for XXXX which you think no one else will use, and run from terminal (numl-dsi should be activated):
