@@ -1,4 +1,4 @@
-from argparse import ArgumentParser
+import argparse
 import warnings
 import psutil
 
@@ -14,6 +14,8 @@ from .encoder import Encoder
 from .plane import PlaneNet
 from .nexus import NexusNet
 from .decoders import SemanticDecoder, FilterDecoder, EventDecoder, VertexDecoder
+
+from ...data import H5DataModule
 
 class NuGraph3(LightningModule):
     """PyTorch Lightning module for model training.
@@ -255,9 +257,13 @@ class NuGraph3(LightningModule):
                      batch_size=batch.num_graphs, reduce_fx=torch.max)
 
     @staticmethod
-    def add_model_args(parser: ArgumentParser) -> ArgumentParser:
+    def add_model_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         '''Add argparse argpuments for model structure'''
         model = parser.add_argument_group('model', 'NuGraph3 model configuration')
+        model.add_argument('--num-iters', type=int, default=5,
+                           help='Number of message-passing iterations')
+        model.add_argument('--in-feats', type=int, default=4,
+                           help='Number of input node features')
         model.add_argument('--planar-feats', type=int, default=128,
                            help='Hidden dimensionality of planar convolutions')
         model.add_argument('--nexus-feats', type=int, default=32,
@@ -276,19 +282,30 @@ class NuGraph3(LightningModule):
                            help='Enable background filter head')
         model.add_argument('--vertex', action='store_true', default=False,
                            help='Enable vertex regression head')
+        model.add_argument('--no-checkpointing', action='store_true', default=False,
+                           help='Disable checkpointing during training')
+        model.add_argument('--epochs', type=int, default=80,
+                           help='Maximum number of epochs to train for')
+        model.add_argument('--learning-rate', type=float, default=0.001,
+                           help='Max learning rate during training')
         return parser
 
-    @staticmethod
-    def add_train_args(parser: ArgumentParser) -> ArgumentParser:
-        train = parser.add_argument_group('train', 'NuGraph3 training configuration')
-        train.add_argument('--no-checkpointing', action='store_true', default=False,
-                           help='Disable checkpointing during training')
-        train.add_argument('--epochs', type=int, default=80,
-                           help='Maximum number of epochs to train for')
-        train.add_argument('--learning-rate', type=float, default=0.001,
-                           help='Max learning rate during training')
-        train.add_argument('--clip-gradients', type=float, default=None,
-                           help='Maximum value to clip gradient norm')
-        train.add_argument('--gamma', type=float, default=2,
-                           help='Focal loss gamma parameter')
-        return parser
+    @classmethod
+    def from_args(cls, args: argparse.Namespace, nudata: H5DataModule) -> 'NuGraph3':
+        return cls(
+            in_features=args.in_feats,
+            planar_features=args.planar_feats,
+            nexus_features=args.nexus_feats,
+            vertex_aggr=args.vertex_aggr,
+            vertex_lstm_features=args.vertex_lstm_feats,
+            vertex_mlp_features=args.vertex_mlp_feats,
+            planes=nudata.planes,
+            semantic_classes=nudata.semantic_classes,
+            event_classes=nudata.event_classes,
+            num_iters=args.num_iters,
+            event_head=args.event,
+            semantic_head=args.semantic,
+            filter_head=args.filter,
+            vertex_head=args.vertex,
+            checkpoint=not args.no_checkpointing,
+            lr=args.learning_rate)

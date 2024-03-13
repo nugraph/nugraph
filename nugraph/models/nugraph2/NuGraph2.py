@@ -1,4 +1,4 @@
-from argparse import ArgumentParser
+import argparse
 import warnings
 import psutil
 
@@ -13,7 +13,9 @@ from torch_geometric.utils import unbatch
 from .encoder import Encoder
 from .plane import PlaneNet
 from .nexus import NexusNet
-from .decoders import SemanticDecoder, FilterDecoder, EventDecoder, VertexDecoder
+from .decoders import SemanticDecoder, FilterDecoder
+
+from ...data import H5DataModule
 
 class NuGraph2(LightningModule):
     """PyTorch Lightning module for model training.
@@ -24,15 +26,11 @@ class NuGraph2(LightningModule):
                  in_features: int = 4,
                  planar_features: int = 64,
                  nexus_features: int = 16,
-                 vertex_features: int = 32,
                  planes: list[str] = ['u','v','y'],
                  semantic_classes: list[str] = ['MIP','HIP','shower','michel','diffuse'],
-                 event_classes: list[str] = ['numu','nue','nc'],
                  num_iters: int = 5,
-                 event_head: bool = False,
                  semantic_head: bool = True,
                  filter_head: bool = True,
-                 vertex_head: bool = False,
                  checkpoint: bool = False,
                  lr: float = 0.001):
         super().__init__()
@@ -43,7 +41,6 @@ class NuGraph2(LightningModule):
 
         self.planes = planes
         self.semantic_classes = semantic_classes
-        self.event_classes = event_classes
         self.num_iters = num_iters
         self.lr = lr
 
@@ -66,14 +63,6 @@ class NuGraph2(LightningModule):
 
         self.decoders = []
 
-        if event_head:
-            self.event_decoder = EventDecoder(
-                planar_features,
-                planes,
-                semantic_classes,
-                event_classes)
-            self.decoders.append(self.event_decoder)
-
         if semantic_head:
             self.semantic_decoder = SemanticDecoder(
                 planar_features,
@@ -87,14 +76,6 @@ class NuGraph2(LightningModule):
                 planes,
                 semantic_classes)
             self.decoders.append(self.filter_decoder)
-            
-        if vertex_head:
-            self.vertex_decoder = VertexDecoder(
-                planar_features,
-                vertex_features,
-                planes,
-                semantic_classes)
-            self.decoders.append(self.vertex_decoder)
 
         if len(self.decoders) == 0:
             raise Exception('At least one decoder head must be enabled!')
@@ -255,36 +236,43 @@ class NuGraph2(LightningModule):
                      batch_size=batch.num_graphs, reduce_fx=torch.max)
 
     @staticmethod
-    def add_model_args(parser: ArgumentParser) -> ArgumentParser:
+    def add_model_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         '''Add argparse argpuments for model structure'''
         model = parser.add_argument_group('model', 'NuGraph2 model configuration')
+        model.add_argument('--num-iters', type=int, default=5,
+                           help='Number of message-passing iterations')
+        model.add_argument('--in-feats', type=int, default=4,
+                           help='Number of input node features')
         model.add_argument('--planar-feats', type=int, default=64,
                            help='Hidden dimensionality of planar convolutions')
         model.add_argument('--nexus-feats', type=int, default=16,
                            help='Hidden dimensionality of nexus convolutions')
-        model.add_argument('--vertex-feats', type=int, default=32,
-                           help='Hidden dimensionality of vertex decoder')
-        model.add_argument('--event', action='store_true', default=False,
-                           help='Enable event classification head')
         model.add_argument('--semantic', action='store_true', default=False,
                            help='Enable semantic segmentation head')
         model.add_argument('--filter', action='store_true', default=False,
                            help='Enable background filter head')
-        model.add_argument('--vertex', action='store_true', default=False,
-                           help='Enable vertex regression head')
-        return parser
-
-    @staticmethod
-    def add_train_args(parser: ArgumentParser) -> ArgumentParser:
-        train = parser.add_argument_group('train', 'NuGraph2 training configuration')
-        train.add_argument('--no-checkpointing', action='store_true', default=False,
+        model.add_argument('--no-checkpointing', action='store_true', default=False,
                            help='Disable checkpointing during training')
-        train.add_argument('--epochs', type=int, default=80,
+        model.add_argument('--epochs', type=int, default=80,
                            help='Maximum number of epochs to train for')
-        train.add_argument('--learning-rate', type=float, default=0.001,
+        model.add_argument('--learning-rate', type=float, default=0.001,
                            help='Max learning rate during training')
         train.add_argument('--clip-gradients', type=float, default=None,
                            help='Maximum value to clip gradient norm')
         train.add_argument('--gamma', type=float, default=2,
                            help='Focal loss gamma parameter')
         return parser
+
+    @classmethod
+    def from_args(cls, args: argparse.Namespace, nudata: H5DataModule) -> 'NuGraph2':
+        return cls(
+            in_features=args.in_feats,
+            planar_features=args.planar_feats,
+            nexus_features=args.nexus_feats,
+            planes=nudata.planes,
+            semantic_classes=nudata.semantic_classes,
+            num_iters=args.num_iters,
+            semantic_head=args.semantic,
+            filter_head=args.filter,
+            checkpoint=not args.no_checkpointing,
+            lr=args.learning_rate)
