@@ -13,7 +13,7 @@ import warnings
 warnings.filterwarnings('ignore', '.*TypedStorage is deprecated.*')
 
 Data = ng.data.H5DataModule
-Model = ng.models.NuGraph2
+Model = ng.models.NuGraph3
 
 def configure():
     parser = argparse.ArgumentParser()
@@ -29,7 +29,6 @@ def configure():
                         help='Enable requested profiler')
     parser = Data.add_data_args(parser)
     parser = Model.add_model_args(parser)
-    parser = Model.add_train_args(parser)
     return parser.parse_args()
 
 def train(args):
@@ -41,22 +40,7 @@ def train(args):
                   shuffle=args.shuffle, balance_frac=args.balance_frac)
 
     if args.name is not None and args.logdir is not None and args.resume is None:
-        model = Model(in_features=4,
-                      planar_features=args.planar_feats,
-                      nexus_features=args.nexus_feats,
-                      vertex_aggr=args.vertex_aggr,
-                      vertex_lstm_features=args.vertex_lstm_feats,
-                      vertex_mlp_features=args.vertex_mlp_feats,
-                      planes=nudata.planes,
-                      semantic_classes=nudata.semantic_classes,
-                      event_classes=nudata.event_classes,
-                      num_iters=5,
-                      event_head=args.event,
-                      semantic_head=args.semantic,
-                      filter_head=args.filter,
-                      vertex_head=args.vertex,
-                      checkpoint=not args.no_checkpointing,
-                      lr=args.learning_rate)
+        model = Model.from_args(args, nudata)
         name = args.name
         logdir = args.logdir
         version = args.version

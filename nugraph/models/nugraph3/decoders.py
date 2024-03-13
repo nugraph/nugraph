@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 import seaborn as sn
 import math
 
-from ..util import RecallLoss, LogCoshLoss, ObjCondensationLoss
+from ...util import RecallLoss, LogCoshLoss, ObjCondensationLoss
 
 class DecoderBase(nn.Module, ABC):
     '''Base class for all NuGraph decoders'''
@@ -257,6 +257,7 @@ class VertexDecoder(DecoderBase):
         # initialise aggregation function
         self.aggr = nn.ModuleDict()
         aggr_kwargs = {}
+        in_features = node_features
         if aggr == 'lstm':
             aggr_kwargs = {
                 'in_channels': node_features,
@@ -268,7 +269,7 @@ class VertexDecoder(DecoderBase):
 
         # initialise MLP
         net = []
-        feats = [ len(self.planes) * node_features ] + mlp_features + [ 3 ]
+        feats = [ len(self.planes) * in_features ] + mlp_features + [ 3 ]
         for f_in, f_out in zip(feats[:-1], feats[1:]):
             net.append(nn.Linear(in_features=f_in, out_features=f_out))
             net.append(nn.ReLU())
