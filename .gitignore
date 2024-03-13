@@ -166,6 +166,9 @@ logs
 *.png
 *.pdf
 
+# vscode workspaces
+*.code-workspace
+
 # checkpoint files
 *.ckpt
 
