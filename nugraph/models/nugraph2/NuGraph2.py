@@ -13,7 +13,7 @@ from torch_geometric.utils import unbatch
 from .encoder import Encoder
 from .plane import PlaneNet
 from .nexus import NexusNet
-from .decoders import SemanticDecoder, FilterDecoder, EventDecoder, VertexDecoder
+from .decoders import SemanticDecoder, FilterDecoder
 
 class NuGraph2(LightningModule):
     """PyTorch Lightning module for model training.
@@ -24,15 +24,11 @@ class NuGraph2(LightningModule):
                  in_features: int = 4,
                  planar_features: int = 64,
                  nexus_features: int = 16,
-                 vertex_features: int = 32,
                  planes: list[str] = ['u','v','y'],
                  semantic_classes: list[str] = ['MIP','HIP','shower','michel','diffuse'],
-                 event_classes: list[str] = ['numu','nue','nc'],
                  num_iters: int = 5,
-                 event_head: bool = False,
                  semantic_head: bool = True,
                  filter_head: bool = True,
-                 vertex_head: bool = False,
                  checkpoint: bool = False,
                  lr: float = 0.001):
         super().__init__()
@@ -43,7 +39,6 @@ class NuGraph2(LightningModule):
 
         self.planes = planes
         self.semantic_classes = semantic_classes
-        self.event_classes = event_classes
         self.num_iters = num_iters
         self.lr = lr
 
@@ -66,14 +61,6 @@ class NuGraph2(LightningModule):
 
         self.decoders = []
 
-        if event_head:
-            self.event_decoder = EventDecoder(
-                planar_features,
-                planes,
-                semantic_classes,
-                event_classes)
-            self.decoders.append(self.event_decoder)
-
         if semantic_head:
             self.semantic_decoder = SemanticDecoder(
                 planar_features,
@@ -87,14 +74,6 @@ class NuGraph2(LightningModule):
                 planes,
                 semantic_classes)
             self.decoders.append(self.filter_decoder)
-            
-        if vertex_head:
-            self.vertex_decoder = VertexDecoder(
-                planar_features,
-                vertex_features,
-                planes,
-                semantic_classes)
-            self.decoders.append(self.vertex_decoder)
 
         if len(self.decoders) == 0:
             raise Exception('At least one decoder head must be enabled!')
@@ -262,16 +241,10 @@ class NuGraph2(LightningModule):
                            help='Hidden dimensionality of planar convolutions')
         model.add_argument('--nexus-feats', type=int, default=16,
                            help='Hidden dimensionality of nexus convolutions')
-        model.add_argument('--vertex-feats', type=int, default=32,
-                           help='Hidden dimensionality of vertex decoder')
-        model.add_argument('--event', action='store_true', default=False,
-                           help='Enable event classification head')
         model.add_argument('--semantic', action='store_true', default=False,
                            help='Enable semantic segmentation head')
         model.add_argument('--filter', action='store_true', default=False,
                            help='Enable background filter head')
-        model.add_argument('--vertex', action='store_true', default=False,
-                           help='Enable vertex regression head')
         return parser
 
     @staticmethod
