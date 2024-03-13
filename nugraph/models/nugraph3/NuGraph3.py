@@ -15,7 +15,7 @@ from .plane import PlaneNet
 from .nexus import NexusNet
 from .decoders import SemanticDecoder, FilterDecoder, EventDecoder, VertexDecoder
 
-class NuGraph2(LightningModule):
+class NuGraph3(LightningModule):
     """PyTorch Lightning module for model training.
 
     Wrap the base model in a LightningModule wrapper to handle training and
@@ -257,7 +257,7 @@ class NuGraph2(LightningModule):
     @staticmethod
     def add_model_args(parser: ArgumentParser) -> ArgumentParser:
         '''Add argparse argpuments for model structure'''
-        model = parser.add_argument_group('model', 'NuGraph2 model configuration')
+        model = parser.add_argument_group('model', 'NuGraph3 model configuration')
         model.add_argument('--planar-feats', type=int, default=128,
                            help='Hidden dimensionality of planar convolutions')
         model.add_argument('--nexus-feats', type=int, default=32,
@@ -280,7 +280,7 @@ class NuGraph2(LightningModule):
 
     @staticmethod
     def add_train_args(parser: ArgumentParser) -> ArgumentParser:
-        train = parser.add_argument_group('train', 'NuGraph2 training configuration')
+        train = parser.add_argument_group('train', 'NuGraph3 training configuration')
         train.add_argument('--no-checkpointing', action='store_true', default=False,
                            help='Disable checkpointing during training')
         train.add_argument('--epochs', type=int, default=80,
