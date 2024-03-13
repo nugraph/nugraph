@@ -261,3 +261,17 @@ class NuGraph2(LightningModule):
         train.add_argument('--gamma', type=float, default=2,
                            help='Focal loss gamma parameter')
         return parser
+
+    @classmethod
+    def from_args(cls, args: argparse.Namespace, nudata: H5DataModule) -> 'NuGraph2':
+        return cls(
+            in_features=args.in_feats,
+            planar_features=args.planar_feats,
+            nexus_features=args.nexus_feats,
+            planes=nudata.planes,
+            semantic_classes=nudata.semantic_classes,
+            num_iters=args.num_iters,
+            semantic_head=args.semantic,
+            filter_head=args.filter,
+            checkpoint=not args.no_checkpointing,
+            lr=args.learning_rate)
