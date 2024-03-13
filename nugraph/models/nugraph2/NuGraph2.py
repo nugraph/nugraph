@@ -1,4 +1,4 @@
-from argparse import ArgumentParser
+import argparse
 import warnings
 import psutil
 
@@ -14,6 +14,8 @@ from .encoder import Encoder
 from .plane import PlaneNet
 from .nexus import NexusNet
 from .decoders import SemanticDecoder, FilterDecoder
+
+from ...data import H5DataModule
 
 class NuGraph2(LightningModule):
     """PyTorch Lightning module for model training.
@@ -234,9 +236,13 @@ class NuGraph2(LightningModule):
                      batch_size=batch.num_graphs, reduce_fx=torch.max)
 
     @staticmethod
-    def add_model_args(parser: ArgumentParser) -> ArgumentParser:
+    def add_model_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         '''Add argparse argpuments for model structure'''
         model = parser.add_argument_group('model', 'NuGraph2 model configuration')
+        model.add_argument('--num-iters', type=int, default=5,
+                           help='Number of message-passing iterations')
+        model.add_argument('--in-feats', type=int, default=4,
+                           help='Number of input node features')
         model.add_argument('--planar-feats', type=int, default=64,
                            help='Hidden dimensionality of planar convolutions')
         model.add_argument('--nexus-feats', type=int, default=16,
@@ -245,16 +251,11 @@ class NuGraph2(LightningModule):
                            help='Enable semantic segmentation head')
         model.add_argument('--filter', action='store_true', default=False,
                            help='Enable background filter head')
-        return parser
-
-    @staticmethod
-    def add_train_args(parser: ArgumentParser) -> ArgumentParser:
-        train = parser.add_argument_group('train', 'NuGraph2 training configuration')
-        train.add_argument('--no-checkpointing', action='store_true', default=False,
+        model.add_argument('--no-checkpointing', action='store_true', default=False,
                            help='Disable checkpointing during training')
-        train.add_argument('--epochs', type=int, default=80,
+        model.add_argument('--epochs', type=int, default=80,
                            help='Maximum number of epochs to train for')
-        train.add_argument('--learning-rate', type=float, default=0.001,
+        model.add_argument('--learning-rate', type=float, default=0.001,
                            help='Max learning rate during training')
         train.add_argument('--clip-gradients', type=float, default=None,
                            help='Maximum value to clip gradient norm')

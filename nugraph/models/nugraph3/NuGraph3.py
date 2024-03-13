@@ -282,25 +282,16 @@ class NuGraph3(LightningModule):
                            help='Enable background filter head')
         model.add_argument('--vertex', action='store_true', default=False,
                            help='Enable vertex regression head')
-        return parser
-
-    @staticmethod
-    def add_train_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
-        train = parser.add_argument_group('train', 'NuGraph3 training configuration')
-        train.add_argument('--no-checkpointing', action='store_true', default=False,
+        model.add_argument('--no-checkpointing', action='store_true', default=False,
                            help='Disable checkpointing during training')
-        train.add_argument('--epochs', type=int, default=80,
+        model.add_argument('--epochs', type=int, default=80,
                            help='Maximum number of epochs to train for')
-        train.add_argument('--learning-rate', type=float, default=0.001,
+        model.add_argument('--learning-rate', type=float, default=0.001,
                            help='Max learning rate during training')
-        train.add_argument('--clip-gradients', type=float, default=None,
-                           help='Maximum value to clip gradient norm')
-        train.add_argument('--gamma', type=float, default=2,
-                           help='Focal loss gamma parameter')
         return parser
 
     @classmethod
-    def from_args(cls, args: argparse.Namespace, nudata: H5DataModule) -> cls:
+    def from_args(cls, args: argparse.Namespace, nudata: H5DataModule) -> 'NuGraph3':
         return cls(
             in_features=args.in_feats,
             planar_features=args.planar_feats,
