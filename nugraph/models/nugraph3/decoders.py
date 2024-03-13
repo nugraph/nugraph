@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 import seaborn as sn
 import math
 
-from ..util import RecallLoss, LogCoshLoss, ObjCondensationLoss
+from ...util import RecallLoss, LogCoshLoss, ObjCondensationLoss
 
 class DecoderBase(nn.Module, ABC):
     '''Base class for all NuGraph decoders'''
