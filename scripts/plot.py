@@ -6,7 +6,7 @@ import nugraph as ng
 import tqdm
 
 Data = ng.data.H5DataModule
-Model = ng.models.NuGraph2
+Model = ng.models.NuGraph3
 
 def configure():
     parser = argparse.ArgumentParser()
