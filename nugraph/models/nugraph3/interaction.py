@@ -32,7 +32,12 @@ class InteractionNet(nn.Module):
                 nn.Sigmoid(),
             ))
         
-        self.net = nn.Linear(len(planes) * planar_features, interaction_features)
+        self.net = nn.Sequential(
+            nn.Linear(len(planes) * planar_features, interaction_features),
+            nn.Tanh(),
+            nn.Linear(interaction_features, interaction_features),
+            nn.Tanh(),
+        )
 
     def forward(self, x: TD, index: TD) -> T:
         """Forward pass for InteractionNet 
@@ -41,6 +46,5 @@ class InteractionNet(nn.Module):
             x: Dictionary containing node feature tensors for each plane
             index: Dictionary containing node index mapping for each plane
         """
-        x = [ self.aggr(x[p], index[p]) for p, net in self.aggr.items() ]
-        for p in self.aggr: print(p, x[p].shape)
+        x = [ net(x[p], index[p]) for p, net in self.aggr.items() ]
         return self.net(torch.cat(x, dim=1))

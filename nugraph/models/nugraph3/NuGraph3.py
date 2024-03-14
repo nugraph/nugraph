@@ -1,9 +1,9 @@
+"""NuGraph3 model architecture"""
 import argparse
 import warnings
 import psutil
 
 import torch
-from torch import Tensor, cat, empty
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import OneCycleLR
 from pytorch_lightning import LightningModule
@@ -18,18 +18,24 @@ from .decoders import SemanticDecoder, FilterDecoder, EventDecoder, VertexDecode
 
 from ...data import H5DataModule
 
+T = torch.Tensor
+TD = dict[str, T]
+
 class NuGraph3(LightningModule):
     """PyTorch Lightning module for model training.
 
     Wrap the base model in a LightningModule wrapper to handle training and
-    inference, and compute training metrics."""
+    inference, and compute training metrics.
+
+    Args:
+        in_features: Number of input node features
+        planar_features:
+    """
     def __init__(self,
                  in_features: int = 4,
                  planar_features: int = 128,
                  nexus_features: int = 32,
-                 vertex_aggr: str = 'lstm',
-                 vertex_lstm_features: int = 64,
-                 vertex_mlp_features: list[int] = [ 64 ],
+                 interaction_features: int = 32,
                  planes: list[str] = ['u','v','y'],
                  semantic_classes: list[str] = ['MIP','HIP','shower','michel','diffuse'],
                  event_classes: list[str] = ['numu','nue','nc'],
@@ -54,8 +60,7 @@ class NuGraph3(LightningModule):
 
         self.encoder = Encoder(in_features,
                                planar_features,
-                               planes,
-                              )
+                               planes)
 
         self.plane_net = PlaneNet(in_features,
                                   planar_features,
@@ -67,12 +72,26 @@ class NuGraph3(LightningModule):
                                   planes,
                                   checkpoint=checkpoint)
 
-        self.interaction_net = InteractionNet(planar_features, 32, planes)
+        self.interaction_net = InteractionNet(planar_features,
+                                              interaction_features,
+                                              planes)
+        
+        self.mix_net = torch.nn.ModuleDict()
+        for p in planes:
+            self.mix_net[p] = torch.nn.Sequential(
+                torch.nn.Linear(in_features+planar_features+nexus_features+interaction_features,
+                                planar_features),
+                torch.nn.Tanh(),
+                torch.nn.Linear(planar_features, planar_features),
+                torch.nn.Tanh())
 
         self.decoders = []
 
         if event_head:
-            self.event_decoder = EventDecoder(32, planes, event_classes)
+            self.event_decoder = EventDecoder(
+                interaction_features,
+                planes,
+                event_classes)
             self.decoders.append(self.event_decoder)
 
         if semantic_head:
@@ -91,10 +110,7 @@ class NuGraph3(LightningModule):
             
         if vertex_head:
             self.vertex_decoder = VertexDecoder(
-                planar_features,
-                vertex_aggr,
-                vertex_lstm_features,
-                vertex_mlp_features,
+                interaction_features,
                 planes,
                 semantic_classes)
             self.decoders.append(self.vertex_decoder)
@@ -102,24 +118,21 @@ class NuGraph3(LightningModule):
         if len(self.decoders) == 0:
             raise Exception('At least one decoder head must be enabled!')
 
-    def forward(self,
-                x: dict[str, Tensor],
-                edge_index_plane: dict[str, Tensor],
-                edge_index_nexus: dict[str, Tensor],
-                nexus: Tensor,
-                batch: dict[str, Tensor]) -> dict[str, Tensor]:
+    def forward(self, x: TD, edge_index_plane: TD, edge_index_nexus: TD,
+                nexus: T, batch: TD) -> TD:
         m = self.encoder(x)
-        # edge_index_interaction = { p: torch.stack([b])], dim=0) for p, b in batch.items() }
         for _ in range(self.num_iters):
-            # shortcut connect features
-            for i, p in enumerate(self.planes):
-                m[p] = torch.cat((m[p], x[p]), dim=-1)
-            self.plane_net(m, edge_index_plane)
-            self.nexus_net(m, edge_index_nexus, nexus)
-            e = self.interaction_net(m, batch)
+
+            x_p = self.plane_net(m, edge_index_plane)
+            x_n = self.nexus_net(m, edge_index_nexus, nexus)
+            x_e = self.interaction_net(m, batch)
+
+            for p, net in self.mix_net.items():
+                m[p] = torch.cat([x[p], x_p[p], x_n[p], x_e[batch[p]]], dim=-1)
+                m[p] = net(m[p])
         ret = {}
         for decoder in self.decoders:
-            ret.update(decoder(m, e, batch))
+            ret.update(decoder(m, x_e, batch))
         return ret
 
     def step(self, data: HeteroData | Batch,
@@ -270,12 +283,8 @@ class NuGraph3(LightningModule):
                            help='Hidden dimensionality of planar convolutions')
         model.add_argument('--nexus-feats', type=int, default=32,
                            help='Hidden dimensionality of nexus convolutions')
-        model.add_argument('--vertex-aggr', type=str, default='lstm',
-                           help='Aggregation function for vertex decoder')
-        model.add_argument('--vertex-lstm-feats', type=int, default=32,
-                           help='Hidden dimensionality of vertex LSTM aggregation')
-        model.add_argument('--vertex-mlp-feats', type=int, nargs='*', default=[32],
-                           help='Hidden dimensionality of vertex decoder')
+        model.add_argument('--interaction-feats', type=int, default=32,
+                           help='Hidden dimensionality of interaction layer')
         model.add_argument('--event', action='store_true', default=False,
                            help='Enable event classification head')
         model.add_argument('--semantic', action='store_true', default=False,
@@ -298,9 +307,7 @@ class NuGraph3(LightningModule):
             in_features=args.in_feats,
             planar_features=args.planar_feats,
             nexus_features=args.nexus_feats,
-            vertex_aggr=args.vertex_aggr,
-            vertex_lstm_features=args.vertex_lstm_feats,
-            vertex_mlp_features=args.vertex_mlp_feats,
+            interaction_features=args.interaction_feats,
             planes=nudata.planes,
             semantic_classes=nudata.semantic_classes,
             event_classes=nudata.event_classes,

@@ -1,10 +1,13 @@
 from typing import Any, Callable
 
-from torch import Tensor, cat
+import torch
 import torch.nn as nn
 from torch.utils.checkpoint import checkpoint
 
-from torch_geometric.nn import MessagePassing, SimpleConv
+from torch_geometric.nn import MessagePassing, SimpleConv, AttentionalAggregation
+
+T = torch.Tensor
+TD = dict[str, T]
 
 class NexusDown(MessagePassing):
     def __init__(self,
@@ -16,25 +19,18 @@ class NexusDown(MessagePassing):
         feats = planar_features + nexus_features
 
         self.edge_net = nn.Sequential(
-            nn.Linear(feats, 1),
+            nn.Linear(feats, nexus_features),
             nn.Sigmoid(),
         )
 
-        self.node_net = nn.Sequential(
-            nn.Linear(feats, planar_features),
-            nn.Tanh(),
-            nn.Linear(planar_features, planar_features),
-            nn.Tanh(),
-        )
-
-    def forward(self, x: Tensor, edge_index: Tensor, n: Tensor) -> Tensor:
+    def forward(self, x: T, edge_index: T, n: T) -> T:
         return self.propagate(x=x, n=n, edge_index=edge_index)
 
-    def message(self, x_i: Tensor, n_j: Tensor) -> Tensor:
-        return self.edge_net(cat((x_i, n_j), dim=-1).detach()) * n_j
+    def message(self, x_i: T, n_j: T) -> T:
+        return self.edge_net(torch.cat((x_i, n_j), dim=-1).detach()) * n_j
 
-    def update(self, aggr_out: Tensor, x: Tensor) -> Tensor:
-        return self.node_net(cat((x, aggr_out), dim=-1))
+    def update(self, aggr_out: T) -> T:
+        return aggr_out
 
 class NexusNet(nn.Module):
     '''Module to project to nexus space and mix detector planes'''
@@ -69,7 +65,7 @@ class NexusNet(nn.Module):
         else:
             return fn(*args)
 
-    def forward(self, x: dict[str, Tensor], edge_index: dict[str, Tensor], nexus: Tensor) -> None:
+    def forward(self, x: TD, edge_index: TD, nexus: T) -> TD:
 
         # project up to nexus space
         n = [None] * len(self.nexus_down)
@@ -77,8 +73,10 @@ class NexusNet(nn.Module):
             n[i] = self.nexus_up(x=(x[p], nexus), edge_index=edge_index[p])
 
         # convolve in nexus space
-        n = self.ckpt(self.nexus_net, cat(n, dim=-1))
+        n = self.ckpt(self.nexus_net, torch.cat(n, dim=-1))
 
         # project back down to planes
+        ret = dict()
         for p in self.nexus_down:
-            x[p] = self.ckpt(self.nexus_down[p], x[p], edge_index[p], n)
+            ret[p] = self.ckpt(self.nexus_down[p], x[p], edge_index[p], n)
+        return ret
