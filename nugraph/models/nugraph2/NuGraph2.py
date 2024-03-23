@@ -1,4 +1,4 @@
-from argparse import ArgumentParser
+import argparse
 import warnings
 import psutil
 
@@ -13,7 +13,9 @@ from torch_geometric.utils import unbatch
 from .encoder import Encoder
 from .plane import PlaneNet
 from .nexus import NexusNet
-from .decoders import SemanticDecoder, FilterDecoder, EventDecoder, VertexDecoder, InstanceDecoder
+from .decoders import SemanticDecoder, FilterDecoder
+
+from ...data import H5DataModule
 
 class NuGraph2(LightningModule):
     """PyTorch Lightning module for model training.
@@ -22,21 +24,13 @@ class NuGraph2(LightningModule):
     inference, and compute training metrics."""
     def __init__(self,
                  in_features: int = 4,
-                 planar_features: int = 128,
-                 nexus_features: int = 32,
-                 instance_features: int = 3,
-                 vertex_aggr: str = 'lstm',
-                 vertex_lstm_features: int = 64,
-                 vertex_mlp_features: list[int] = [ 64 ],
+                 planar_features: int = 64,
+                 nexus_features: int = 16,
                  planes: list[str] = ['u','v','y'],
                  semantic_classes: list[str] = ['MIP','HIP','shower','michel','diffuse'],
-                 event_classes: list[str] = ['numu','nue','nc'],
                  num_iters: int = 5,
-                 event_head: bool = False,
                  semantic_head: bool = True,
                  filter_head: bool = True,
-                 vertex_head: bool = False,
-                 instance_head: bool = False,
                  checkpoint: bool = False,
                  lr: float = 0.001):
         super().__init__()
@@ -47,33 +41,27 @@ class NuGraph2(LightningModule):
 
         self.planes = planes
         self.semantic_classes = semantic_classes
-        self.event_classes = event_classes
         self.num_iters = num_iters
         self.lr = lr
 
         self.encoder = Encoder(in_features,
                                planar_features,
                                planes,
-                              )
+                               semantic_classes)
 
         self.plane_net = PlaneNet(in_features,
                                   planar_features,
+                                  len(semantic_classes),
                                   planes,
                                   checkpoint=checkpoint)
 
         self.nexus_net = NexusNet(planar_features,
                                   nexus_features,
+                                  len(semantic_classes),
                                   planes,
                                   checkpoint=checkpoint)
 
         self.decoders = []
-
-        if event_head:
-            self.event_decoder = EventDecoder(
-                planar_features,
-                planes,
-                event_classes)
-            self.decoders.append(self.event_decoder)
 
         if semantic_head:
             self.semantic_decoder = SemanticDecoder(
@@ -86,26 +74,8 @@ class NuGraph2(LightningModule):
             self.filter_decoder = FilterDecoder(
                 planar_features,
                 planes,
-            )
-            self.decoders.append(self.filter_decoder)
-            
-        if vertex_head:
-            self.vertex_decoder = VertexDecoder(
-                planar_features,
-                vertex_aggr,
-                vertex_lstm_features,
-                vertex_mlp_features,
-                planes,
                 semantic_classes)
-            self.decoders.append(self.vertex_decoder)
-
-        if instance_head:
-            self.instance_decoder = InstanceDecoder(
-                planar_features,
-                instance_features,
-                planes,
-            )
-            self.decoders.append(self.instance_decoder)
+            self.decoders.append(self.filter_decoder)
 
         if len(self.decoders) == 0:
             raise Exception('At least one decoder head must be enabled!')
@@ -120,7 +90,8 @@ class NuGraph2(LightningModule):
         for _ in range(self.num_iters):
             # shortcut connect features
             for i, p in enumerate(self.planes):
-                m[p] = torch.cat((m[p], x[p]), dim=-1)
+                s = x[p].detach().unsqueeze(1).expand(-1, m[p].size(1), -1)
+                m[p] = torch.cat((m[p], s), dim=-1)
             self.plane_net(m, edge_index_plane)
             self.nexus_net(m, edge_index_nexus, nexus)
         ret = {}
@@ -128,9 +99,7 @@ class NuGraph2(LightningModule):
             ret.update(decoder(m, batch))
         return ret
 
-    def step(self, data: HeteroData | Batch,
-             stage: str = None,
-             confusion: bool = False):
+    def step(self, data: HeteroData | Batch):
 
         # if it's a single data instance, convert to batch manually
         if isinstance(data, Batch):
@@ -169,16 +138,6 @@ class NuGraph2(LightningModule):
             for key, value in x.items():
                 data.set_value_dict(key, value)
 
-        total_loss = 0.
-        total_metrics = {}
-        for decoder in self.decoders:
-            loss, metrics = decoder.loss(data, stage, confusion)
-            total_loss += loss
-            total_metrics.update(metrics)
-            decoder.finalize(data)
-
-        return total_loss, total_metrics
-
     def on_train_start(self):
         hpmetrics = { 'max_lr': self.hparams.lr }
         self.logger.log_hyperparams(self.hparams, metrics=hpmetrics)
@@ -199,18 +158,26 @@ class NuGraph2(LightningModule):
     def training_step(self,
                       batch,
                       batch_idx: int) -> float:
-        loss, metrics = self.step(batch, 'train')
-        self.log('loss/train', loss, batch_size=batch.num_graphs, prog_bar=True)
-        self.log_dict(metrics, batch_size=batch.num_graphs)
+        self.step(batch)
+        total_loss = 0.
+        for decoder in self.decoders:
+            loss, metrics = decoder.loss(batch, 'train')
+            total_loss += loss
+            self.log_dict(metrics, batch_size=batch.num_graphs)
+        self.log('loss/train', total_loss, batch_size=batch.num_graphs, prog_bar=True)
         self.log_memory(batch, 'train')
-        return loss
+        return total_loss
 
     def validation_step(self,
                         batch,
                         batch_idx: int) -> None:
-        loss, metrics = self.step(batch, 'val', True)
-        self.log('loss/val', loss, batch_size=batch.num_graphs)
-        self.log_dict(metrics, batch_size=batch.num_graphs)
+        self.step(batch)
+        total_loss = 0.
+        for decoder in self.decoders:
+            loss, metrics = decoder.loss(batch, 'val', True)
+            total_loss += loss
+            self.log_dict(metrics, batch_size=batch.num_graphs)
+        self.log('loss/val', total_loss, batch_size=batch.num_graphs)
 
     def on_validation_epoch_end(self) -> None:
         epoch = self.trainer.current_epoch + 1
@@ -220,9 +187,13 @@ class NuGraph2(LightningModule):
     def test_step(self,
                   batch,
                   batch_idx: int = 0) -> None:
-        loss, metrics = self.step(batch, 'test', True)
-        self.log('loss/test', loss, batch_size=batch.num_graphs)
-        self.log_dict(metrics, batch_size=batch.num_graphs)
+        self.step(batch)
+        total_loss = 0.
+        for decoder in self.decoders:
+            loss, metrics = decoder.loss(batch, 'test', True)
+            total_loss += loss
+            self.log_dict(metrics, batch_size=batch.num_graphs)
+        self.log('loss/test', total_loss, batch_size=batch.num_graphs)
         self.log_memory(batch, 'test')
 
     def on_test_epoch_end(self) -> None:
@@ -265,44 +236,43 @@ class NuGraph2(LightningModule):
                      batch_size=batch.num_graphs, reduce_fx=torch.max)
 
     @staticmethod
-    def add_model_args(parser: ArgumentParser) -> ArgumentParser:
+    def add_model_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         '''Add argparse argpuments for model structure'''
         model = parser.add_argument_group('model', 'NuGraph2 model configuration')
-        model.add_argument('--planar-feats', type=int, default=128,
+        model.add_argument('--num-iters', type=int, default=5,
+                           help='Number of message-passing iterations')
+        model.add_argument('--in-feats', type=int, default=4,
+                           help='Number of input node features')
+        model.add_argument('--planar-feats', type=int, default=64,
                            help='Hidden dimensionality of planar convolutions')
-        model.add_argument('--nexus-feats', type=int, default=32,
+        model.add_argument('--nexus-feats', type=int, default=16,
                            help='Hidden dimensionality of nexus convolutions')
-        model.add_argument('--instance-feats', type=int, default=3,
-                           help='Hidden dimensionality of object condensation')
-        model.add_argument('--vertex-aggr', type=str, default='lstm',
-                           help='Aggregation function for vertex decoder')
-        model.add_argument('--vertex-lstm-feats', type=int, default=32,
-                           help='Hidden dimensionality of vertex LSTM aggregation')
-        model.add_argument('--vertex-mlp-feats', type=int, nargs='*', default=[32],
-                           help='Hidden dimensionality of vertex decoder')
-        model.add_argument('--event', action='store_true', default=False,
-                           help='Enable event classification head')
         model.add_argument('--semantic', action='store_true', default=False,
                            help='Enable semantic segmentation head')
         model.add_argument('--filter', action='store_true', default=False,
                            help='Enable background filter head')
-        model.add_argument('--instance', action='store_true', default=False,
-                           help='Enable instance segmentation head')
-        model.add_argument('--vertex', action='store_true', default=False,
-                           help='Enable vertex regression head')
-        return parser
-
-    @staticmethod
-    def add_train_args(parser: ArgumentParser) -> ArgumentParser:
-        train = parser.add_argument_group('train', 'NuGraph2 training configuration')
-        train.add_argument('--no-checkpointing', action='store_true', default=False,
+        model.add_argument('--no-checkpointing', action='store_true', default=False,
                            help='Disable checkpointing during training')
-        train.add_argument('--epochs', type=int, default=80,
+        model.add_argument('--epochs', type=int, default=80,
                            help='Maximum number of epochs to train for')
-        train.add_argument('--learning-rate', type=float, default=0.001,
+        model.add_argument('--learning-rate', type=float, default=0.001,
                            help='Max learning rate during training')
         train.add_argument('--clip-gradients', type=float, default=None,
                            help='Maximum value to clip gradient norm')
         train.add_argument('--gamma', type=float, default=2,
                            help='Focal loss gamma parameter')
         return parser
+
+    @classmethod
+    def from_args(cls, args: argparse.Namespace, nudata: H5DataModule) -> 'NuGraph2':
+        return cls(
+            in_features=args.in_feats,
+            planar_features=args.planar_feats,
+            nexus_features=args.nexus_feats,
+            planes=nudata.planes,
+            semantic_classes=nudata.semantic_classes,
+            num_iters=args.num_iters,
+            semantic_head=args.semantic,
+            filter_head=args.filter,
+            checkpoint=not args.no_checkpointing,
+            lr=args.learning_rate)
