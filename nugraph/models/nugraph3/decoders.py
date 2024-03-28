@@ -291,14 +291,19 @@ class InstanceDecoder(DecoderBase):
         x, y = self.arrange(batch)
         w = self.weight * (-1 * self.temp).exp()
         loss = w * self.loss_func(x, y) + self.temp
-
+        metrics = {}
+        if stage:
+            metrics = self.metrics(x, y, stage)
+            metrics[f'loss_{self.name}/{stage}'] = loss
+            if stage == 'train':
+                metrics[f'temperature/{self.name}'] = self.temp
         if stage == 'val':
             for data in batch.to_data_list():
                 if len(self.dfs) >= 100:
                     break
                 self.dfs.append(self.draw_event_display(data))
 
-        return loss, {}
+        return loss, metrics
 
     def arrange(self, batch: TD) -> tuple[T, T]:
         x_coords = torch.cat([batch[p]['x_instance_coords'] for p in self.planes], dim=0)
@@ -306,6 +311,9 @@ class InstanceDecoder(DecoderBase):
         y = torch.cat([batch[p]['y_instance'] for p in self.planes], dim=0)
         return (x_coords, x_filter), y
     
+    def metrics(self, x: T, y: T, stage: str) -> dict[str, Any]:
+        return dict()
+
     def draw_event_display(self, data: 'pyg.HeteroData'):
         import pandas as pd
         from sklearn.decomposition import PCA
