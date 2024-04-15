@@ -257,10 +257,6 @@ class NuGraph2(LightningModule):
                            help='Maximum number of epochs to train for')
         model.add_argument('--learning-rate', type=float, default=0.001,
                            help='Max learning rate during training')
-        train.add_argument('--clip-gradients', type=float, default=None,
-                           help='Maximum value to clip gradient norm')
-        train.add_argument('--gamma', type=float, default=2,
-                           help='Focal loss gamma parameter')
         return parser
 
     @classmethod
