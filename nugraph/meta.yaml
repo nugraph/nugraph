@@ -1,5 +1,5 @@
 {% set name = "nugraph" %}
-{% set version = "24.2.0" %}
+{% set version = "24.4.0" %}
 
 package:
   name: {{ name|lower }}
