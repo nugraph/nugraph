@@ -122,8 +122,10 @@ class SemanticDecoder(DecoderBase):
 
     def forward(self, x: dict[str, Tensor],
                 batch: dict[str, Tensor]) -> dict[str, dict[str, Tensor]]:
-        return { 'x_semantic': { p: self.net[p](x[p]) for p in self.planes } }
+        #return { 'x_semantic': { p: self.net[p](x[p]) for p in self.planes } }
+        return { 'x_semantic': { p: v(x[p]).squeeze(dim=-1) for p, v in self.net.items() } }
 
+        
     def arrange(self, batch) -> tuple[Tensor, Tensor]:
         x = cat([batch[p].x_semantic for p in self.planes], dim=0)
         y = cat([batch[p].y_semantic for p in self.planes], dim=0)

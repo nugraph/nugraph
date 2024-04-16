@@ -107,7 +107,8 @@ class NuGraph3(LightningModule):
                 edge_index_plane: dict[str, Tensor],
                 edge_index_nexus: dict[str, Tensor],
                 nexus: Tensor,
-                batch: dict[str, Tensor]) -> dict[str, Tensor]:
+             #   batch: dict[str, Tensor]) -> dict[str, Tensor]:
+                batch: dict[str, Tensor]) -> dict[str, dict[str, Tensor]]: #dict[str, Tensor]
         m = self.encoder(x)
         for _ in range(self.num_iters):
             # shortcut connect features
@@ -115,9 +116,12 @@ class NuGraph3(LightningModule):
                 m[p] = torch.cat((m[p], x[p]), dim=-1)
             self.plane_net(m, edge_index_plane)
             self.nexus_net(m, edge_index_nexus, nexus)
-        ret = {}
-        for decoder in self.decoders:
-            ret.update(decoder(m, batch))
+        #ret = {}
+        #for decoder in self.decoders:
+        #    ret.update(decoder(m, batch))
+        ret: dict[str, dict[str, Tensor]] = {}
+        ret.update(self.semantic_decoder(m, batch))
+        ret.update(self.event_decoder(m, batch))
         return ret
 
     def step(self, data: HeteroData | Batch,

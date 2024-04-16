@@ -57,12 +57,14 @@ class PlaneNet(nn.Module):
                                            planar_features,
                                            aggr)
 
-    def ckpt(self, fn: Callable, *args) -> Any:
-        if self.checkpoint and self.training:
-            return checkpoint(fn, *args)
-        else:
-            return fn(*args)
+    #def ckpt(self, fn: Callable, *args) -> Any:
+    #    if self.checkpoint and self.training:
+    #        return checkpoint(fn, *args)
+    #    else:
+    #        return fn(*args)
 
     def forward(self, x: dict[str, Tensor], edge_index: dict[str, Tensor]) -> None:
-        for p in self.net:
-            x[p] = self.ckpt(self.net[p], x[p], edge_index[p])
+    #    for p in self.net:
+    #        x[p] = self.ckpt(self.net[p], x[p], edge_index[p])
+        for p, v in self.net.items():
+            x[p] = v(x[p], edge_index[p])
