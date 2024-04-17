@@ -16,9 +16,9 @@ class HierarchicalEdges(BaseTransform):
         self.planes = planes
 
     def __call__(self, data: HeteroData) -> HeteroData:
-        data["interaction"].num_nodes = 1
+        data["evt"].num_nodes = 1
         for p in self.planes + ["sp"]:
             edge_index = torch.zeros(2, data[p].num_nodes, dtype=torch.long)
             edge_index[0] = torch.arange(data[p].num_nodes)
-            data[p, "in", "interaction"].edge_index = edge_index
+            data[p, "in", "evt"].edge_index = edge_index
         return data
