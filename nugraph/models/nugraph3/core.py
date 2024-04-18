@@ -15,24 +15,25 @@ class NuGraphBlock(MessagePassing):
     then fed into a two-layer MLP to generate updated target node features.
 
     Args:
-        in_features: Number of input features
-        out_features: Number of output features
-        flow: Message-passing direction
+        source_features: Number of source node input features
+        target_features: Number of target node input features
+        out_features: Number of target node output features
     """
-    def __init__(self, in_features: int, out_features: int):
+    def __init__(self, source_features: int, target_features: int,
+                 out_features: int):
         super().__init__(aggr="softmax")
 
         self.edge_net = nn.Sequential(
-            nn.Linear(in_features+out_features, in_features),
+            nn.Linear(source_features+target_features, source_features),
             nn.Sigmoid())
 
         self.net = nn.Sequential(
-            nn.Linear(in_features+out_features, out_features),
+            nn.Linear(source_features+target_features, out_features),
             nn.Tanh(),
             nn.Linear(out_features, out_features),
             nn.Tanh())
 
-    def forward(self, x: T | tuple[T, T], edge_index: T) -> T:
+    def forward(self, x: T, edge_index: T) -> T:
         """
         NuGraphBlock forward pass
         
@@ -57,7 +58,7 @@ class NuGraphBlock(MessagePassing):
         """
         return self.edge_net(torch.cat((x_i, x_j), dim=1).detach()) * x_j
 
-    def update(self, aggr_out: T, x: T | tuple[T, T]) -> T:
+    def update(self, aggr_out: T, x: T) -> T:
         """
         NuGraphBlock update function
 
@@ -91,31 +92,38 @@ class NuGraphCore(nn.Module):
                  planes: list[str]):
         super().__init__()
 
+        full_nexus_features = len(planes) * nexus_features
+
         # internal planar message-passing
         self.plane_net = HeteroConv({
             (p, "plane", p): NuGraphBlock(planar_features,
+                                          planar_features,
                                           planar_features)
             for p in planes})
 
         # message-passing from planar nodes to nexus nodes
         self.plane_to_nexus = HeteroConv({
             (p, "nexus", "sp"): NuGraphBlock(planar_features,
+                                             nexus_features,
                                              nexus_features)
             for p in planes}, aggr="cat")
 
         # message-passing from nexus nodes to interaction nodes
         self.nexus_to_interaction = HeteroConv({
-            ("sp", "in", "evt"): NuGraphBlock(nexus_features,
+            ("sp", "in", "evt"): NuGraphBlock(full_nexus_features,
+                                              interaction_features,
                                               interaction_features)})
 
         # message-passing from interaction nodes to nexus nodes
         self.interaction_to_nexus = HeteroConv({
             ("evt", "owns", "sp"): NuGraphBlock(interaction_features,
+                                                full_nexus_features,
                                                 nexus_features)})
 
         # message-passing from nexus nodes to planar nodes
         self.nexus_to_plane = HeteroConv({
             ("sp", "nexus", p): NuGraphBlock(nexus_features,
+                                             planar_features,
                                              planar_features)
             for p in planes})
 

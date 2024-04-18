@@ -61,14 +61,17 @@ class NuGraph3(LightningModule):
 
         self.save_hyperparameters()
 
+        self.nexus_features = nexus_features
+        self.interaction_features = interaction_features
+
         self.planes = planes
         self.semantic_classes = semantic_classes
         self.event_classes = event_classes
         self.num_iters = num_iters
         self.lr = lr
 
-        self.plane_encoder = HeteroDictLinear({
-            p: in_features for p in self.planes},
+        self.encoder = HeteroDictLinear({
+            p: in_features for p in planes},
             planar_features)
 
         self.core_net = NuGraphCore(planar_features,
@@ -138,7 +141,7 @@ class NuGraph3(LightningModule):
             i: Interaction embedding tensor dictionary
             edges: Edge index tensor dictionary
         """
-        p = self.plane_encoder(p)
+        p = self.encoder(p)
         for _ in range(self.num_iters):
             p, n, i = self.loop(p, n, i, edges)
         ret = {}
@@ -166,11 +169,14 @@ class NuGraph3(LightningModule):
         """
 
         # how many nexus features? awkward hack, needs to be fixed.
-        data["sp"].n = torch.zeros(data["sp"].num_nodes, 32, device=self.device)
-        data["evt"].i = torch.zeros(data["evt"].num_nodes, 32, device=self.device)
+        n = dict(sp=torch.zeros(data["sp"].num_nodes,
+                                self.nexus_features,
+                                device=self.device))
+        i = dict(evt=torch.zeros(data["evt"].num_nodes,
+                                 self.interaction_features,
+                                 device=self.device))
 
-        x = self(data.x_dict, data.n_dict, data.i_dict,
-                 data.edge_index_dict)
+        x = self(data.x_dict, n, i, data.edge_index_dict)
 
         # append output tensors back onto input data object
         if isinstance(data, Batch):
