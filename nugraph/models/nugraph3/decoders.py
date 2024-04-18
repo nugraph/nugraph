@@ -122,11 +122,11 @@ class SemanticDecoder(DecoderBase):
         for p in planes:
             self.net[p] = nn.Linear(node_features, len(semantic_classes))
 
-    def forward(self, x: TD, e: T, batch: TD) -> dict[str, TD]:
-        return { 'x_semantic': { p: self.net[p](x[p]) for p in self.planes } }
+    def forward(self, x: TD) -> dict[str, TD]:
+        return {"s": {p: net(x[p]) for p, net in self.net.items()}}
 
     def arrange(self, batch) -> tuple[T, T]:
-        x = torch.cat([batch[p].x_semantic for p in self.planes], dim=0)
+        x = torch.cat([batch[p].s for p in self.planes], dim=0)
         y = torch.cat([batch[p].y_semantic for p in self.planes], dim=0)
         return x, y
 
@@ -138,7 +138,7 @@ class SemanticDecoder(DecoderBase):
 
     def finalize(self, batch) -> None:
         for p in self.planes:
-            batch[p].x_semantic = batch[p].x_semantic.softmax(dim=1)
+            batch[p].s = batch[p].s.softmax(dim=1)
 
 class FilterDecoder(DecoderBase):
     """NuGraph filter decoder module.
@@ -174,11 +174,11 @@ class FilterDecoder(DecoderBase):
                 nn.Sigmoid(),
             )
 
-    def forward(self, x: TD, e: T, batch: TD) -> dict[str, TD]:
-        return { 'x_filter': { p: self.net[p](x[p]).squeeze(dim=-1) for p in self.planes }}
+    def forward(self, x: TD) -> dict[str, TD]:
+        return {"f": {p: net(x[p]).squeeze(dim=-1) for p, net in self.net.items()}}
 
     def arrange(self, batch: TD) -> tuple[T, T]:
-        x = torch.cat([batch[p].x_filter for p in self.planes], dim=0)
+        x = torch.cat([batch[p].f for p in self.planes], dim=0)
         y = torch.cat([(batch[p].y_semantic!=-1).float() for p in self.planes], dim=0)
         return x, y
 
@@ -220,11 +220,11 @@ class EventDecoder(DecoderBase):
         self.net = nn.Linear(in_features=interaction_features,
                              out_features=len(event_classes))
 
-    def forward(self, x: TD, e: T, batch: TD) -> dict[str, TD]:
-        return { 'x': { 'evt': self.net(e) } }
+    def forward(self, x: TD) -> dict[str, TD]:
+        return {"e": {"evt": self.net(x["evt"])}}
 
     def arrange(self, batch) -> tuple[T, T]:
-        return batch['evt'].x, batch['evt'].y
+        return batch['evt'].e, batch['evt'].y
 
     def metrics(self, x: T, y: T, stage: str) -> dict[str, Any]:
         return {
@@ -233,7 +233,7 @@ class EventDecoder(DecoderBase):
         }
 
     def finalize(self, batch) -> None:
-        batch['evt'].x = batch['evt'].x.softmax(dim=1)
+        batch['evt'].e = batch['evt'].e.softmax(dim=1)
 
 class VertexDecoder(DecoderBase):
     """
@@ -251,11 +251,11 @@ class VertexDecoder(DecoderBase):
 
         self.net = nn.Linear(interaction_features, 3)
 
-    def forward(self, x: TD, e: T, batch: TD) -> dict[str, TD]:
-        return { 'x_vtx': { 'evt': self.net(e) }}
+    def forward(self, x: TD) -> dict[str, TD]:
+        return {"v": {"evt": self.net(x["evt"])}}
 
     def arrange(self, batch) -> tuple[T, T]:
-        x = batch['evt'].x_vtx
+        x = batch['evt'].v
         y = batch['evt'].y_vtx
         return x, y
 
@@ -268,37 +268,37 @@ class VertexDecoder(DecoderBase):
             f'vertex-resolution/{stage}': xyz.square().sum().sqrt()
         }
 
-class InstanceDecoder(DecoderBase):
-    def __init__(self,
-                 node_features: int,
-                 planes: list[str],
-                 classes: list[str]):
-        super().__init__('Instance',
-                         planes,
-                         event_classes,
-                         ObjCondensationLoss(),
-                         'multiclass',
-                         confusion=False)
+# class InstanceDecoder(DecoderBase):
+#     def __init__(self,
+#                  node_features: int,
+#                  planes: list[str],
+#                  classes: list[str]):
+#         super().__init__('Instance',
+#                          planes,
+#                          event_classes,
+#                          ObjCondensationLoss(),
+#                          'multiclass',
+#                          confusion=False)
 
-        num_features = len(classes) * node_features
+#         num_features = len(classes) * node_features
 
-        self.net = nn.ModuleDict()
-        for p in planes:
-            self.net[p] = nn.Sequential(
-                nn.Linear(num_features, 1),
-                nn.Sigmoid())
+#         self.net = nn.ModuleDict()
+#         for p in planes:
+#             self.net[p] = nn.Sequential(
+#                 nn.Linear(num_features, 1),
+#                 nn.Sigmoid())
 
-    def forward(self, x: TD, e: T, batch: TD) -> dict[str, TD]:
-        return {'x_instance': {p: self.net[p](x[p].flatten(start_dim=1)).squeeze(dim=-1) for p in self.net.keys()}}
+#     def forward(self, x: TD, e: T, batch: TD) -> dict[str, TD]:
+#         return {'x_instance': {p: self.net[p](x[p].flatten(start_dim=1)).squeeze(dim=-1) for p in self.net.keys()}}
 
-    def arrange(self, batch: TD) -> tuple[T, T]:
-        x = torch.cat([batch[p]['x_instance'] for p in self.planes], dim=0)
-        y = torch.cat([batch[p]['y_instance'] for p in self.planes], dim=0)
-        return x, y
+#     def arrange(self, batch: TD) -> tuple[T, T]:
+#         x = torch.cat([batch[p]['x_instance'] for p in self.planes], dim=0)
+#         y = torch.cat([batch[p]['y_instance'] for p in self.planes], dim=0)
+#         return x, y
 
-    def metrics(self, x: T, y: T, stage: str) -> dict[str, Any]:
-        metrics = {}
-        predictions = self.predict(x)
-        acc = self.acc_func(predictions, y)
-        metrics[f'{self.name}_accuracy/{stage}'] = accuracy
-        return metrics
+#     def metrics(self, x: T, y: T, stage: str) -> dict[str, Any]:
+#         metrics = {}
+#         predictions = self.predict(x)
+#         acc = self.acc_func(predictions, y)
+#         metrics[f'{self.name}_accuracy/{stage}'] = accuracy
+#         return metrics
