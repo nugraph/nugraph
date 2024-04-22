@@ -6,45 +6,54 @@ import psutil
 import torch
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import OneCycleLR
+from torch.utils.checkpoint import checkpoint
+
 from pytorch_lightning import LightningModule
+
+from torch_geometric.nn import HeteroDictLinear
 from torch_geometric.data import Batch, HeteroData
 from torch_geometric.utils import unbatch
 
-from .encoder import Encoder
-from .plane import PlaneNet
-from .nexus import NexusNet
-from .interaction import InteractionNet
+from .types import TD, ED
+from .core import NuGraphCore
 from .decoders import SemanticDecoder, FilterDecoder, EventDecoder, VertexDecoder
 
 from ...data import H5DataModule
 
-T = torch.Tensor
-TD = dict[str, T]
-
 class NuGraph3(LightningModule):
-    """PyTorch Lightning module for model training.
-
-    Wrap the base model in a LightningModule wrapper to handle training and
-    inference, and compute training metrics.
+    """
+    NuGraph3 model architecture.
 
     Args:
         in_features: Number of input node features
-        planar_features:
+        planar_features: Number of planar node features
+        nexus_features: Number of nexus node features
+        interaction_features: Number of interaction node features
+        planes: Tuple of planes
+        semantic_classes: Tuple of semantic classes
+        event_classes: Tuple of event classes
+        num_iters: Number of message-passing iterations
+        event_head: Whether to enable event decoder
+        semantic_head: Whether to enable semantic decoder
+        filter_head: Whether to enable filter decoder
+        vertex_head: Whether to enable vertex decoder
+        use_checkpointing: Whether to use checkpointing
+        lr: Learning rate
     """
     def __init__(self,
                  in_features: int = 4,
                  planar_features: int = 128,
                  nexus_features: int = 32,
                  interaction_features: int = 32,
-                 planes: list[str] = ['u','v','y'],
-                 semantic_classes: list[str] = ['MIP','HIP','shower','michel','diffuse'],
-                 event_classes: list[str] = ['numu','nue','nc'],
+                 planes: tuple[str] = ('u','v','y'),
+                 semantic_classes: tuple[str] = ('MIP','HIP','shower','michel','diffuse'),
+                 event_classes: tuple[str] = ('numu','nue','nc'),
                  num_iters: int = 5,
                  event_head: bool = False,
                  semantic_head: bool = True,
                  filter_head: bool = True,
                  vertex_head: bool = False,
-                 checkpoint: bool = False,
+                 use_checkpointing: bool = False,
                  lr: float = 0.001):
         super().__init__()
 
@@ -52,38 +61,25 @@ class NuGraph3(LightningModule):
 
         self.save_hyperparameters()
 
+        self.nexus_features = nexus_features
+        self.interaction_features = interaction_features
+
         self.planes = planes
         self.semantic_classes = semantic_classes
         self.event_classes = event_classes
         self.num_iters = num_iters
         self.lr = lr
 
-        self.encoder = Encoder(in_features,
-                               planar_features,
-                               planes)
+        self.encoder = HeteroDictLinear({
+            p: in_features for p in planes},
+            planar_features)
 
-        self.plane_net = PlaneNet(in_features,
-                                  planar_features,
-                                  planes,
-                                  checkpoint=checkpoint)
+        self.core_net = NuGraphCore(planar_features,
+                                    nexus_features,
+                                    interaction_features,
+                                    planes)
 
-        self.nexus_net = NexusNet(planar_features,
-                                  nexus_features,
-                                  planes,
-                                  checkpoint=checkpoint)
-
-        self.interaction_net = InteractionNet(planar_features,
-                                              interaction_features,
-                                              planes)
-        
-        self.mix_net = torch.nn.ModuleDict()
-        for p in planes:
-            self.mix_net[p] = torch.nn.Sequential(
-                torch.nn.Linear(in_features+planar_features+nexus_features+interaction_features,
-                                planar_features),
-                torch.nn.Tanh(),
-                torch.nn.Linear(planar_features, planar_features),
-                torch.nn.Tanh())
+        self.loop = self.ckpt if use_checkpointing else self.core_net
 
         self.decoders = []
 
@@ -107,7 +103,7 @@ class NuGraph3(LightningModule):
                 planes,
             )
             self.decoders.append(self.filter_decoder)
-            
+
         if vertex_head:
             self.vertex_decoder = VertexDecoder(
                 interaction_features,
@@ -115,42 +111,72 @@ class NuGraph3(LightningModule):
                 semantic_classes)
             self.decoders.append(self.vertex_decoder)
 
-        if len(self.decoders) == 0:
-            raise Exception('At least one decoder head must be enabled!')
+        if not self.decoders:
+            raise RuntimeError('At least one decoder head must be enabled!')
 
-    def forward(self, x: TD, edge_index_plane: TD, edge_index_nexus: TD,
-                nexus: T, batch: TD) -> TD:
-        m = self.encoder(x)
+        # metrics
+        self.max_mem_cpu = 0.
+        self.max_mem_gpu = 0.
+
+    @torch.jit.ignore
+    def ckpt(self, p: TD, n: TD, i: TD, edges: ED) -> tuple[TD, TD, TD]:
+        """
+        Checkpointing wrapper for core loop
+
+        Args:
+            p: Planar embedding tensor dictionary
+            n: Nexus embedding tensor dictionary
+            i: Interaction embedding tensor dictionary
+            edges: Edge index tensor dictionary
+        """
+        return checkpoint(self.core_net, p, n, i, edges, use_reentrant=False)
+
+    def forward(self, p: TD, n: TD, i: TD, edges: ED):
+        """
+        NuGraph3 forward pass
+
+        Args:
+            p: Planar embedding tensor dictionary
+            n: Nexus embedding tensor dictionary
+            i: Interaction embedding tensor dictionary
+            edges: Edge index tensor dictionary
+        """
+        p = self.encoder(p)
         for _ in range(self.num_iters):
-
-            x_p = self.plane_net(m, edge_index_plane)
-            x_n = self.nexus_net(m, edge_index_nexus, nexus)
-            x_e = self.interaction_net(m, batch)
-
-            for p, net in self.mix_net.items():
-                m[p] = torch.cat([x[p], x_p[p], x_n[p], x_e[batch[p]]], dim=-1)
-                m[p] = net(m[p])
+            p, n, i = self.loop(p, n, i, edges)
         ret = {}
         for decoder in self.decoders:
-            ret.update(decoder(m, x_e, batch))
+            ret.update(decoder(p|n|i))
         return ret
 
-    def step(self, data: HeteroData | Batch,
+    def step(self, data: HeteroData,
              stage: str = None,
              confusion: bool = False):
+        """
+        NuGraph3 step
 
-        # if it's a single data instance, convert to batch manually
-        if isinstance(data, Batch):
-            batch = data
-        else:
-            batch = Batch.from_data_list([data])
+        This function wraps the forward function by receiving a HeteroData
+        object and unpacking it into a set of torchscript-compatible
+        tensor dictionaries. It also has some awkward hacks to append the
+        output tensors back onto the data object in a manner that supports
+        downstream unbatching. It then loops over each decoder to compute
+        the loss and calculate and log any performance metrics.
 
-        # unpack tensors to pass into forward function
-        x = self(batch.collect('x'),
-                 { p: batch[p, 'plane', p].edge_index for p in self.planes },
-                 { p: batch[p, 'nexus', 'sp'].edge_index for p in self.planes },
-                 torch.empty(batch['sp'].num_nodes, 0),
-                 { p: batch[p].batch for p in self.planes })
+        Args:
+            data: Data object to step over
+            stage: String tag defining the step type
+            confusion: Whether to produce confusion matrices
+        """
+
+        # how many nexus features? awkward hack, needs to be fixed.
+        n = dict(sp=torch.zeros(data["sp"].num_nodes,
+                                self.nexus_features,
+                                device=self.device))
+        i = dict(evt=torch.zeros(data["evt"].num_nodes,
+                                 self.interaction_features,
+                                 device=self.device))
+
+        x = self(data.x_dict, n, i, data.edge_index_dict)
 
         # append output tensors back onto input data object
         if isinstance(data, Batch):
@@ -162,7 +188,7 @@ class NuGraph3(LightningModule):
                     elif t.size(0) == data.num_graphs:
                         tlist = unbatch(t, torch.arange(data.num_graphs))
                     else:
-                        raise Exception(f'don\'t know how to unbatch attribute {attr}')
+                        raise RuntimeError(f"Don't know how to unbatch attribute {attr}")
                     for it_d, it_t in zip(dlist, tlist):
                         it_d[p][attr] = it_t
             tmp = Batch.from_data_list(dlist)
@@ -253,6 +279,13 @@ class NuGraph3(LightningModule):
         return [optimizer], {'scheduler': onecycle, 'interval': 'step'}
 
     def log_memory(self, batch: Batch, stage: str) -> None:
+        """
+        Log CPU and GPU memory usage
+
+        Args:
+            batch: Data object to step over
+            stage: String tag defining the step type
+        """
         # log CPU memory
         if not hasattr(self, 'max_mem_cpu'):
             self.max_mem_cpu = 0.
@@ -273,7 +306,12 @@ class NuGraph3(LightningModule):
 
     @staticmethod
     def add_model_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
-        '''Add argparse argpuments for model structure'''
+        """
+        Add argparse argument group for NuGraph3 model
+
+        Args:
+            parser: Argument parser to append argument group to
+        """
         model = parser.add_argument_group('model', 'NuGraph3 model configuration')
         model.add_argument('--num-iters', type=int, default=5,
                            help='Number of message-passing iterations')
@@ -285,15 +323,16 @@ class NuGraph3(LightningModule):
                            help='Hidden dimensionality of nexus convolutions')
         model.add_argument('--interaction-feats', type=int, default=32,
                            help='Hidden dimensionality of interaction layer')
-        model.add_argument('--event', action='store_true', default=False,
+        model.add_argument('--event', action='store_true',
                            help='Enable event classification head')
-        model.add_argument('--semantic', action='store_true', default=False,
+        model.add_argument('--semantic', action='store_true',
                            help='Enable semantic segmentation head')
-        model.add_argument('--filter', action='store_true', default=False,
+        model.add_argument('--filter', action='store_true',
                            help='Enable background filter head')
-        model.add_argument('--vertex', action='store_true', default=False,
+        model.add_argument('--vertex', action='store_true',
                            help='Enable vertex regression head')
-        model.add_argument('--no-checkpointing', action='store_true', default=False,
+        model.add_argument('--no-checkpointing', action='store_false',
+                           dest="use_checkpointing",
                            help='Disable checkpointing during training')
         model.add_argument('--epochs', type=int, default=80,
                            help='Maximum number of epochs to train for')
@@ -303,6 +342,13 @@ class NuGraph3(LightningModule):
 
     @classmethod
     def from_args(cls, args: argparse.Namespace, nudata: H5DataModule) -> 'NuGraph3':
+        """
+        Construct model from arguments
+
+        Args:
+            args: Namespace containing parsed arguments
+            nudata: Data module
+        """
         return cls(
             in_features=args.in_feats,
             planar_features=args.planar_feats,
@@ -316,5 +362,5 @@ class NuGraph3(LightningModule):
             semantic_head=args.semantic,
             filter_head=args.filter,
             vertex_head=args.vertex,
-            checkpoint=not args.no_checkpointing,
+            use_checkpointing=args.use_checkpointing,
             lr=args.learning_rate)

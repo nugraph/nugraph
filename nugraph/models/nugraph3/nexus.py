@@ -24,7 +24,7 @@ class NexusDown(MessagePassing):
         )
 
     def forward(self, x: T, edge_index: T, n: T) -> T:
-        return self.propagate(x=x, n=n, edge_index=edge_index)
+        return self.propagate(edge_index=edge_index, x=x, n=n)
 
     def message(self, x_i: T, n_j: T) -> T:
         return self.edge_net(torch.cat((x_i, n_j), dim=-1).detach()) * n_j
