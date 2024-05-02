@@ -73,6 +73,26 @@ class NuGraphBlock(MessagePassing):
             _, x = x
         return self.net(torch.cat((aggr_out, x), dim=1))
 
+class PlanarConv(nn.Module):
+    """
+    Planar convolution module
+    
+    Args:
+        module_dict: Dictionary containing convolution modules for each plane
+    """
+    def __init__(self, module_dict: dict[str, nn.Module]):
+        super().__init__()
+        self.net = nn.ModuleDict(module_dict)
+
+    def forward(self, x: TD) -> TD:
+        """
+        PlanarConv forward pass
+        
+        Args:
+            x: Dictionary of input tensors
+        """
+        return {p: net(x[p]) for p, net in self.net.items()}
+
 class NuGraphCore(nn.Module):
     """
     NuGraph core message-passing engine
@@ -87,6 +107,7 @@ class NuGraphCore(nn.Module):
     """
     def __init__(self,
                  planar_features: int,
+                 instance_features: int,
                  nexus_features: int,
                  interaction_features: int,
                  planes: list[str]):
@@ -99,6 +120,14 @@ class NuGraphCore(nn.Module):
             (p, "plane", p): NuGraphBlock(planar_features,
                                           planar_features,
                                           planar_features)
+            for p in planes})
+
+        self.instance_net = PlanarConv({
+            p: nn.Sequential(
+                nn.Linear(planar_features, instance_features+1),
+                nn.Tanh(),
+                nn.Linear(instance_features+1, instance_features+1),
+                nn.Tanh())
             for p in planes})
 
         # message-passing from planar nodes to nexus nodes
@@ -127,19 +156,22 @@ class NuGraphCore(nn.Module):
                                              planar_features)
             for p in planes})
 
-    def forward(self, p: TD, n: TD, i: TD, edges: TD) -> tuple[TD, TD, TD]:
+    def forward(self, p: TD, o: TD, n: TD, i: TD, edges: TD) -> tuple[TD, TD, TD, TD]:
         """
         NuGraphCore forward pass
         
         Args:
             p: Planar embedding tensor dictionary
+            o: Object condensation tensor dictionary
             n: Nexus embedding tensor dictionary
             i: Interaction embedding tensor dictionary
             edges: Edge index tensor dictionary
         """
         p = self.plane_net(p, edges)
+        for plane, t in self.instance_net(p).items():
+            o[plane] += t
         n = self.plane_to_nexus(p|n, edges)
         i = self.nexus_to_interaction(n|i, edges)
         n = self.interaction_to_nexus(n|i, edges)
         p = self.nexus_to_plane(p|n, edges)
-        return p, n, i
+        return p, o, n, i

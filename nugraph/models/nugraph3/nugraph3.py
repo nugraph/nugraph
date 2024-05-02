@@ -4,6 +4,7 @@ import warnings
 import psutil
 
 import torch
+from torch import nn
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.checkpoint import checkpoint
@@ -15,7 +16,7 @@ from torch_geometric.data import Batch, HeteroData
 from torch_geometric.utils import unbatch
 
 from .types import TD, ED
-from .core import NuGraphCore
+from .core import PlanarConv, NuGraphCore
 from .decoders import SemanticDecoder, FilterDecoder, EventDecoder, VertexDecoder, InstanceDecoder
 
 from ...data import H5DataModule
@@ -72,11 +73,17 @@ class NuGraph3(LightningModule):
         self.num_iters = num_iters
         self.lr = lr
 
-        self.encoder = HeteroDictLinear({
-            p: in_features for p in planes},
-            planar_features)
+        self.planar_encoder = PlanarConv({
+            p: nn.Linear(in_features, planar_features)
+            for p in self.planes})
+        
+        instance_net = nn.Linear(planar_features, instance_features+1)
+        self.instance_encoder = PlanarConv({
+            p: instance_net
+            for p in self.planes})
 
         self.core_net = NuGraphCore(planar_features,
+                                    instance_features,
                                     nexus_features,
                                     interaction_features,
                                     planes)
@@ -115,6 +122,7 @@ class NuGraph3(LightningModule):
 
         if instance_head:
             self.instance_decoder = InstanceDecoder(
+                instance_features,
                 planes,
             )
             self.decoders.append(self.instance_decoder)
@@ -127,17 +135,18 @@ class NuGraph3(LightningModule):
         self.max_mem_gpu = 0.
 
     @torch.jit.ignore
-    def ckpt(self, p: TD, n: TD, i: TD, edges: ED) -> tuple[TD, TD, TD]:
+    def ckpt(self, p: TD, o: TD, n: TD, i: TD, edges: ED) -> tuple[TD, TD, TD]:
         """
         Checkpointing wrapper for core loop
 
         Args:
             p: Planar embedding tensor dictionary
+            o: Object condensation embedding tensor dictionary
             n: Nexus embedding tensor dictionary
             i: Interaction embedding tensor dictionary
             edges: Edge index tensor dictionary
         """
-        return checkpoint(self.core_net, p, n, i, edges, use_reentrant=False)
+        return checkpoint(self.core_net, p, o, n, i, edges, use_reentrant=False)
 
     def forward(self, p: TD, n: TD, i: TD, edges: ED):
         """
@@ -149,12 +158,14 @@ class NuGraph3(LightningModule):
             i: Interaction embedding tensor dictionary
             edges: Edge index tensor dictionary
         """
-        p = self.encoder(p)
+
+        p = self.planar_encoder(p)
+        o = self.instance_encoder(p)
         for _ in range(self.num_iters):
-            p, n, i = self.loop(p, n, i, edges)
+            p, o, n, i = self.loop(p, o, n, i, edges)
         ret = {}
         for decoder in self.decoders:
-            ret.update(decoder(p|n|i))
+            ret.update(decoder(p|n|i, o))
         return ret
 
     def step(self, data: HeteroData,
@@ -209,6 +220,8 @@ class NuGraph3(LightningModule):
         else:
             for key, value in x.items():
                 data.set_value_dict(key, value)
+
+        del data["sp"] # why is this necessary? i don't know lmao
 
         total_loss = 0.
         total_metrics = {}
@@ -329,7 +342,7 @@ class NuGraph3(LightningModule):
                            help='Hidden dimensionality of planar convolutions')
         model.add_argument('--nexus-feats', type=int, default=32,
                            help='Hidden dimensionality of nexus convolutions')
-        model.add_argument('--instance-feats', type=int, default=3,
+        model.add_argument('--instance-feats', type=int, default=32,
                            help='Hidden dimensionality of object condensation')
         model.add_argument('--interaction-feats', type=int, default=32,
                            help='Hidden dimensionality of interaction layer')

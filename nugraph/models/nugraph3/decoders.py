@@ -14,8 +14,7 @@ import seaborn as sn
 
 from ...util import RecallLoss, LogCoshLoss, ObjCondensationLoss
 
-T = torch.Tensor
-TD = dict[str, T]
+from .types import T, TD, TDD
 
 class DecoderBase(nn.Module, ABC):
     '''Base class for all NuGraph decoders'''
@@ -122,7 +121,7 @@ class SemanticDecoder(DecoderBase):
         for p in planes:
             self.net[p] = nn.Linear(node_features, len(semantic_classes))
 
-    def forward(self, x: TD) -> dict[str, TD]:
+    def forward(self, x: TD, o: TD) -> dict[str, TD]:
         return {"s": {p: net(x[p]) for p, net in self.net.items()}}
 
     def arrange(self, batch) -> tuple[T, T]:
@@ -174,7 +173,7 @@ class FilterDecoder(DecoderBase):
                 nn.Sigmoid(),
             )
 
-    def forward(self, x: TD) -> dict[str, TD]:
+    def forward(self, x: TD, o: TD) -> dict[str, TD]:
         return {"f": {p: net(x[p]).squeeze(dim=-1) for p, net in self.net.items()}}
 
     def arrange(self, batch: TD) -> tuple[T, T]:
@@ -220,7 +219,7 @@ class EventDecoder(DecoderBase):
         self.net = nn.Linear(in_features=interaction_features,
                              out_features=len(event_classes))
 
-    def forward(self, x: TD) -> dict[str, TD]:
+    def forward(self, x: TD, o: TD) -> dict[str, TD]:
         return {"e": {"evt": self.net(x["evt"])}}
 
     def arrange(self, batch) -> tuple[T, T]:
@@ -251,7 +250,7 @@ class VertexDecoder(DecoderBase):
 
         self.net = nn.Linear(interaction_features, 3)
 
-    def forward(self, x: TD) -> dict[str, TD]:
+    def forward(self, x: TD, o: TD) -> dict[str, TD]:
         return {"v": {"evt": self.net(x["evt"])}}
 
     def arrange(self, batch) -> tuple[T, T]:
@@ -269,7 +268,7 @@ class VertexDecoder(DecoderBase):
         }
 
 class InstanceDecoder(DecoderBase):
-    def __init__(self, planes: list[str]):
+    def __init__(self, instance_features: int, planes: list[str]):
         super().__init__('instance',
                          planes,
                          None,
@@ -277,11 +276,13 @@ class InstanceDecoder(DecoderBase):
                          weight=1.)
         self.dfs = []
 
-    def forward(self, x: TD, x_c: TD, x_f: TD, e: T, batch: TD) -> dict[str, TD]:
+        self.net = nn.Linear(instance_features+1, instance_features+1)
 
+    def forward(self, x: TD, o: TD) -> TDD:
+        o = {p: self.net(t) for p, t in o.items()}
         return {
-            'x_instance_coords': {p: t for p, t in x_c.items()},
-            'x_instance_filter': {p: t.squeeze(dim=1).sigmoid() for p, t in x_f.items()},
+            "of": {p: t[:, 0].sigmoid() for p, t in o.items()},
+            "ox": {p: t[:, 1:] for p, t in o.items()}
         }
 
     def loss(self,
@@ -306,8 +307,8 @@ class InstanceDecoder(DecoderBase):
         return loss, metrics
 
     def arrange(self, batch: TD) -> tuple[T, T]:
-        x_coords = torch.cat([batch[p]['x_instance_coords'] for p in self.planes], dim=0)
-        x_filter = torch.cat([batch[p]['x_instance_filter'] for p in self.planes], dim=0)
+        x_coords = torch.cat([batch[p]['ox'] for p in self.planes], dim=0)
+        x_filter = torch.cat([batch[p]['of'] for p in self.planes], dim=0)
         y = torch.cat([batch[p]['y_instance'] for p in self.planes], dim=0)
         return (x_coords, x_filter), y
     
@@ -317,7 +318,7 @@ class InstanceDecoder(DecoderBase):
     def draw_event_display(self, data: 'pyg.HeteroData'):
         import pandas as pd
         from sklearn.decomposition import PCA
-        coords = torch.cat([data[p].x_instance_coords for p in self.planes], dim=0).cpu()
+        coords = torch.cat([data[p].ox for p in self.planes], dim=0).cpu()
         pca = PCA(n_components=2)
         x, y = pca.fit_transform(coords).transpose()
         i = torch.cat([data[p].y_instance for p in self.planes], dim=0).cpu()
