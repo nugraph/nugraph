@@ -169,7 +169,7 @@ class NuGraphCore(nn.Module):
         """
         p = self.plane_net(p, edges)
         for plane, t in self.instance_net(p).items():
-            o[plane] += t
+            o[plane] = t
         n = self.plane_to_nexus(p|n, edges)
         i = self.nexus_to_interaction(n|i, edges)
         n = self.interaction_to_nexus(n|i, edges)
