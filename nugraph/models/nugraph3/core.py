@@ -24,7 +24,7 @@ class NuGraphBlock(MessagePassing):
         super().__init__(aggr="softmax")
 
         self.edge_net = nn.Sequential(
-            nn.Linear(source_features+target_features, source_features),
+            nn.Linear(source_features+target_features, 1),
             nn.Sigmoid())
 
         self.net = nn.Sequential(
