@@ -56,7 +56,7 @@ class H5DataModule(LightningDataModule):
             try:
                 train_samples = f['samples/train'].asstr()[()]
                 val_samples = f['samples/validation'].asstr()[()]
-                test_samples = f['samples/validation'].asstr()[()]
+                test_samples = f['samples/test'].asstr()[()]
             except:
                 print('Sample splits not found in file! Call "generate_samples" to create them.')
                 sys.exit()
