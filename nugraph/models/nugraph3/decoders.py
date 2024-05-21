@@ -121,7 +121,7 @@ class SemanticDecoder(DecoderBase):
         for p in planes:
             self.net[p] = nn.Linear(node_features, len(semantic_classes))
 
-    def forward(self, x: TD) -> dict[str, TD]:
+    def forward(self, x: TD, o: TD) -> dict[str, TD]:
         return {"x_semantic": {p: net(x[p]) for p, net in self.net.items()}}
 
     def arrange(self, batch) -> tuple[T, T]:
@@ -173,7 +173,7 @@ class FilterDecoder(DecoderBase):
                 nn.Sigmoid(),
             )
 
-    def forward(self, x: TD) -> dict[str, TD]:
+    def forward(self, x: TD, o: TD) -> dict[str, TD]:
         return {"x_filter": {p: net(x[p]).squeeze(dim=-1) for p, net in self.net.items()}}
 
     def arrange(self, batch: TD) -> tuple[T, T]:
