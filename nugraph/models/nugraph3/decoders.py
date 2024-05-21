@@ -121,11 +121,11 @@ class SemanticDecoder(DecoderBase):
         for p in planes:
             self.net[p] = nn.Linear(node_features, len(semantic_classes))
 
-    def forward(self, x: TD, o: TD) -> dict[str, TD]:
-        return {"s": {p: net(x[p]) for p, net in self.net.items()}}
+    def forward(self, x: TD) -> dict[str, TD]:
+        return {"x_semantic": {p: net(x[p]) for p, net in self.net.items()}}
 
     def arrange(self, batch) -> tuple[T, T]:
-        x = torch.cat([batch[p].s for p in self.planes], dim=0)
+        x = torch.cat([batch[p].x_semantic for p in self.planes], dim=0)
         y = torch.cat([batch[p].y_semantic for p in self.planes], dim=0)
         return x, y
 
@@ -137,7 +137,7 @@ class SemanticDecoder(DecoderBase):
 
     def finalize(self, batch) -> None:
         for p in self.planes:
-            batch[p].s = batch[p].s.softmax(dim=1)
+            batch[p].s = batch[p].x_semantic.softmax(dim=1)
 
 class FilterDecoder(DecoderBase):
     """NuGraph filter decoder module.
@@ -173,11 +173,11 @@ class FilterDecoder(DecoderBase):
                 nn.Sigmoid(),
             )
 
-    def forward(self, x: TD, o: TD) -> dict[str, TD]:
-        return {"f": {p: net(x[p]).squeeze(dim=-1) for p, net in self.net.items()}}
+    def forward(self, x: TD) -> dict[str, TD]:
+        return {"x_filter": {p: net(x[p]).squeeze(dim=-1) for p, net in self.net.items()}}
 
     def arrange(self, batch: TD) -> tuple[T, T]:
-        x = torch.cat([batch[p].f for p in self.planes], dim=0)
+        x = torch.cat([batch[p].x_filter for p in self.planes], dim=0)
         y = torch.cat([(batch[p].y_semantic!=-1).float() for p in self.planes], dim=0)
         return x, y
 

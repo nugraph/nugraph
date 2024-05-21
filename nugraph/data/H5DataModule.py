@@ -12,7 +12,7 @@ from torch_geometric.transforms import Compose
 from pytorch_lightning import LightningDataModule
 
 from ..data import H5Dataset, BalanceSampler
-from ..util import PositionFeatures, FeatureNormMetric, FeatureNorm, HierarchicalEdges
+from ..util import PositionFeatures, FeatureNormMetric, FeatureNorm, HierarchicalEdges, EventLabels
 
 class H5DataModule(LightningDataModule):
     """PyTorch Lightning data module for neutrino graph data."""
@@ -56,7 +56,7 @@ class H5DataModule(LightningDataModule):
             try:
                 train_samples = f['samples/train'].asstr()[()]
                 val_samples = f['samples/validation'].asstr()[()]
-                test_samples = f['samples/validation'].asstr()[()]
+                test_samples = f['samples/test'].asstr()[()]
             except:
                 print('Sample splits not found in file! Call "generate_samples" to create them.')
                 sys.exit()
@@ -79,7 +79,8 @@ class H5DataModule(LightningDataModule):
 
         transform = Compose((PositionFeatures(self.planes),
                              FeatureNorm(self.planes, norm),
-                             HierarchicalEdges(self.planes)))
+                             HierarchicalEdges(self.planes),
+                             EventLabels()))
 
         self.train_dataset = H5Dataset(self.filename, train_samples, transform)
         self.val_dataset = H5Dataset(self.filename, val_samples, transform)
