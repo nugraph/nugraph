@@ -2,6 +2,8 @@ from typing import Any, Callable
 
 from abc import ABC
 
+import pathlib
+
 import torch
 import torch.nn as nn
 from torch_geometric.nn.aggr import SoftmaxAggregation, LSTMAggregation
@@ -11,6 +13,7 @@ import torchmetrics as tm
 
 import matplotlib.pyplot as plt
 import seaborn as sn
+import plotly.express as px
 
 from ...util import RecallLoss, LogCoshLoss, ObjCondensationLoss
 
@@ -320,21 +323,45 @@ class InstanceDecoder(DecoderBase):
         from sklearn.decomposition import PCA
         coords = torch.cat([data[p].ox for p in self.planes], dim=0).cpu()
         pca = PCA(n_components=2)
-        x, y = pca.fit_transform(coords).transpose()
+        c1, c2 = pca.fit_transform(coords).transpose()
+        beta = torch.cat([data[p].of for p in self.planes], dim=0).cpu()
+        xy = torch.cat([data[p].pos for p in self.planes], dim=0).cpu()
         i = torch.cat([data[p].y_instance for p in self.planes], dim=0).cpu()
-        return pd.DataFrame(dict(x=x, y=y, instance=i))
+        plane = [p for p in self.planes for _ in range(data[p].num_nodes)]
+        return pd.DataFrame(dict(c1=c1, c2=c2, beta=beta, plane=plane,
+                                 x=xy[:,0], y=xy[:,1],
+                                 instance=pd.Series(i).astype(str)))
 
     def on_epoch_end(self,
                      logger: 'pl.loggers.TensorBoardLogger',
                      stage: str,
                      epoch: int) -> None:
-        if not logger: return
+        if not logger:
+            return
+        path = pathlib.Path(logger.log_dir) / "objcon-plots"
+        path.mkdir(exist_ok=True)
         if stage == 'val':
             for i, df in enumerate(self.dfs):
-                fig = plt.figure(figsize=[8,6])
-                sn.scatterplot(x=df.x, y=df.y, hue=df.instance)
-                logger.experiment.add_figure(
-                    f'objcon/evt-{i+1}',
-                    fig, global_step=epoch
-                )
+
+                # object condensation true instance plot
+                fig = px.scatter(df, x="x", y="y", facet_col="plane",
+                                 color="instance")
+                fig.update_xaxes(matches=None)
+                for a in fig.layout.annotations:
+                    a.text = a.text.replace('plane=', '')
+                fig.write_image(file=path/f"evt{i+1}-truth.png")
+
+                # object condensation beta plot
+                fig = px.scatter(df, x="x", y="y", facet_col="plane",
+                                 color="beta")
+                fig.update_xaxes(matches=None)
+                for a in fig.layout.annotations:
+                    a.text = a.text.replace('plane=', '')
+                fig.write_image(file=path/f"evt{i+1}-beta.png")
+
+                # object condensation coordinate plot
+                fig = px.scatter(df[df.instance!="-1"], x="c1", y="c2",
+                                 color="instance")
+                fig.write_image(file=path/f"evt{i+1}-coords.png")
+
         self.dfs = []
