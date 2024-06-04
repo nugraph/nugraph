@@ -92,8 +92,6 @@ class NuGraphCore(nn.Module):
                  planes: list[str]):
         super().__init__()
 
-        full_nexus_features = len(planes) * nexus_features
-
         # internal planar message-passing
         self.plane_net = HeteroConv({
             (p, "plane", p): NuGraphBlock(planar_features,
@@ -106,18 +104,18 @@ class NuGraphCore(nn.Module):
             (p, "nexus", "sp"): NuGraphBlock(planar_features,
                                              nexus_features,
                                              nexus_features)
-            for p in planes}, aggr="cat")
+            for p in planes})
 
         # message-passing from nexus nodes to interaction nodes
         self.nexus_to_interaction = HeteroConv({
-            ("sp", "in", "evt"): NuGraphBlock(full_nexus_features,
+            ("sp", "in", "evt"): NuGraphBlock(nexus_features,
                                               interaction_features,
                                               interaction_features)})
 
         # message-passing from interaction nodes to nexus nodes
         self.interaction_to_nexus = HeteroConv({
             ("evt", "owns", "sp"): NuGraphBlock(interaction_features,
-                                                full_nexus_features,
+                                                nexus_features,
                                                 nexus_features)})
 
         # message-passing from nexus nodes to planar nodes
