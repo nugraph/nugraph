@@ -93,18 +93,16 @@ class NuGraphCore(nn.Module):
         super().__init__()
 
         # internal planar message-passing
-        self.plane_net = HeteroConv({
-            (p, "plane", p): NuGraphBlock(planar_features,
-                                          planar_features,
-                                          planar_features)
-            for p in planes})
+        plane = NuGraphBlock(planar_features, planar_features,
+                             planar_features)
+        self.plane_net = HeteroConv(
+            {(p, "plane", p): plane for p in planes})
 
         # message-passing from planar nodes to nexus nodes
-        self.plane_to_nexus = HeteroConv({
-            (p, "nexus", "sp"): NuGraphBlock(planar_features,
-                                             nexus_features,
-                                             nexus_features)
-            for p in planes})
+        nexus_up = NuGraphBlock(planar_features, nexus_features,
+                                nexus_features)
+        self.plane_to_nexus = HeteroConv(
+            {(p, "nexus", "sp"): nexus_up for p in planes})
 
         # message-passing from nexus nodes to interaction nodes
         self.nexus_to_interaction = HeteroConv({
@@ -119,11 +117,10 @@ class NuGraphCore(nn.Module):
                                                 nexus_features)})
 
         # message-passing from nexus nodes to planar nodes
-        self.nexus_to_plane = HeteroConv({
-            ("sp", "nexus", p): NuGraphBlock(nexus_features,
-                                             planar_features,
-                                             planar_features)
-            for p in planes})
+        nexus_down = NuGraphBlock(nexus_features, planar_features,
+                                  planar_features)
+        self.nexus_to_plane = HeteroConv(
+            {("sp", "nexus", p): nexus_down for p in planes})
 
     def forward(self, p: TD, n: TD, i: TD, edges: TD) -> tuple[TD, TD, TD]:
         """
