@@ -76,7 +76,7 @@ class NuGraph3(LightningModule):
         self.planar_encoder = PlanarConv({
             p: planar_encoder
             for p in self.planes})
-        
+
         instance_net = nn.Linear(planar_features, instance_features+1)
         self.instance_encoder = PlanarConv({
             p: instance_net
