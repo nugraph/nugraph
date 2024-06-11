@@ -10,11 +10,11 @@ from torch.utils.checkpoint import checkpoint
 
 from pytorch_lightning import LightningModule
 
-from torch_geometric.nn import HeteroDictLinear
 from torch_geometric.data import Batch, HeteroData
 from torch_geometric.utils import unbatch
 
 from .types import TD, ED
+from .encoder import Encoder
 from .core import NuGraphCore
 from .decoders import SemanticDecoder, FilterDecoder, EventDecoder, VertexDecoder
 
@@ -70,9 +70,7 @@ class NuGraph3(LightningModule):
         self.num_iters = num_iters
         self.lr = lr
 
-        self.encoder = HeteroDictLinear({
-            p: in_features for p in planes},
-            planar_features)
+        self.encoder = Encoder(in_features, planar_features, planes)
 
         self.core_net = NuGraphCore(planar_features,
                                     nexus_features,
