@@ -345,7 +345,7 @@ class InstanceDecoder(DecoderBase):
 
                 # object condensation true instance plot
                 fig = px.scatter(df, x="x", y="y", facet_col="plane",
-                                 color="instance")
+                                 color="instance", title=f"epoch {epoch}")
                 fig.update_xaxes(matches=None)
                 for a in fig.layout.annotations:
                     a.text = a.text.replace('plane=', '')
@@ -353,7 +353,7 @@ class InstanceDecoder(DecoderBase):
 
                 # object condensation beta plot
                 fig = px.scatter(df, x="x", y="y", facet_col="plane",
-                                 color="beta")
+                                 color="beta",title=f"epoch {epoch}")
                 fig.update_xaxes(matches=None)
                 for a in fig.layout.annotations:
                     a.text = a.text.replace('plane=', '')
@@ -361,7 +361,7 @@ class InstanceDecoder(DecoderBase):
 
                 # object condensation coordinate plot
                 fig = px.scatter(df[df.instance!="-1"], x="c1", y="c2",
-                                 color="instance")
+                                 color="instance", title=f"epoch {epoch}")
                 fig.write_image(file=path/f"evt{i+1}-coords.png")
 
         self.dfs = []
