@@ -11,7 +11,6 @@ from torch.utils.checkpoint import checkpoint
 
 from pytorch_lightning import LightningModule
 
-from torch_geometric.nn import HeteroDictLinear
 from torch_geometric.data import Batch, HeteroData
 from torch_geometric.utils import unbatch
 
@@ -73,8 +72,9 @@ class NuGraph3(LightningModule):
         self.num_iters = num_iters
         self.lr = lr
 
+        planar_encoder = nn.Linear(in_features, planar_features)
         self.planar_encoder = PlanarConv({
-            p: nn.Linear(in_features, planar_features)
+            p: planar_encoder
             for p in self.planes})
         
         instance_net = nn.Linear(planar_features, instance_features+1)
