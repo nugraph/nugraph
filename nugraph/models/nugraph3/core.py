@@ -113,19 +113,21 @@ class NuGraphCore(nn.Module):
                  planes: list[str]):
         super().__init__()
 
+        self.planes = planes
+
         # internal planar message-passing
         plane = NuGraphBlock(planar_features, planar_features,
                              planar_features)
         self.plane_net = HeteroConv(
             {(p, "plane", p): plane for p in planes})
 
-        self.instance_net = PlanarConv({
-            p: nn.Sequential(
-                nn.Linear(planar_features, instance_features+1),
-                nn.Tanh(),
-                nn.Linear(instance_features+1, instance_features+1),
-                nn.Tanh())
-            for p in planes})
+        # instance embedding
+        self.instance_net = nn.Sequential(
+            nn.Linear(planar_features+instance_features+1,
+                      instance_features+1),
+            nn.Mish(),
+            nn.Linear(instance_features+1, instance_features+1),
+            nn.Mish())
 
         # message-passing from planar nodes to nexus nodes
         nexus_up = NuGraphBlock(planar_features, nexus_features,
@@ -163,8 +165,8 @@ class NuGraphCore(nn.Module):
             edges: Edge index tensor dictionary
         """
         p = self.plane_net(p, edges)
-        for plane, t in self.instance_net(p).items():
-            o[plane] = t
+        for plane in self.planes:
+            o[plane] = self.instance_net(torch.cat([p[plane], o[plane]], dim=1))
         n = self.plane_to_nexus(p|n, edges)
         i = self.nexus_to_interaction(n|i, edges)
         n = self.interaction_to_nexus(n|i, edges)
