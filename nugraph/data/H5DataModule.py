@@ -88,36 +88,45 @@ class H5DataModule(LightningDataModule):
 
     @staticmethod
     def generate_samples(data_path: str):
-        with h5py.File(data_path, 'r+') as f:
+        with h5py.File(data_path) as f:
             samples = list(f['dataset'].keys())
-            split = int(0.05 * len(samples))
-            splits = [ len(samples)-(2*split), split, split ]
-            train, val, test = random_split(samples, splits)
+        split = int(0.05 * len(samples))
+        splits = [ len(samples)-(2*split), split, split ]
+        train, val, test = random_split(samples, splits)
 
+        with h5py.File(data_path, "r+") as f:
             for name in [ 'train', 'validation', 'test' ]:
                 key = f'samples/{name}'
                 if key in f:
                     del f[key]
-            f['samples/train'] = list(train)
-            f['samples/validation'] = list(val)
-            f['samples/test'] = list(test)
 
+        with h5py.File(data_path, "r+") as f:
+            f.create_dataset("samples/train", data=list(train))
+            f.create_dataset("samples/validation", data=list(val))
+            f.create_dataset("samples/test", data=list(test))
+
+        with h5py.File(data_path, "r+") as f:
             try:
                 planes = f['planes'].asstr()[()].tolist()
             except:
                 print('Metadata not found in file! "planes" is required.')
                 sys.exit()
-            transform = PositionFeatures(planes)
-            dataset = H5Dataset(data_path, train, transform)
-            def datasize(data):
-                ret = 0
-                for store in data.stores:
-                    for val in store.values():
-                        ret += val.element_size() * val.nelement()
-                return ret
+
+        with h5py.File(data_path, "r+") as f:
             if 'datasize/train' in f:
                 del f['datasize/train']
-            f['datasize/train'] = [ datasize(data) for data in tqdm.tqdm(dataset) ]
+        transform = PositionFeatures(planes)
+        dataset = H5Dataset(data_path, train, transform)
+        def datasize(data):
+            ret = 0
+            for store in data.stores:
+                for val in store.values():
+                    ret += val.element_size() * val.nelement()
+            return ret
+        dsize = [datasize(data) for data in tqdm.tqdm(dataset)]
+        del dataset
+        with h5py.File(data_path, "r+") as f:
+            f.create_dataset('datasize/train', data=dsize)
             
     @staticmethod
     def generate_norm(data_path: str, batch_size: int):
