@@ -110,11 +110,12 @@ class InstanceDecoder(DecoderBase):
         pca = PCA(n_components=2)
         c1, c2 = pca.fit_transform(coords).transpose()
         beta = torch.cat([data[p].of for p in self.planes], dim=0).cpu()
+        logbeta = beta.log10()
         xy = torch.cat([data[p].pos for p in self.planes], dim=0).cpu()
         i = torch.cat([data[p].y_instance for p in self.planes], dim=0).cpu()
         plane = [p for p in self.planes for _ in range(data[p].num_nodes)]
-        return pd.DataFrame(dict(c1=c1, c2=c2, beta=beta, plane=plane,
-                                 x=xy[:,0], y=xy[:,1],
+        return pd.DataFrame(dict(c1=c1, c2=c2, beta=beta, logbeta=logbeta,
+                                 plane=plane, x=xy[:,0], y=xy[:,1],
                                  instance=pd.Series(i).astype(str)))
 
     def on_epoch_end(self,
@@ -146,7 +147,7 @@ class InstanceDecoder(DecoderBase):
 
                 # object condensation beta plot
                 fig = px.scatter(df, x="x", y="y", facet_col="plane",
-                                 color="beta",title=f"epoch {epoch}")
+                                 color="logbeta", title=f"epoch {epoch}")
                 fig.update_xaxes(matches=None)
                 for a in fig.layout.annotations:
                     a.text = a.text.replace("plane=", "")
