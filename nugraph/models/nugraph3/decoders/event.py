@@ -44,13 +44,12 @@ class EventDecoder(DecoderBase):
         self.net = nn.Linear(in_features=interaction_features,
                              out_features=len(event_classes))
 
-    def forward(self, x: TD, o: TD) -> dict[str, TD]:
+    def forward(self, x: TD) -> dict[str, TD]:
         """
         NuGraph3 event decoder forward pass
 
         Args:
             x: Node embedding tensor dictionary
-            o: Object condensation embedding tensor dictionary
         """
         return {"e": {"evt": self.net(x["evt"])}}
 

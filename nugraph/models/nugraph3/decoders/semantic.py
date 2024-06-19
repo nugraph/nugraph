@@ -47,13 +47,12 @@ class SemanticDecoder(DecoderBase):
         for p in planes:
             self.net[p] = nn.Linear(node_features, len(semantic_classes))
 
-    def forward(self, x: TD, o: TD) -> dict[str, TD]:
+    def forward(self, x: TD) -> dict[str, TD]:
         """
         NuGraph3 semantic decoder forward pass
 
         Args:
             x: Node embedding tensor dictionary
-            o: Object condensation embedding tensor dictionary
         """
         return {"x_semantic": {p: net(x[p]) for p, net in self.net.items()}}
 

@@ -19,10 +19,12 @@ class InstanceDecoder(DecoderBase):
     coordinates for each hit.
 
     Args:
+        planar_features: Number of planar features
         instance_features: Number of instance features
         planes: List of detector planes
     """
-    def __init__(self, instance_features: int, planes: list[str]):
+    def __init__(self, planar_features: int,
+                 instance_features: int, planes: list[str]):
         super().__init__("instance",
                          planes,
                          None,
@@ -30,20 +32,19 @@ class InstanceDecoder(DecoderBase):
                          weight=1.)
         self.dfs = []
         self.planes = planes
-        self.net = nn.Linear(instance_features+1, instance_features+1)
+        self.net = nn.Linear(planar_features, instance_features+1)
 
-    def forward(self, x: TD, o: TD) -> TDD:
+    def forward(self, x: TD) -> TDD:
         """
         NuGraph3 instance decoder forward pass
 
         Args:
             x: Node embedding tensor dictionary
-            o: Object condensation embedding tensor dictionary
         """
-        o = {p: self.net(o[p]) for p in self.planes}
+        x = {p: self.net(x[p]) for p in self.planes}
         return {
-            "of": {p: t[:, 0] for p, t in o.items()},
-            "ox": {p: t[:, 1:] for p, t in o.items()},
+            "of": {p: t[:, 0].sigmoid() for p, t in x.items()},
+            "ox": {p: t[:, 1:] for p, t in x.items()},
         }
 
     def loss(self,

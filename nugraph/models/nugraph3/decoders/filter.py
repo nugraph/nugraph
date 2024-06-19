@@ -46,13 +46,12 @@ class FilterDecoder(DecoderBase):
                 nn.Sigmoid(),
             )
 
-    def forward(self, x: TD, o: TD) -> dict[str, TD]:
+    def forward(self, x: TD) -> dict[str, TD]:
         """
         NuGraph3 filter decoder forward pass
 
         Args:
             x: Node embedding tensor dictionary
-            o: Object condensation embedding tensor dictionary
         """
         return {"x_filter": {p: net(x[p]).squeeze(dim=-1) for p, net in self.net.items()}}
 

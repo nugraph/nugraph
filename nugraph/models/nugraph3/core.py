@@ -107,7 +107,6 @@ class NuGraphCore(nn.Module):
     """
     def __init__(self,
                  planar_features: int,
-                 instance_features: int,
                  nexus_features: int,
                  interaction_features: int,
                  planes: list[str]):
@@ -120,14 +119,6 @@ class NuGraphCore(nn.Module):
                              planar_features)
         self.plane_net = HeteroConv(
             {(p, "plane", p): plane for p in planes})
-
-        # instance embedding
-        self.instance_net = nn.Sequential(
-            nn.Linear(planar_features+instance_features+1,
-                      instance_features+1),
-            nn.Mish(),
-            nn.Linear(instance_features+1, instance_features+1),
-            nn.Mish())
 
         # message-passing from planar nodes to nexus nodes
         nexus_up = NuGraphBlock(planar_features, nexus_features,
@@ -153,22 +144,19 @@ class NuGraphCore(nn.Module):
         self.nexus_to_plane = HeteroConv(
             {("sp", "nexus", p): nexus_down for p in planes})
 
-    def forward(self, p: TD, o: TD, n: TD, i: TD, edges: TD) -> tuple[TD, TD, TD, TD]:
+    def forward(self, p: TD, n: TD, i: TD, edges: TD) -> tuple[TD, TD, TD]:
         """
         NuGraphCore forward pass
         
         Args:
             p: Planar embedding tensor dictionary
-            o: Object condensation tensor dictionary
             n: Nexus embedding tensor dictionary
             i: Interaction embedding tensor dictionary
             edges: Edge index tensor dictionary
         """
         p = self.plane_net(p, edges)
-        for plane in self.planes:
-            o[plane] = self.instance_net(torch.cat([p[plane], o[plane]], dim=1))
         n = self.plane_to_nexus(p|n, edges)
         i = self.nexus_to_interaction(n|i, edges)
         n = self.interaction_to_nexus(n|i, edges)
         p = self.nexus_to_plane(p|n, edges)
-        return p, o, n, i
+        return p, n, i

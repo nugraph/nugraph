@@ -29,6 +29,7 @@ class NuGraph3(LightningModule):
         planar_features: Number of planar node features
         nexus_features: Number of nexus node features
         interaction_features: Number of interaction node features
+        instance_features: Number of instance features
         planes: Tuple of planes
         semantic_classes: Tuple of semantic classes
         event_classes: Tuple of event classes
@@ -44,8 +45,8 @@ class NuGraph3(LightningModule):
                  in_features: int = 4,
                  planar_features: int = 128,
                  nexus_features: int = 32,
-                 instance_features: int = 32,
                  interaction_features: int = 32,
+                 instance_features: int = 32,
                  planes: tuple[str] = ('u','v','y'),
                  semantic_classes: tuple[str] = ('MIP','HIP','shower','michel','diffuse'),
                  event_classes: tuple[str] = ('numu','nue','nc'),
@@ -77,13 +78,7 @@ class NuGraph3(LightningModule):
             p: planar_encoder
             for p in self.planes})
 
-        instance_net = nn.Linear(planar_features, instance_features+1)
-        self.instance_encoder = PlanarConv({
-            p: instance_net
-            for p in self.planes})
-
         self.core_net = NuGraphCore(planar_features,
-                                    instance_features,
                                     nexus_features,
                                     interaction_features,
                                     planes)
@@ -122,6 +117,7 @@ class NuGraph3(LightningModule):
 
         if instance_head:
             self.instance_decoder = InstanceDecoder(
+                planar_features,
                 instance_features,
                 planes,
             )
@@ -135,18 +131,17 @@ class NuGraph3(LightningModule):
         self.max_mem_gpu = 0.
 
     @torch.jit.ignore
-    def ckpt(self, p: TD, o: TD, n: TD, i: TD, edges: ED) -> tuple[TD, TD, TD]:
+    def ckpt(self, p: TD, n: TD, i: TD, edges: ED) -> tuple[TD, TD, TD]:
         """
         Checkpointing wrapper for core loop
 
         Args:
             p: Planar embedding tensor dictionary
-            o: Object condensation embedding tensor dictionary
             n: Nexus embedding tensor dictionary
             i: Interaction embedding tensor dictionary
             edges: Edge index tensor dictionary
         """
-        return checkpoint(self.core_net, p, o, n, i, edges, use_reentrant=False)
+        return checkpoint(self.core_net, p, n, i, edges, use_reentrant=False)
 
     def forward(self, p: TD, n: TD, i: TD, edges: ED):
         """
@@ -160,12 +155,11 @@ class NuGraph3(LightningModule):
         """
 
         p = self.planar_encoder(p)
-        o = self.instance_encoder(p)
         for _ in range(self.num_iters):
-            p, o, n, i = self.loop(p, o, n, i, edges)
+            p, n, i = self.loop(p, n, i, edges)
         ret = {}
         for decoder in self.decoders:
-            ret.update(decoder(p|n|i, o))
+            ret.update(decoder(p|n|i))
         return ret
 
     def step(self, data: HeteroData,
@@ -342,10 +336,10 @@ class NuGraph3(LightningModule):
                            help='Hidden dimensionality of planar convolutions')
         model.add_argument('--nexus-feats', type=int, default=32,
                            help='Hidden dimensionality of nexus convolutions')
-        model.add_argument('--instance-feats', type=int, default=32,
-                           help='Hidden dimensionality of object condensation')
         model.add_argument('--interaction-feats', type=int, default=32,
                            help='Hidden dimensionality of interaction layer')
+        model.add_argument('--instance-feats', type=int, default=32,
+                           help='Hidden dimensionality of object condensation')
         model.add_argument('--event', action='store_true',
                            help='Enable event classification head')
         model.add_argument('--semantic', action='store_true',
@@ -378,8 +372,8 @@ class NuGraph3(LightningModule):
             in_features=args.in_feats,
             planar_features=args.planar_feats,
             nexus_features=args.nexus_feats,
-            instance_features=args.instance_feats,
             interaction_features=args.interaction_feats,
+            instance_features=args.instance_feats,
             planes=nudata.planes,
             semantic_classes=nudata.semantic_classes,
             event_classes=nudata.event_classes,
