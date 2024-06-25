@@ -129,23 +129,23 @@ class InstanceDecoder(DecoderBase):
         """
         return {}
 
-    def finalize(self, data) -> None:
-        """
-        Finalize outputs for NuGraph3 instance decoder
+    # def finalize(self, data) -> None:
+    #     """
+    #     Finalize outputs for NuGraph3 instance decoder
 
-        Args:
-            data: Graph data object
-        """
-        if isinstance(data, Batch):
-            dlist = data.to_data_list()
-            for d in dlist:
-                self.materialize(d)
-            for p in self.planes:
-                data[p].i = torch.cat([d[p].i for d in dlist], dim=0)
-                data._slice_dict[p]["i"] = data._slice_dict[p]["x"]
-                data._inc_dict[p]["i"] = data._inc_dict[p]["x"]
-        else:
-            self.materialize(data)
+    #     Args:
+    #         data: Graph data object
+    #     """
+    #     if isinstance(data, Batch):
+    #         dlist = data.to_data_list()
+    #         for d in dlist:
+    #             self.materialize(d)
+    #         for p in self.planes:
+    #             data[p].i = torch.cat([d[p].i for d in dlist], dim=0)
+    #             data._slice_dict[p]["i"] = data._slice_dict[p]["x"]
+    #             data._inc_dict[p]["i"] = data._inc_dict[p]["x"]
+    #     else:
+    #         self.materialize(data)
 
     def draw_event_display(self, data: "pyg.HeteroData"):
         """
