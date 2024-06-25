@@ -202,7 +202,7 @@ class InstanceDecoder(DecoderBase):
                 fig.write_image(file=path/f"evt{i+1}-beta.png")
 
                 # object condensation coordinate plot
-                fig = px.scatter(df[df.instance!="-1"], x="c1", y="c2",
+                fig = px.scatter(df, x="c1", y="c2",
                                  color="instance", title=f"epoch {epoch}")
                 fig.write_image(file=path/f"evt{i+1}-coords.png")
 
