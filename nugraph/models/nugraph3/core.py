@@ -1,8 +1,9 @@
 """NuGraph core message-passing engine"""
 import torch
 from torch import nn
+from torch.utils.checkpoint import checkpoint
 from torch_geometric.nn import MessagePassing, HeteroConv
-from .types import T, TD
+from .types import T, TD, Data
 
 class NuGraphBlock(MessagePassing):
     """
@@ -84,14 +85,15 @@ class PlanarConv(nn.Module):
         super().__init__()
         self.net = nn.ModuleDict(module_dict)
 
-    def forward(self, x: TD) -> TD:
+    def forward(self, data: Data) -> None:
         """
         PlanarConv forward pass
         
         Args:
-            x: Dictionary of input tensors
+            data: Graph data object
         """
-        return {p: net(x[p]) for p, net in self.net.items()}
+        for p, net in self.net.items():
+            data[p].x = net(data[p].x)
 
 class NuGraphCore(nn.Module):
     """
@@ -104,15 +106,18 @@ class NuGraphCore(nn.Module):
         nexus_features: Number of features in nexus embedding
         interaction_features: Number of features in interaction embedding
         planes: List of detector planes
+        use_checkpointing: Whether to use checkpointing
     """
     def __init__(self,
                  planar_features: int,
                  nexus_features: int,
                  interaction_features: int,
-                 planes: list[str]):
+                 planes: list[str],
+                 use_checkpointing: bool = True):
         super().__init__()
 
         self.planes = planes
+        self.use_checkpointing = use_checkpointing
 
         # internal planar message-passing
         plane = NuGraphBlock(planar_features, planar_features,
@@ -143,20 +148,30 @@ class NuGraphCore(nn.Module):
                                   planar_features)
         self.nexus_to_plane = HeteroConv(
             {("sp", "nexus", p): nexus_down for p in planes})
+        
+    def checkpoint(self, net: nn.Module, *args) -> TD:
+        """
+        Checkpoint module, if enabled.
+        
+        Args:
+            net: Network module
+            args: Arguments to network module
+        """
+        if self.use_checkpointing and self.training:
+            return checkpoint(net, *args, use_reentrant=False)
+        else:
+            return net(*args)
 
-    def forward(self, p: TD, n: TD, i: TD, edges: TD) -> tuple[TD, TD, TD]:
+
+    def forward(self, data: Data) -> None:
         """
         NuGraphCore forward pass
         
         Args:
-            p: Planar embedding tensor dictionary
-            n: Nexus embedding tensor dictionary
-            i: Interaction embedding tensor dictionary
-            edges: Edge index tensor dictionary
+            data: Graph data object
         """
-        p = self.plane_net(p, edges)
-        n = self.plane_to_nexus(p|n, edges)
-        i = self.nexus_to_interaction(n|i, edges)
-        n = self.interaction_to_nexus(n|i, edges)
-        p = self.nexus_to_plane(p|n, edges)
-        return p, n, i
+        for net in [self.plane_net, self.plane_to_nexus,
+                    self.nexus_to_interaction, self.interaction_to_nexus,
+                    self.nexus_to_plane]:
+            x = self.checkpoint(net, data.x_dict, data.edge_index_dict)
+            data.set_value_dict("x", x)

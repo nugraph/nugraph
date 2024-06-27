@@ -2,9 +2,10 @@
 from typing import Any
 import torch
 from torch import nn
+from torch_geometric.data import Batch
 import torchmetrics as tm
 from .base import DecoderBase
-from ..types import T, TD
+from ..types import T, TD, Data
 
 class FilterDecoder(DecoderBase):
     """
@@ -46,14 +47,19 @@ class FilterDecoder(DecoderBase):
                 nn.Sigmoid(),
             )
 
-    def forward(self, x: TD) -> dict[str, TD]:
+    def forward(self, data: Data) -> None:
         """
         NuGraph3 filter decoder forward pass
 
         Args:
-            x: Node embedding tensor dictionary
+            data: Graph data object
         """
-        return {"x_filter": {p: net(x[p]).squeeze(dim=-1) for p, net in self.net.items()}}
+        for p, net in self.net.items():
+            data[p].x_filter = net(data[p].x).squeeze(dim=-1)
+            if isinstance(data, Batch):
+                data._slice_dict[p]["x_filter"] = data[p].ptr
+                inc = torch.zeros(data.num_graphs, device=data[p].x.device)
+                data._inc_dict[p]["x_filter"] = inc
 
     def arrange(self, batch: TD) -> tuple[T, T]:
         """

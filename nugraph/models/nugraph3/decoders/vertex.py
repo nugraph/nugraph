@@ -1,9 +1,11 @@
 """NuGraph3 vertex decoder"""
 from typing import Any
+import torch
 from torch import nn
+from torch_geometric.data import Batch
 from ....util import LogCoshLoss
 from .base import DecoderBase
-from ..types import T, TD
+from ..types import T, Data
 
 class VertexDecoder(DecoderBase):
     """
@@ -30,14 +32,18 @@ class VertexDecoder(DecoderBase):
 
         self.net = nn.Linear(interaction_features, 3)
 
-    def forward(self, x: TD) -> dict[str, TD]:
+    def forward(self, data: Data) -> None:
         """
         NuGraph3 vertex decoder forward pass
 
         Args:
-            x: Node embedding tensor dictionary
+            data: Graph data object
         """
-        return {"v": {"evt": self.net(x["evt"])}}
+        data["evt"].v = self.net(data["evt"].x)
+        if isinstance(data, Batch):
+            data._slice_dict["evt"]["v"] = data["evt"].ptr
+            inc = torch.zeros(data.num_graphs, device=data["evt"].x.device)
+            data._inc_dict["evt"]["v"] = inc
 
     def arrange(self, batch) -> tuple[T, T]:
         """

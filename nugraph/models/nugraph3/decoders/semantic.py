@@ -2,10 +2,11 @@
 from typing import Any
 import torch
 from torch import nn
+from torch_geometric.data import Batch
 import torchmetrics as tm
 from .base import DecoderBase
 from ....util import RecallLoss
-from ..types import T, TD
+from ..types import T, Data
 
 class SemanticDecoder(DecoderBase):
     """
@@ -47,14 +48,19 @@ class SemanticDecoder(DecoderBase):
         for p in planes:
             self.net[p] = nn.Linear(node_features, len(semantic_classes))
 
-    def forward(self, x: TD) -> dict[str, TD]:
+    def forward(self, data: Data) -> None:
         """
         NuGraph3 semantic decoder forward pass
 
         Args:
-            x: Node embedding tensor dictionary
+            data: Graph data object
         """
-        return {"x_semantic": {p: net(x[p]) for p, net in self.net.items()}}
+        for p, net in self.net.items():
+            data[p].x_semantic = net(data[p].x)
+            if isinstance(data, Batch):
+                data._slice_dict[p]["x_semantic"] = data[p].ptr
+                inc = torch.zeros(data.num_graphs, device=data[p].x.device)
+                data._inc_dict[p]["x_semantic"] = inc
 
     def arrange(self, batch) -> tuple[T, T]:
         """

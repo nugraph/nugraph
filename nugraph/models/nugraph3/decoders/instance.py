@@ -10,7 +10,7 @@ from sklearn.decomposition import PCA
 import plotly.express as px
 from .base import DecoderBase
 from ....util import ObjCondensationLoss
-from ..types import T, TD, TDD
+from ..types import T, TD, Data
 
 class InstanceDecoder(DecoderBase):
     """
@@ -33,20 +33,25 @@ class InstanceDecoder(DecoderBase):
                          weight=1.)
         self.dfs = []
         self.planes = planes
-        self.net = nn.Linear(planar_features, instance_features+1)
+        self.beta_net = nn.Linear(planar_features, 1)
+        self.coord_net = nn.Linear(planar_features, instance_features)
 
-    def forward(self, x: TD) -> TDD:
+    def forward(self, data: Data) -> None:
         """
         NuGraph3 instance decoder forward pass
 
         Args:
-            x: Node embedding tensor dictionary
+            data: Graph data object
         """
-        x = {p: self.net(x[p]) for p in self.planes}
-        return {
-            "of": {p: t[:, 0].sigmoid() for p, t in x.items()},
-            "ox": {p: t[:, 1:] for p, t in x.items()},
-        }
+        for p in self.planes:
+            data[p].of = self.beta_net(data[p].x).squeeze(dim=-1).sigmoid()
+            data[p].ox = self.coord_net(data[p].x)
+            if isinstance(data, Batch):
+                data._slice_dict[p]["of"] = data[p].ptr
+                data._slice_dict[p]["ox"] = data[p].ptr
+                inc = torch.zeros(data.num_graphs, device=data[p].x.device)
+                data._inc_dict[p]["of"] = inc
+                data._inc_dict[p]["ox"] = inc
 
     def loss(self,
              batch: "pyg.HeteroData",
@@ -127,7 +132,10 @@ class InstanceDecoder(DecoderBase):
             y: Ground truth
             stage: Training stage
         """
-        return {}
+        _, of = x
+        return {
+            "num_instances/pred": (of>0.1).sum().float()
+        }
 
     # def finalize(self, data) -> None:
     #     """

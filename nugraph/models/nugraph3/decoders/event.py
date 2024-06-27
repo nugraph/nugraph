@@ -1,10 +1,12 @@
 """NuGraph3 event decoder"""
 from typing import Any
+import torch
 from torch import nn
 import torchmetrics as tm
+from torch_geometric.data import Batch
 from .base import DecoderBase
 from ....util import RecallLoss
-from ..types import T, TD
+from ..types import T, TD, Data
 
 class EventDecoder(DecoderBase):
     """
@@ -44,14 +46,18 @@ class EventDecoder(DecoderBase):
         self.net = nn.Linear(in_features=interaction_features,
                              out_features=len(event_classes))
 
-    def forward(self, x: TD) -> dict[str, TD]:
+    def forward(self, data: Data) -> None:
         """
         NuGraph3 event decoder forward pass
 
         Args:
-            x: Node embedding tensor dictionary
+            data: Graph data object
         """
-        return {"e": {"evt": self.net(x["evt"])}}
+        data["evt"].e = self.net(data["evt"].x)
+        if isinstance(data, Batch):
+            data._slice_dict["evt"]["e"] = data["evt"].ptr
+            inc = torch.zeros(data.num_graphs, device=data["evt"].x.device)
+            data._inc_dict["evt"]["e"] = inc
 
     def arrange(self, batch) -> tuple[T, T]:
         """
