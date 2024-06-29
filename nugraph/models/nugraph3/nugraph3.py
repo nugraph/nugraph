@@ -84,7 +84,6 @@ class NuGraph3(LightningModule):
         if event_head:
             self.event_decoder = EventDecoder(
                 interaction_features,
-                planes,
                 event_classes)
             self.decoders.append(self.event_decoder)
 
@@ -103,10 +102,7 @@ class NuGraph3(LightningModule):
             self.decoders.append(self.filter_decoder)
 
         if vertex_head:
-            self.vertex_decoder = VertexDecoder(
-                interaction_features,
-                planes,
-                semantic_classes)
+            self.vertex_decoder = VertexDecoder(interaction_features)
             self.decoders.append(self.vertex_decoder)
 
         if instance_head:
@@ -125,8 +121,7 @@ class NuGraph3(LightningModule):
         self.max_mem_gpu = 0.
 
     def forward(self, data: Data,
-                stage: str = None,
-                confusion: bool = False):
+                stage: str = None):
         """
         NuGraph3 forward function
 
@@ -137,21 +132,16 @@ class NuGraph3(LightningModule):
         Args:
             data: Graph data object
             stage: String tag defining the step type
-            confusion: Whether to produce confusion matrices
         """
         self.encoder(data)
         for _ in range(self.num_iters):
             self.core_net(data)
-        for decoder in self.decoders:
-            decoder(data)
-
         total_loss = 0.
         total_metrics = {}
         for decoder in self.decoders:
-            loss, metrics = decoder.loss(data, stage, confusion)
+            loss, metrics = decoder(data, stage)
             total_loss += loss
             total_metrics.update(metrics)
-            decoder.finalize(data)
 
         return total_loss, total_metrics
 
@@ -184,7 +174,7 @@ class NuGraph3(LightningModule):
     def validation_step(self,
                         batch,
                         batch_idx: int) -> None:
-        loss, metrics = self(batch, 'val', True)
+        loss, metrics = self(batch, 'val')
         self.log('loss/val', loss, batch_size=batch.num_graphs)
         self.log_dict(metrics, batch_size=batch.num_graphs)
 

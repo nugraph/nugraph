@@ -3,16 +3,15 @@ from typing import Any
 import pathlib
 import torch
 from torch import nn
-from torch_geometric.data import Batch
+from torch_geometric.data import Batch, HeteroData
 from pytorch_lightning.loggers import TensorBoardLogger
 import pandas as pd
 from sklearn.decomposition import PCA
 import plotly.express as px
-from .base import DecoderBase
 from ....util import ObjCondensationLoss
-from ..types import T, TD, Data
+from ..types import Data
 
-class InstanceDecoder(DecoderBase):
+class InstanceDecoder(nn.Module):
     """
     NuGraph3 instance decoder module
 
@@ -26,23 +25,31 @@ class InstanceDecoder(DecoderBase):
     """
     def __init__(self, planar_features: int,
                  instance_features: int, planes: list[str]):
-        super().__init__("instance",
-                         planes,
-                         None,
-                         ObjCondensationLoss(),
-                         weight=1.)
-        self.dfs = []
-        self.planes = planes
+        super().__init__()
+
+        # loss function
+        self.loss = ObjCondensationLoss()
+
+        # temperature parameter
+        self.temp = nn.Parameter(torch.tensor(0.))
+
+        # network
         self.beta_net = nn.Linear(planar_features, 1)
         self.coord_net = nn.Linear(planar_features, instance_features)
 
-    def forward(self, data: Data) -> None:
+        self.dfs = []
+        self.planes = planes
+
+    def forward(self, data: Data, stage: str = None) -> dict[str, Any]:
         """
         NuGraph3 instance decoder forward pass
 
         Args:
             data: Graph data object
+            stage: Stage name (train/val/test)
         """
+
+        # run network and add output to graph object
         for p in self.planes:
             data[p].of = self.beta_net(data[p].x).squeeze(dim=-1).sigmoid()
             data[p].ox = self.coord_net(data[p].x)
@@ -53,48 +60,29 @@ class InstanceDecoder(DecoderBase):
                 data._inc_dict[p]["of"] = inc
                 data._inc_dict[p]["ox"] = inc
 
-    def loss(self,
-             batch: "pyg.HeteroData",
-             stage: str,
-             confusion: bool = False):
-        """
-        Calculate loss for NuGraph3 instance decoder
+        # calculate loss
+        of = torch.cat([data[p].of for p in self.planes], dim=0)
+        ox = torch.cat([data[p].ox for p in self.planes], dim=0)
+        y = torch.cat([data[p].y_instance for p in self.planes], dim=0)
+        w = (-1 * self.temp).exp()
+        loss = w * self.loss((ox, of), y) + self.temp
 
-        Args:
-            batch: Batch of graph objects
-            stage: Training stage
-            confusion: Whether to produce confusion matrices
-        """
-        x, y = self.arrange(batch)
-        w = self.weight * (-1 * self.temp).exp()
-        loss = w * self.loss_func(x, y) + self.temp
+        # calculate metrics
         metrics = {}
         if stage:
-            metrics = self.metrics(x, y, stage)
-            metrics[f"loss_{self.name}/{stage}"] = loss
-            if stage == "train":
-                metrics[f"temperature/{self.name}"] = self.temp
-        if stage == "val":
-            for data in batch.to_data_list():
+            metrics[f"loss_instance/{stage}"] = loss
+            metrics[f"num_instances/{stage}"] = (of>0.1).sum().float()
+        if stage == "train":
+            metrics["temperature/instance"] = self.temp
+        if stage == "val" and isinstance(data, Batch):
+            for d in data.to_data_list():
                 if len(self.dfs) >= 100:
                     break
-                self.dfs.append(self.draw_event_display(data))
+                self.dfs.append(self.draw_event_display(d))
 
         return loss, metrics
 
-    def arrange(self, batch: TD) -> tuple[T, T]:
-        """
-        NuGraph3 instance decoder arrange function
-
-        Args:
-            batch: Batch of graph objects
-        """
-        x_coords = torch.cat([batch[p]["ox"] for p in self.planes], dim=0)
-        x_filter = torch.cat([batch[p]["of"] for p in self.planes], dim=0)
-        y = torch.cat([batch[p]["y_instance"] for p in self.planes], dim=0)
-        return (x_coords, x_filter), y
-
-    def materialize(self, data: Batch) -> None:
+    def materialize(self, data: Data) -> None:
         """
         Materialize object condensation embedding into instances
 
@@ -122,40 +110,8 @@ class InstanceDecoder(DecoderBase):
         else:
             for p in self.planes:
                 data[p].i = torch.empty_like(data[p].of).fill_(-1).int()
-    
-    def metrics(self, x: T, y: T, stage: str) -> dict[str, Any]:
-        """
-        NuGraph3 instance decoder metrics function
 
-        Args:
-            x: Model output
-            y: Ground truth
-            stage: Training stage
-        """
-        _, of = x
-        return {
-            "num_instances/pred": (of>0.1).sum().float()
-        }
-
-    # def finalize(self, data) -> None:
-    #     """
-    #     Finalize outputs for NuGraph3 instance decoder
-
-    #     Args:
-    #         data: Graph data object
-    #     """
-    #     if isinstance(data, Batch):
-    #         dlist = data.to_data_list()
-    #         for d in dlist:
-    #             self.materialize(d)
-    #         for p in self.planes:
-    #             data[p].i = torch.cat([d[p].i for d in dlist], dim=0)
-    #             data._slice_dict[p]["i"] = data._slice_dict[p]["x"]
-    #             data._inc_dict[p]["i"] = data._inc_dict[p]["x"]
-    #     else:
-    #         self.materialize(data)
-
-    def draw_event_display(self, data: "pyg.HeteroData"):
+    def draw_event_display(self, data: HeteroData) -> pd.DataFrame:
         """
         Draw event displays for NuGraph3 object condensation embedding
 
