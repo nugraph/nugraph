@@ -7,9 +7,10 @@ import pytorch_lightning as pl
 import nugraph as ng
 import pynuml
 import tqdm
+import torch
 
 Data = ng.data.H5DataModule
-Model = ng.models.NuGraph3
+Model = ng.models.NuGraph2
 
 def configure():
     parser = argparse.ArgumentParser()
@@ -28,6 +29,10 @@ def test(args):
     print('using checkpoint =',args.checkpoint)
     model = Model.load_from_checkpoint(args.checkpoint, map_location='cpu')
 
+    script = model.to_torchscript()
+    print(script)
+    torch.jit.save(script, "model.pt")
+    
     print('output file =',args.outfile)
     if os.path.isfile(args.outfile):
         raise Exception(f'file {args.outfile} already exists!')

@@ -13,7 +13,7 @@ import warnings
 warnings.filterwarnings('ignore', '.*TypedStorage is deprecated.*')
 
 Data = ng.data.H5DataModule
-Model = ng.models.NuGraph3
+Model = ng.models.NuGraph2
 
 def configure():
     parser = argparse.ArgumentParser()
