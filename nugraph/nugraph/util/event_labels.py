@@ -13,6 +13,7 @@ class EventLabels(BaseTransform):
 
     def __call__(self, data: HeteroData) -> HeteroData:
 
-        if not data["evt"].y.ndim:
-            data["evt"].y = data["evt"].y.reshape([1])
+        if(hasattr(data["evt"], 'y')):
+            if not data["evt"].y.ndim:
+                data["evt"].y = data["evt"].y.reshape([1])
         return data
