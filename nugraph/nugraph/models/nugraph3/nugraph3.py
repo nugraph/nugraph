@@ -201,7 +201,8 @@ class NuGraph3(LightningModule):
         else:
             for key, value in x.items():
                 data.set_value_dict(key, value)
-
+        
+        self.data = data
         total_loss = 0.
         total_metrics = {}
         # for decoder in self.decoders:
