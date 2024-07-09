@@ -6,6 +6,7 @@ import psutil
 import torch
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import OneCycleLR
+from torch_geometric.data import Batch
 
 from pytorch_lightning import LightningModule
 
@@ -142,6 +143,11 @@ class NuGraph3(LightningModule):
             loss, metrics = decoder(data, stage)
             total_loss += loss
             total_metrics.update(metrics)
+
+        if isinstance(data, Batch):
+            data = Batch([self.instance_decoder.materialize(b) for b in data.to_data_list()])
+        else:
+            self.instance_decoder.materialize(data)
 
         return total_loss, total_metrics
 
