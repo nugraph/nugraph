@@ -91,25 +91,27 @@ class InstanceDecoder(nn.Module):
         """
         of = torch.cat([data[p].of for p in self.planes], dim=0)
         ox = torch.cat([data[p].ox for p in self.planes], dim=0)
-        centers = (of > 0.1).nonzero().squeeze(0)
-        distances = []
-        for center in centers:
-            center_coords = ox[center]
-            dist = 1 - (ox - center_coords).square().sum(dim=1).sqrt()
-            dist[(dist<0)] = 0
-            distances.append(dist)
-        if distances:
-            distances = torch.stack(distances, dim=1)
-            total = distances.sum(dim=1)
-            mask = (total > 0)
-            xi = distances.argmax(dim=1)
-            xi[~mask] = -1
-            ts = xi.split([data[p].num_nodes for p in self.planes])
-            for p, t in zip(self.planes, ts):
-                data[p].i = t.int()
-        else:
-            for p in self.planes:
-                data[p].i = torch.empty_like(data[p].of).fill_(-1).int()
+        centers = (of > 0.1).nonzero().squeeze(1)
+        data["particles"].num_nodes = centers.size(0)
+        print(f"generating {centers.size(0)} clusters")
+        for p in self.planes:
+            print(f"  plane {p}")
+            e = data[p, "cluster", "particles"]
+            e.edge_index = torch.empty(2, 0, device=of.device)
+            e.distance = torch.empty(0,  device=of.device)
+            for i, center in enumerate(centers):
+                print(f"    instance {i+1}")
+                center_coords = ox[center]
+                dist = (data[p].ox - center_coords).square().sum(dim=1).sqrt()
+                hits = (dist < 1).nonzero().squeeze(1)
+                edge_index = torch.empty(2, hits.size(0), dtype=int, device=of.device)
+                edge_index[0] = hits
+                edge_index[1] = i
+                e.edge_index = torch.cat((e.edge_index, edge_index), dim=1)
+                e.distance = torch.cat((e.distance, dist[hits]), dim=0)
+            print("plane", p, "has", data[p, "cluster", "particles"].num_edges, "instance edges")
+
+        # now we need a method to reduced the edges for each hit into the closest cluster
 
     def draw_event_display(self, data: HeteroData) -> pd.DataFrame:
         """
