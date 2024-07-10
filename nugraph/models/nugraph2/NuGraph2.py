@@ -36,7 +36,7 @@ class NuGraph2(LightningModule):
         super().__init__()
 
         warnings.filterwarnings("ignore", ".*NaN values found in confusion matrix.*")
-
+        #print('init')
         self.save_hyperparameters()
 
         self.planes = planes
@@ -61,46 +61,60 @@ class NuGraph2(LightningModule):
                                   planes,
                                   checkpoint=checkpoint)
 
-        self.decoders = []
+        #self.decoders = []
 
-        if semantic_head:
-            self.semantic_decoder = SemanticDecoder(
-                planar_features,
-                planes,
-                semantic_classes)
-            self.decoders.append(self.semantic_decoder)
+        #if semantic_head:
+        #    self.semantic_decoder = SemanticDecoder(
+        #        planar_features,
+        #        planes,
+        #        semantic_classes)
+        #    self.decoders.append(self.semantic_decoder)
 
-        if filter_head:
-            self.filter_decoder = FilterDecoder(
-                planar_features,
-                planes,
-                semantic_classes)
-            self.decoders.append(self.filter_decoder)
+        #if filter_head:
+        #    self.filter_decoder = FilterDecoder(
+        #        planar_features,
+        #        planes,
+        #        semantic_classes)
+        #    self.decoders.append(self.filter_decoder)
+
+        #print('init2')
+        self.semantic_decoder = SemanticDecoder(planar_features, planes, semantic_classes)
+        self.filter_decoder = FilterDecoder(planar_features, planes, semantic_classes)
+        self.decoders: List[Union[SemanticDecoder,FilterDecoder]] = [self.semantic_decoder,self.filter_decoder]
 
         if len(self.decoders) == 0:
             raise Exception('At least one decoder head must be enabled!')
+        #print('init3')
 
     def forward(self,
                 x: dict[str, Tensor],
                 edge_index_plane: dict[str, Tensor],
                 edge_index_nexus: dict[str, Tensor],
                 nexus: Tensor,
-                batch: dict[str, Tensor]) -> dict[str, Tensor]:
+                batch: dict[str, Tensor]) -> dict[str, dict[str, Tensor]]:
+        #print('fwd')
         m = self.encoder(x)
         for _ in range(self.num_iters):
             # shortcut connect features
             for i, p in enumerate(self.planes):
                 s = x[p].detach().unsqueeze(1).expand(-1, m[p].size(1), -1)
                 m[p] = torch.cat((m[p], s), dim=-1)
+            #print('A')
             self.plane_net(m, edge_index_plane)
+            #print('B')
             self.nexus_net(m, edge_index_nexus, nexus)
-        ret = {}
-        for decoder in self.decoders:
-            ret.update(decoder(m, batch))
+        #ret = {}
+        ret: dict[str, dict[str, Tensor]] = {}
+        #print('C')
+        #for decoder in self.decoders:
+        #    ret.update(decoder(m, batch))
+        ret.update(self.semantic_decoder(m, batch))
+        ret.update(self.filter_decoder(m, batch))
+        #print('D')
         return ret
 
     def step(self, data: HeteroData | Batch):
-
+        #print('step')
         # if it's a single data instance, convert to batch manually
         if isinstance(data, Batch):
             batch = data
@@ -171,6 +185,7 @@ class NuGraph2(LightningModule):
     def validation_step(self,
                         batch,
                         batch_idx: int) -> None:
+        #print('val')
         self.step(batch)
         total_loss = 0.
         for decoder in self.decoders:
@@ -187,6 +202,7 @@ class NuGraph2(LightningModule):
     def test_step(self,
                   batch,
                   batch_idx: int = 0) -> None:
+        #print('test')
         self.step(batch)
         total_loss = 0.
         for decoder in self.decoders:
@@ -204,6 +220,7 @@ class NuGraph2(LightningModule):
     def predict_step(self,
                      batch: Batch,
                      batch_idx: int = 0) -> Batch:
+        #print('predict')
         self.step(batch)
         return batch
 

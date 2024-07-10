@@ -29,7 +29,8 @@ def test(args):
     print('using checkpoint =',args.checkpoint)
     model = Model.load_from_checkpoint(args.checkpoint, map_location='cpu')
 
-    script = model.to_torchscript()
+    #script = model.to_torchscript({})
+    script = torch.compile(model)
     print(script)
     torch.jit.save(script, "model.pt")
     

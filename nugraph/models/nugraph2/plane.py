@@ -2,7 +2,7 @@ from typing import Any, Callable
 
 from torch import Tensor, cat
 import torch.nn as nn
-from torch.utils.checkpoint import checkpoint
+#from torch.utils.checkpoint import checkpoint
 
 from torch_geometric.nn import MessagePassing
 
@@ -18,7 +18,7 @@ class MessagePassing2D(MessagePassing):
                  num_classes: int,
                  aggr: str = 'add'):
         super().__init__(node_dim=0, aggr=aggr)
-
+        #print('a')
         self.edge_net = nn.Sequential(
             ClassLinear(2 * (in_features + planar_features),
                         1,
@@ -34,14 +34,18 @@ class MessagePassing2D(MessagePassing):
                         planar_features,
                         num_classes),
             nn.Tanh())
+        #print('b')
 
-    def forward(self, x: Tensor, edge_index: Tensor):
+    def forward(self, x: Tensor, edge_index: Tensor) -> Tensor:
+        #print('pln fwd')
         return self.propagate(edge_index, x=x, size=None)
 
-    def message(self, x_i: Tensor, x_j: Tensor):
+    def message(self, x_i: Tensor, x_j: Tensor) -> Tensor:
+        #print('pln msg')
         return self.edge_net(cat((x_i, x_j), dim=-1).detach()) * x_j
 
-    def update(self, aggr_out: Tensor, x: Tensor):
+    def update(self, aggr_out: Tensor, x: Tensor) -> Tensor:
+        #print('pln upd')
         return self.node_net(cat((x, aggr_out), dim=-1))
 
 class PlaneNet(nn.Module):
@@ -55,21 +59,25 @@ class PlaneNet(nn.Module):
                  checkpoint: bool = True):
         super().__init__()
 
-        self.checkpoint = checkpoint
-
+        #self.checkpoint = checkpoint
+        print('A')
         self.net = nn.ModuleDict()
         for p in planes:
             self.net[p] = MessagePassing2D(in_features,
                                            planar_features,
                                            num_classes,
-                                           aggr)
+                                           aggr)#.jittable()
+        #print('B')
 
-    def ckpt(self, fn: Callable, *args) -> Any:
-        if self.checkpoint and self.training:
-            return checkpoint(fn, *args)
-        else:
-            return fn(*args)
+    #def ckpt(self, fn: Callable, *args) -> Any:
+    #    if self.checkpoint and self.training:
+    #        return checkpoint(fn, *args)
+    #    else:
+    #        return fn(*args)
 
     def forward(self, x: dict[str, Tensor], edge_index: dict[str, Tensor]) -> None:
-        for p in self.net:
-            x[p] = self.ckpt(self.net[p], x[p], edge_index[p])
+        #for p in self.net:
+            #x[p] = self.ckpt(self.net[p], x[p], edge_index[p])
+        #print('plane fwd')
+        for p, v in self.net.items():
+            x[p] = v(x[p], edge_index[p])
