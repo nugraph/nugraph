@@ -60,7 +60,7 @@ class PlaneNet(nn.Module):
         super().__init__()
 
         #self.checkpoint = checkpoint
-        print('A')
+        #print('A')
         self.net = nn.ModuleDict()
         for p in planes:
             self.net[p] = MessagePassing2D(in_features,
