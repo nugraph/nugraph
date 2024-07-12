@@ -7,7 +7,7 @@
             "request": "launch",
             "program": "scripts/train.py",
             "console": "integratedTerminal",
-            "args": "--logdir /raid/$USER/logs --name test --version test --data-path /raid/uboone/NuGraph3/NuGraph3.gnn.h5 --semantic --filter --vertex --event",
+            "args": "--logdir /raid/$USER/logs --name test --version test --data-path /raid/uboone/NuGraph3/NuGraph3.gnn.h5 --semantic --filter --vertex --event --instance",
         },
     ]
 }

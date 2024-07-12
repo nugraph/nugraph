@@ -4,19 +4,19 @@ import warnings
 import psutil
 
 import torch
+from torch import nn
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.checkpoint import checkpoint
 
 from pytorch_lightning import LightningModule
 
-from torch_geometric.nn import HeteroDictLinear
 from torch_geometric.data import Batch, HeteroData
 from torch_geometric.utils import unbatch
 
 from .types import TD, ED
-from .core import NuGraphCore
-from .decoders import SemanticDecoder, FilterDecoder, EventDecoder, VertexDecoder
+from .core import PlanarConv, NuGraphCore
+from .decoders import SemanticDecoder, FilterDecoder, EventDecoder, VertexDecoder, InstanceDecoder
 
 from ...data import H5DataModule
 
@@ -29,6 +29,7 @@ class NuGraph3(LightningModule):
         planar_features: Number of planar node features
         nexus_features: Number of nexus node features
         interaction_features: Number of interaction node features
+        instance_features: Number of instance features
         planes: Tuple of planes
         semantic_classes: Tuple of semantic classes
         event_classes: Tuple of event classes
@@ -45,6 +46,7 @@ class NuGraph3(LightningModule):
                  planar_features: int = 128,
                  nexus_features: int = 32,
                  interaction_features: int = 32,
+                 instance_features: int = 32,
                  planes: tuple[str] = ('u','v','y'),
                  semantic_classes: tuple[str] = ('MIP','HIP','shower','michel','diffuse'),
                  event_classes: tuple[str] = ('numu','nue','nc'),
@@ -53,6 +55,7 @@ class NuGraph3(LightningModule):
                  semantic_head: bool = True,
                  filter_head: bool = True,
                  vertex_head: bool = False,
+                 instance_head: bool = False,
                  use_checkpointing: bool = False,
                  lr: float = 0.001):
         super().__init__()
@@ -70,9 +73,10 @@ class NuGraph3(LightningModule):
         self.num_iters = num_iters
         self.lr = lr
 
-        self.encoder = HeteroDictLinear({
-            p: in_features for p in planes},
-            planar_features)
+        planar_encoder = nn.Linear(in_features, planar_features)
+        self.planar_encoder = PlanarConv({
+            p: planar_encoder
+            for p in self.planes})
 
         self.core_net = NuGraphCore(planar_features,
                                     nexus_features,
@@ -111,6 +115,14 @@ class NuGraph3(LightningModule):
                 semantic_classes)
             self.decoders.append(self.vertex_decoder)
 
+        if instance_head:
+            self.instance_decoder = InstanceDecoder(
+                planar_features,
+                instance_features,
+                planes,
+            )
+            self.decoders.append(self.instance_decoder)
+
         if not self.decoders:
             raise RuntimeError('At least one decoder head must be enabled!')
 
@@ -141,7 +153,8 @@ class NuGraph3(LightningModule):
             i: Interaction embedding tensor dictionary
             edges: Edge index tensor dictionary
         """
-        p = self.encoder(p)
+
+        p = self.planar_encoder(p)
         for _ in range(self.num_iters):
             p, n, i = self.loop(p, n, i, edges)
         ret = {}
@@ -201,6 +214,8 @@ class NuGraph3(LightningModule):
         else:
             for key, value in x.items():
                 data.set_value_dict(key, value)
+
+        del data["sp"] # why is this necessary? i don't know lmao
 
         total_loss = 0.
         total_metrics = {}
@@ -323,12 +338,16 @@ class NuGraph3(LightningModule):
                            help='Hidden dimensionality of nexus convolutions')
         model.add_argument('--interaction-feats', type=int, default=32,
                            help='Hidden dimensionality of interaction layer')
+        model.add_argument('--instance-feats', type=int, default=32,
+                           help='Hidden dimensionality of object condensation')
         model.add_argument('--event', action='store_true',
                            help='Enable event classification head')
         model.add_argument('--semantic', action='store_true',
                            help='Enable semantic segmentation head')
         model.add_argument('--filter', action='store_true',
                            help='Enable background filter head')
+        model.add_argument('--instance', action='store_true',
+                           help='Enable instance segmentation head')
         model.add_argument('--vertex', action='store_true',
                            help='Enable vertex regression head')
         model.add_argument('--no-checkpointing', action='store_false',
@@ -354,6 +373,7 @@ class NuGraph3(LightningModule):
             planar_features=args.planar_feats,
             nexus_features=args.nexus_feats,
             interaction_features=args.interaction_feats,
+            instance_features=args.instance_feats,
             planes=nudata.planes,
             semantic_classes=nudata.semantic_classes,
             event_classes=nudata.event_classes,
@@ -362,5 +382,6 @@ class NuGraph3(LightningModule):
             semantic_head=args.semantic,
             filter_head=args.filter,
             vertex_head=args.vertex,
+            instance_head=args.instance,
             use_checkpointing=args.use_checkpointing,
             lr=args.learning_rate)

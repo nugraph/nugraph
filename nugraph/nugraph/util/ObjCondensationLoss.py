@@ -10,7 +10,7 @@ class ObjCondensationLoss(torch.nn.Module):
     def background_loss(self, beta: Tensor, y: Tensor) -> Tensor:
         K = y.max() + 1
         n_i = (y == -1)
-        M_ik = torch.zeros((y.size(0), K)).long()
+        M_ik = torch.zeros((y.size(0), K), device=y.device).long()
         M_ik[~n_i,:] = torch.nn.functional.one_hot(y[~n_i], num_classes=K)
         beta_ak = (beta[:,None] * M_ik).max(dim=0).values
         N_b = n_i.sum()
@@ -22,7 +22,7 @@ class ObjCondensationLoss(torch.nn.Module):
     def potential_loss(self, x: Tensor, beta: Tensor, y: Tensor) -> Tensor:
         K = y.max() + 1
         n_i = (y == -1)
-        M_ik = torch.zeros((y.size(0), K)).long()
+        M_ik = torch.zeros((y.size(0), K), device=y.device).long()
         M_ik[~n_i,:] = torch.nn.functional.one_hot(y[~n_i], num_classes=K)
         q_i = beta.atanh().square() + self.q_min
         q_max = (q_i[:,None] * M_ik).max(dim=0)
@@ -40,5 +40,6 @@ class ObjCondensationLoss(torch.nn.Module):
         L_v=((L_v_1+L_v_2).sum(dim=2) * q_i).sum () / N
         return L_v
 
-    def forward(self, x: Tensor, beta: Tensor, y: Tensor) -> Tensor:
+    def forward(self, x: tuple[Tensor, Tensor], y: Tensor) -> Tensor:
+        x, beta = x
         return self.background_loss(beta, y) + self.potential_loss(x, beta, y)
