@@ -4,18 +4,15 @@ import warnings
 import psutil
 
 import torch
-from torch import nn
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import OneCycleLR
-from torch.utils.checkpoint import checkpoint
+from torch_geometric.data import Batch
 
 from pytorch_lightning import LightningModule
 
-from torch_geometric.data import Batch, HeteroData
-from torch_geometric.utils import unbatch
-
-from .types import TD, ED
-from .core import PlanarConv, NuGraphCore
+from .types import Data
+from .encoder import Encoder
+from .core import NuGraphCore
 from .decoders import SemanticDecoder, FilterDecoder, EventDecoder, VertexDecoder, InstanceDecoder
 
 from ...data import H5DataModule
@@ -73,24 +70,21 @@ class NuGraph3(LightningModule):
         self.num_iters = num_iters
         self.lr = lr
 
-        planar_encoder = nn.Linear(in_features, planar_features)
-        self.planar_encoder = PlanarConv({
-            p: planar_encoder
-            for p in self.planes})
+        self.encoder = Encoder(in_features, planar_features,
+                               nexus_features, interaction_features,
+                               planes)
 
         self.core_net = NuGraphCore(planar_features,
                                     nexus_features,
                                     interaction_features,
-                                    planes)
-
-        self.loop = self.ckpt if use_checkpointing else self.core_net
+                                    planes,
+                                    use_checkpointing)
 
         self.decoders = []
 
         if event_head:
             self.event_decoder = EventDecoder(
                 interaction_features,
-                planes,
                 event_classes)
             self.decoders.append(self.event_decoder)
 
@@ -109,10 +103,7 @@ class NuGraph3(LightningModule):
             self.decoders.append(self.filter_decoder)
 
         if vertex_head:
-            self.vertex_decoder = VertexDecoder(
-                interaction_features,
-                planes,
-                semantic_classes)
+            self.vertex_decoder = VertexDecoder(interaction_features)
             self.decoders.append(self.vertex_decoder)
 
         if instance_head:
@@ -130,100 +121,34 @@ class NuGraph3(LightningModule):
         self.max_mem_cpu = 0.
         self.max_mem_gpu = 0.
 
-    @torch.jit.ignore
-    def ckpt(self, p: TD, n: TD, i: TD, edges: ED) -> tuple[TD, TD, TD]:
+    def forward(self, data: Data,
+                stage: str = None):
         """
-        Checkpointing wrapper for core loop
+        NuGraph3 forward function
+
+        This function runs the forward pass of the NuGraph3 architecture,
+        and then loops over each decoder to compute the loss and calculate
+        and log any performance metrics.
 
         Args:
-            p: Planar embedding tensor dictionary
-            n: Nexus embedding tensor dictionary
-            i: Interaction embedding tensor dictionary
-            edges: Edge index tensor dictionary
-        """
-        return checkpoint(self.core_net, p, n, i, edges, use_reentrant=False)
-
-    def forward(self, p: TD, n: TD, i: TD, edges: ED):
-        """
-        NuGraph3 forward pass
-
-        Args:
-            p: Planar embedding tensor dictionary
-            n: Nexus embedding tensor dictionary
-            i: Interaction embedding tensor dictionary
-            edges: Edge index tensor dictionary
-        """
-
-        p = self.planar_encoder(p)
-        for _ in range(self.num_iters):
-            p, n, i = self.loop(p, n, i, edges)
-        ret = {}
-        for decoder in self.decoders:
-            ret.update(decoder(p|n|i))
-        return ret
-
-    def step(self, data: HeteroData,
-             stage: str = None,
-             confusion: bool = False):
-        """
-        NuGraph3 step
-
-        This function wraps the forward function by receiving a HeteroData
-        object and unpacking it into a set of torchscript-compatible
-        tensor dictionaries. It also has some awkward hacks to append the
-        output tensors back onto the data object in a manner that supports
-        downstream unbatching. It then loops over each decoder to compute
-        the loss and calculate and log any performance metrics.
-
-        Args:
-            data: Data object to step over
+            data: Graph data object
             stage: String tag defining the step type
-            confusion: Whether to produce confusion matrices
         """
-
-        # how many nexus features? awkward hack, needs to be fixed.
-        n = dict(sp=torch.zeros(data["sp"].num_nodes,
-                                self.nexus_features,
-                                device=self.device))
-        i = dict(evt=torch.zeros(data["evt"].num_nodes,
-                                 self.interaction_features,
-                                 device=self.device))
-
-        x = self(data.x_dict, n, i, data.edge_index_dict)
-
-        # append output tensors back onto input data object
-        if isinstance(data, Batch):
-            dlist = [ HeteroData() for i in range(data.num_graphs) ]
-            for attr, planes in x.items():
-                for p, t in planes.items():
-                    if t.size(0) == data[p].num_nodes:
-                        tlist = unbatch(t, data[p].batch)
-                    elif t.size(0) == data.num_graphs:
-                        tlist = unbatch(t, torch.arange(data.num_graphs))
-                    else:
-                        raise RuntimeError(f"Don't know how to unbatch attribute {attr}")
-                    for it_d, it_t in zip(dlist, tlist):
-                        it_d[p][attr] = it_t
-            tmp = Batch.from_data_list(dlist)
-            data.update(tmp)
-            for attr, planes in x.items():
-                for p in planes:
-                    data._slice_dict[p][attr] = tmp._slice_dict[p][attr]
-                    data._inc_dict[p][attr] = tmp._inc_dict[p][attr]
-
-        else:
-            for key, value in x.items():
-                data.set_value_dict(key, value)
-
-        del data["sp"] # why is this necessary? i don't know lmao
-
+        self.encoder(data)
+        for _ in range(self.num_iters):
+            self.core_net(data)
         total_loss = 0.
         total_metrics = {}
         for decoder in self.decoders:
-            loss, metrics = decoder.loss(data, stage, confusion)
+            loss, metrics = decoder(data, stage)
             total_loss += loss
             total_metrics.update(metrics)
-            decoder.finalize(data)
+
+        if hasattr(self, instance_decoder) and self.global_step > 1000:
+            if isinstance(data, Batch):
+                data = Batch([self.instance_decoder.materialize(b) for b in data.to_data_list()])
+            else:
+                self.instance_decoder.materialize(data)
 
         return total_loss, total_metrics
 
@@ -245,9 +170,9 @@ class NuGraph3(LightningModule):
         self.logger.experiment.add_custom_scalars(scalars)
 
     def training_step(self,
-                      batch,
+                      batch: Data,
                       batch_idx: int) -> float:
-        loss, metrics = self.step(batch, 'train')
+        loss, metrics = self(batch, 'train')
         self.log('loss/train', loss, batch_size=batch.num_graphs, prog_bar=True)
         self.log_dict(metrics, batch_size=batch.num_graphs)
         self.log_memory(batch, 'train')
@@ -256,7 +181,7 @@ class NuGraph3(LightningModule):
     def validation_step(self,
                         batch,
                         batch_idx: int) -> None:
-        loss, metrics = self.step(batch, 'val', True)
+        loss, metrics = self(batch, 'val')
         self.log('loss/val', loss, batch_size=batch.num_graphs)
         self.log_dict(metrics, batch_size=batch.num_graphs)
 
@@ -268,7 +193,7 @@ class NuGraph3(LightningModule):
     def test_step(self,
                   batch,
                   batch_idx: int = 0) -> None:
-        loss, metrics = self.step(batch, 'test', True)
+        loss, metrics = self(batch, 'test', True)
         self.log('loss/test', loss, batch_size=batch.num_graphs)
         self.log_dict(metrics, batch_size=batch.num_graphs)
         self.log_memory(batch, 'test')
@@ -279,9 +204,9 @@ class NuGraph3(LightningModule):
             decoder.on_epoch_end(self.logger, 'test', epoch)
 
     def predict_step(self,
-                     batch: Batch,
-                     batch_idx: int = 0) -> Batch:
-        self.step(batch)
+                     batch: Data,
+                     batch_idx: int = 0) -> Data:
+        self(batch)
         return batch
 
     def configure_optimizers(self) -> tuple:
@@ -293,7 +218,7 @@ class NuGraph3(LightningModule):
                 total_steps=self.trainer.estimated_stepping_batches)
         return [optimizer], {'scheduler': onecycle, 'interval': 'step'}
 
-    def log_memory(self, batch: Batch, stage: str) -> None:
+    def log_memory(self, batch: Data, stage: str) -> None:
         """
         Log CPU and GPU memory usage
 
