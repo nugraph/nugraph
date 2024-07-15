@@ -69,7 +69,6 @@ class NuGraph3(LightningModule):
         self.event_classes = event_classes
         self.num_iters = num_iters
         self.lr = lr
-
         self.encoder = HeteroDictLinear({
             p: in_features for p in planes},
             planar_features)

@@ -137,6 +137,8 @@ class NuGraph2(LightningModule):
         else:
             for key, value in x.items():
                 data.set_value_dict(key, value)
+        
+        self.data = data
 
     def on_train_start(self):
         hpmetrics = { 'max_lr': self.hparams.lr }
