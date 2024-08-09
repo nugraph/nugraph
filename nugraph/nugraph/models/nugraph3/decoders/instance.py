@@ -109,9 +109,14 @@ class InstanceDecoder(nn.Module):
                 edge_index[1] = i
                 e.edge_index = torch.cat((e.edge_index, edge_index), dim=1)
                 e.distance = torch.cat((e.distance, dist[hits]), dim=0)
-            print("plane", p, "has", data[p, "cluster", "particles"].num_edges, "instance edges")
 
-        # now we need a method to reduced the edges for each hit into the closest cluster
+            e.edge_index=e.edge_index.long()
+            print("plane", p, "has", data[p, "cluster", "particles"].num_edges, "instance edges")
+         
+            _, instances = scatter_min(e.distance, e.edge_index[0], dim_size=data[p].num_nodes)
+            mask = instances != -1
+            instances[mask] = e.edge_index[1,instances[mask]]
+            data[p].i = instances
 
     def draw_event_display(self, data: HeteroData) -> pd.DataFrame:
         """
