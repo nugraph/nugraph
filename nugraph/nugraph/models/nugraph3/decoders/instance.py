@@ -6,6 +6,7 @@ from torch import nn
 from torchmetrics.clustering import AdjustedRandScore
 from torch_geometric.data import Batch, HeteroData
 from pytorch_lightning.loggers import TensorBoardLogger
+from torch_scatter import scatter_min
 import pandas as pd
 from sklearn.decomposition import PCA
 import plotly.express as px
