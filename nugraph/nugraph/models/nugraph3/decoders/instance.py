@@ -3,6 +3,7 @@ from typing import Any
 import pathlib
 import torch
 from torch import nn
+from torchmetrics.clustering import AdjustedRandScore
 from torch_geometric.data import Batch, HeteroData
 from pytorch_lightning.loggers import TensorBoardLogger
 import pandas as pd
@@ -29,6 +30,9 @@ class InstanceDecoder(nn.Module):
 
         # loss function
         self.loss = ObjCondensationLoss()
+
+        # Adjusted Rand Index metric
+        self.rand = AdjustedRandScore()
 
         # temperature parameter
         self.temp = nn.Parameter(torch.tensor(0.))
@@ -72,6 +76,11 @@ class InstanceDecoder(nn.Module):
         if stage:
             metrics[f"loss_instance/{stage}"] = loss
             metrics[f"num_instances/{stage}"] = (of>0.1).sum().float()
+
+        # Calculate Adjusted Rand Index
+            rand_index = self.rand((ox,of), y)
+            metrics[f"adjusted_rand_index/{stage}"] = rand_index
+            
         if stage == "train":
             metrics["temperature/instance"] = self.temp
         if stage == "val" and isinstance(data, Batch):
