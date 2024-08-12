@@ -47,7 +47,7 @@ class FilterDecoder(nn.Module):
                 nn.Sigmoid(),
             )
 
-    def forward(self, data: Data, stage: str = None) -> dict[str, Any]:
+    def forward(self, data: Data, stage: str = None, step: int = None) -> dict[str, Any]:
         """
         NuGraph3 filter decoder forward pass
 

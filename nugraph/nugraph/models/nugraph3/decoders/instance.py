@@ -44,7 +44,7 @@ class InstanceDecoder(nn.Module):
         self.dfs = []
         self.planes = planes
 
-    def forward(self, data: Data, stage: str = None) -> dict[str, Any]:
+    def forward(self, data: Data, stage: str = None, step: int = None) -> dict[str, Any]:
         """
         NuGraph3 instance decoder forward pass
 
@@ -64,6 +64,13 @@ class InstanceDecoder(nn.Module):
                 data._inc_dict[p]["of"] = inc
                 data._inc_dict[p]["ox"] = inc
 
+        # materialize instances
+        if step > 1000:
+            if isinstance(data, Batch):
+                data = Batch([self.materialize(b) for b in data.to_data_list()])
+            else:
+                self.instance_decoder.materialize(data)
+
         # calculate loss
         of = torch.cat([data[p].of for p in self.planes], dim=0)
         ox = torch.cat([data[p].ox for p in self.planes], dim=0)
@@ -77,12 +84,17 @@ class InstanceDecoder(nn.Module):
             metrics[f"loss_instance/{stage}"] = loss
             metrics[f"num_instances/{stage}"] = (of>0.1).sum().float()
 
-        # Calculate Adjusted Rand Index
-            rand_index = self.rand((ox,of), y)
-            metrics[f"adjusted_rand_index/{stage}"] = rand_index
+            # Calculate Adjusted Rand Index
+            if step > 1000:
+                i = torch.cat([data[p].i for p in self.planes], dim=0)
+                metrics[f"adjusted_rand_index/{stage}"] = self.rand(i, y)
             
         if stage == "train":
             metrics["temperature/instance"] = self.temp
+
+        # disable event displays
+        return loss, metrics
+
         if stage == "val" and isinstance(data, Batch):
             for d in data.to_data_list():
                 if len(self.dfs) >= 100:

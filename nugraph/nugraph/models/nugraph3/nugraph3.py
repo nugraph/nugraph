@@ -140,15 +140,9 @@ class NuGraph3(LightningModule):
         total_loss = 0.
         total_metrics = {}
         for decoder in self.decoders:
-            loss, metrics = decoder(data, stage)
+            loss, metrics = decoder(data, stage, self.global_step)
             total_loss += loss
             total_metrics.update(metrics)
-
-        if hasattr(self, "instance_decoder") and self.global_step > 1000:
-            if isinstance(data, Batch):
-                data = Batch([self.instance_decoder.materialize(b) for b in data.to_data_list()])
-            else:
-                self.instance_decoder.materialize(data)
 
         return total_loss, total_metrics
 
