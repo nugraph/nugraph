@@ -140,7 +140,7 @@ class NuGraph3(LightningModule):
         total_loss = 0.
         total_metrics = {}
         for decoder in self.decoders:
-            loss, metrics = decoder(data, stage, self.global_step)
+            loss, metrics = decoder(data, stage)
             total_loss += loss
             total_metrics.update(metrics)
 

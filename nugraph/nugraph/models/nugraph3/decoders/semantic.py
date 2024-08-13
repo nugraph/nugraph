@@ -52,7 +52,7 @@ class SemanticDecoder(nn.Module):
 
         self.classes = semantic_classes
 
-    def forward(self, data: Data, stage: str = None, step: int = None) -> dict[str, Any]:
+    def forward(self, data: Data, stage: str = None) -> dict[str, Any]:
         """
         NuGraph3 semantic decoder forward pass
 

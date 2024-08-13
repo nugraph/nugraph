@@ -4,6 +4,7 @@ import pathlib
 import torch
 from torch import nn
 from torchmetrics.clustering import AdjustedRandScore
+from torch_scatter import scatter_min
 from torch_geometric.data import Batch, HeteroData
 from pytorch_lightning.loggers import TensorBoardLogger
 import pandas as pd
@@ -44,7 +45,7 @@ class InstanceDecoder(nn.Module):
         self.dfs = []
         self.planes = planes
 
-    def forward(self, data: Data, stage: str = None, step: int = None) -> dict[str, Any]:
+    def forward(self, data: Data, stage: str = None) -> dict[str, Any]:
         """
         NuGraph3 instance decoder forward pass
 
@@ -65,7 +66,8 @@ class InstanceDecoder(nn.Module):
                 data._inc_dict[p]["ox"] = inc
 
         # materialize instances
-        if step > 1000:
+        materialize = (data[p].of > 0.1).sum() < 2000
+        if materialize:
             if isinstance(data, Batch):
                 data = Batch([self.materialize(b) for b in data.to_data_list()])
             else:
@@ -85,7 +87,7 @@ class InstanceDecoder(nn.Module):
             metrics[f"num_instances/{stage}"] = (of>0.1).sum().float()
 
             # Calculate Adjusted Rand Index
-            if step > 1000:
+            if materialize:
                 i = torch.cat([data[p].i for p in self.planes], dim=0)
                 metrics[f"adjusted_rand_index/{stage}"] = self.rand(i, y)
             
@@ -113,15 +115,11 @@ class InstanceDecoder(nn.Module):
         of = torch.cat([data[p].of for p in self.planes], dim=0)
         ox = torch.cat([data[p].ox for p in self.planes], dim=0)
         centers = (of > 0.1).nonzero().squeeze(1)
-        data["particles"].num_nodes = centers.size(0)
-        print(f"generating {centers.size(0)} clusters")
         for p in self.planes:
-            print(f"  plane {p}")
             e = data[p, "cluster", "particles"]
             e.edge_index = torch.empty(2, 0, device=of.device)
             e.distance = torch.empty(0,  device=of.device)
             for i, center in enumerate(centers):
-                print(f"    instance {i+1}")
                 center_coords = ox[center]
                 dist = (data[p].ox - center_coords).square().sum(dim=1).sqrt()
                 hits = (dist < 1).nonzero().squeeze(1)
@@ -131,12 +129,11 @@ class InstanceDecoder(nn.Module):
                 e.edge_index = torch.cat((e.edge_index, edge_index), dim=1)
                 e.distance = torch.cat((e.distance, dist[hits]), dim=0)
 
-            e.edge_index=e.edge_index.long()
-            print("plane", p, "has", data[p, "cluster", "particles"].num_edges, "instance edges")
-         
+            e.edge_index = e.edge_index.long()
             _, instances = scatter_min(e.distance, e.edge_index[0], dim_size=data[p].num_nodes)
-            mask = instances != -1
-            instances[mask] = e.edge_index[1,instances[mask]]
+            mask = instances != e.num_edges
+            instances[~mask] = -1
+            instances[mask] = e.edge_index[1, instances[mask]]
             data[p].i = instances
 
     def draw_event_display(self, data: HeteroData) -> pd.DataFrame:
