@@ -34,8 +34,8 @@ class HierarchicalEdges(BaseTransform):
 
         # add plane index to feature tensor
         for i, p in enumerate(self.planes):
-            ip = torch.empty_like(data[p].x[:,0]).fill_(i).unsqueeze(1)
-            data[p].x = torch.cat([data[p].x, ip], dim=1)
+            data[p].plane = torch.empty_like(data[p].x[:,0], dtype=int).fill_(i)
+            data[p].x = torch.cat([data[p].x, data[p].plane.unsqueeze(1)], dim=1)
         
         # merge planar node stores
         for attr in data[self.planes[0]].node_attrs():
