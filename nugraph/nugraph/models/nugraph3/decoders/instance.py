@@ -62,7 +62,7 @@ class InstanceDecoder(nn.Module):
             data._inc_dict["hit"]["ox"] = inc
 
         # materialize instances
-        materialize = (data[p].of > 0.1).sum() < 2000
+        materialize = (data["hit"].of > 0.1).sum() < 2000
         if materialize:
             if isinstance(data, Batch):
                 data = Batch([self.materialize(b) for b in data.to_data_list()])
