@@ -79,6 +79,9 @@ class InstanceDecoder(nn.Module):
         if stage:
             metrics[f"loss_instance/{stage}"] = loss
             metrics[f"num_instances/{stage}"] = (data["hit"].of>0.1).sum().float()
+            if materialize:
+                x = data["hit"].i
+                metrics[f"adjusted-rand-score/{stage}"] = self.rand(x, y)
         if stage == "train":
             metrics["temperature/instance"] = self.temp
 
