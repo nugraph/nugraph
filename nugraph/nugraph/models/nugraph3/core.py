@@ -96,33 +96,27 @@ class NuGraphCore(nn.Module):
         self.use_checkpointing = use_checkpointing
 
         # internal planar message-passing
-        self.plane_net = HeteroConv(
-            {("hit", "plane", "hit"): NuGraphBlock(hit_features, hit_features,
-                                                   hit_features)})
+        self.plane_net = NuGraphBlock(hit_features, hit_features,
+                                      hit_features)
 
         # message-passing from planar nodes to nexus nodes
-        nexus_up = NuGraphBlock(hit_features, nexus_features,
-                                nexus_features)
-        self.plane_to_nexus = HeteroConv(
-            {("hit", "nexus", "sp"): NuGraphBlock(hit_features, nexus_features,
-                                                  nexus_features)})
+        self.plane_to_nexus = NuGraphBlock(hit_features, nexus_features,
+                                           nexus_features)
+        
 
         # message-passing from nexus nodes to interaction nodes
-        self.nexus_to_interaction = HeteroConv({
-            ("sp", "in", "evt"): NuGraphBlock(nexus_features,
-                                              interaction_features,
-                                              interaction_features)})
+        self.nexus_to_interaction = NuGraphBlock(nexus_features,
+                                                 interaction_features,
+                                                 interaction_features)
 
         # message-passing from interaction nodes to nexus nodes
-        self.interaction_to_nexus = HeteroConv({
-            ("evt", "owns", "sp"): NuGraphBlock(interaction_features,
-                                                nexus_features,
-                                                nexus_features)})
+        self.interaction_to_nexus = NuGraphBlock(interaction_features,
+                                                 nexus_features,
+                                                 nexus_features)
 
         # message-passing from nexus nodes to planar nodes
-        self.nexus_to_plane = HeteroConv(
-            {("sp", "nexus", "hit"): NuGraphBlock(nexus_features, hit_features,
-                                                  hit_features)})
+        self.nexus_to_plane = NuGraphBlock(nexus_features, hit_features,
+                                           hit_features)
         
     def checkpoint(self, net: nn.Module, *args) -> TD:
         """
@@ -137,7 +131,6 @@ class NuGraphCore(nn.Module):
         else:
             return net(*args)
 
-
     def forward(self, data: Data) -> None:
         """
         NuGraphCore forward pass
@@ -145,8 +138,28 @@ class NuGraphCore(nn.Module):
         Args:
             data: Graph data object
         """
-        for net in [self.plane_net, self.plane_to_nexus,
-                    self.nexus_to_interaction, self.interaction_to_nexus,
-                    self.nexus_to_plane]:
-            x = self.checkpoint(net, data.x_dict, data.edge_index_dict)
-            data.set_value_dict("x", x)
+
+        # message-passing in hits
+        data["hit"].x = self.checkpoint(
+            self.plane_net, data["hit"].x,
+            data["hit", "plane", "hit"].edge_index)
+
+        # message-passing from hits to nexus
+        data["sp"].x = self.checkpoint(
+            self.plane_to_nexus, (data["hit"].x, data["sp"].x),
+            data["hit", "nexus", "sp"].edge_index)
+
+        # message-passing from nexus to interaction
+        data["evt"].x = self.checkpoint(
+            self.nexus_to_interaction, (data["sp"].x, data["evt"].x),
+            data["sp", "in", "evt"].edge_index)
+
+        # message-passing from interaction to nexus
+        data["sp"].x = self.checkpoint(
+            self.interaction_to_nexus, (data["evt"].x, data["sp"].x),
+            data["sp", "in", "evt"].edge_index[(1,0), :])
+
+        # message-passing from nexus to hits
+        data["hit"].x = self.checkpoint(
+            self.nexus_to_plane, (data["sp"].x, data["hit"].x),
+            data["hit", "nexus", "sp"].edge_index[(1,0), :])

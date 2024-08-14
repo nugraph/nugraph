@@ -48,10 +48,8 @@ class HierarchicalEdges(BaseTransform):
         lo = torch.arange(data["hit"].num_nodes, dtype=torch.long)
         hi = torch.zeros(data["hit"].num_nodes, dtype=torch.long)
         data["hit", "in", "evt"].edge_index = torch.stack((lo, hi), dim=0)
-        data["evt", "owns", "hit"].edge_index = torch.stack((hi, lo), dim=0)
-
-        # add edges from nexus to plane
-        lo, hi = data["hit", "nexus", "sp"].edge_index
-        data["sp", "nexus", "hit"].edge_index = torch.stack((hi, lo), dim=0)
+        lo = torch.arange(data["sp"].num_nodes, dtype=torch.long)
+        hi = torch.zeros(data["sp"].num_nodes, dtype=torch.long)
+        data["sp", "in", "evt"].edge_index = torch.stack((lo, hi), dim=0)
 
         return data
