@@ -191,6 +191,15 @@ class HitGraphProducer(ProcessorBase):
             edge_nexus.append(edge.long())
         data["hit", "nexus", "sp"].edge_index = torch.cat(edge_nexus, dim=1)
 
+        # add edges to event node
+        data["evt"].num_nodes = 1
+        lo = torch.arange(data["hit"].num_nodes, dtype=torch.long)
+        hi = torch.zeros(data["hit"].num_nodes, dtype=torch.long)
+        data["hit", "in", "evt"].edge_index = torch.stack((lo, hi), dim=0)
+        lo = torch.arange(data["sp"].num_nodes, dtype=torch.long)
+        hi = torch.zeros(data["sp"].num_nodes, dtype=torch.long)
+        data["sp", "in", "evt"].edge_index = torch.stack((lo, hi), dim=0)
+
         # truth information
         if self.semantic_labeller:
             data["hit"].y_semantic = torch.tensor(hits['semantic_label'].fillna(-1).values).long()
@@ -202,7 +211,7 @@ class HitGraphProducer(ProcessorBase):
 
         # event label
         if self.event_labeller:
-            data['evt'].y = torch.tensor(self.event_labeller(event)).long()
+            data['evt'].y = torch.tensor(self.event_labeller(event)).long().reshape([1])
 
         # 3D vertex truth
         if self.label_vertex:
