@@ -17,6 +17,10 @@ class HierarchicalEdges(BaseTransform):
 
     def __call__(self, data: HeteroData) -> HeteroData:
 
+        # no-op if the graph data is already structured how we want
+        if hasattr(data, "hit"):
+            return data
+
         # unify planar edges
         edge_plane = []
         edge_nexus = []
