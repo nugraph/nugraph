@@ -121,7 +121,8 @@ class InstanceDecoder(nn.Module):
         print("graph has", data["hit", "cluster", "particles"].num_edges, "instance edges")
         
         _, instances = scatter_min(e.distance, e.edge_index[0], dim_size=data["hit"].num_nodes)
-        mask = instances != -1
+        mask = instances < e.num_edges
+        instances[~mask] = -1
         instances[mask] = e.edge_index[1,instances[mask]]
         data["hit"].i = instances
 
