@@ -65,7 +65,7 @@ class InstanceDecoder(nn.Module):
         materialize = (data["hit"].of > 0.1).sum() < 2000
         if materialize:
             if isinstance(data, Batch):
-                data = Batch([self.materialize(b) for b in data.to_data_list()])
+                data = Batch.from_data_list([self.materialize(b) for b in data.to_data_list()])
             else:
                 self.instance_decoder.materialize(data)
 
@@ -121,6 +121,8 @@ class InstanceDecoder(nn.Module):
         instances[~mask] = -1
         instances[mask] = e.edge_index[1,instances[mask]]
         data["hit"].i = instances
+
+        return data
 
     def draw_event_display(self, data: HeteroData) -> pd.DataFrame:
         """
