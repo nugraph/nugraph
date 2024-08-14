@@ -18,13 +18,11 @@ class SemanticDecoder(nn.Module):
     each semantic class.
 
     Args:
-        node_features: Number of planar node features
-        planes: List of detector planes
+        hit_features: Number of planar hit node features
         semantic_classes: List of semantic classes
     """
     def __init__(self,
-                 node_features: int,
-                 planes: list[str],
+                 hit_features: int,
                  semantic_classes: list[str]):
         super().__init__()
 
@@ -46,9 +44,7 @@ class SemanticDecoder(nn.Module):
         self.cm_precision = tm.ConfusionMatrix(normalize="pred", **metric_args)
 
         # network
-        self.net = nn.ModuleDict()
-        for p in planes:
-            self.net[p] = nn.Linear(node_features, len(semantic_classes))
+        self.net = nn.Linear(hit_features, len(semantic_classes))
 
         self.classes = semantic_classes
 
@@ -62,16 +58,15 @@ class SemanticDecoder(nn.Module):
         """
 
         # run network and add output to graph object
-        for p, net in self.net.items():
-            data[p].x_semantic = net(data[p].x)
-            if isinstance(data, Batch):
-                data._slice_dict[p]["x_semantic"] = data[p].ptr
-                inc = torch.zeros(data.num_graphs, device=data[p].x.device)
-                data._inc_dict[p]["x_semantic"] = inc
+        data["hit"].x_semantic = self.net(data["hit"].x)
+        if isinstance(data, Batch):
+            data._slice_dict["hit"]["x_semantic"] = data["hit"].ptr
+            inc = torch.zeros(data.num_graphs, device=data["hit"].x.device)
+            data._inc_dict["hit"]["x_semantic"] = inc
     
         # calculate loss
-        x = torch.cat([data[p].x_semantic for p in self.net], dim=0)
-        y = torch.cat([data[p].y_semantic for p in self.net], dim=0)
+        x = data["hit"].x_semantic
+        y = data["hit"].y_semantic
         w = 2 * (-1 * self.temp).exp()
         loss = w * self.loss(x, y) + self.temp
 
@@ -88,8 +83,7 @@ class SemanticDecoder(nn.Module):
             self.cm_precision.update(x, y)
 
         # apply softmax to prediction
-        for p in self.net:
-            data[p].x_semantic = data[p].x_semantic.softmax(dim=1)
+        data["hit"].x_semantic = data["hit"].x_semantic.softmax(dim=1)
 
         return loss, metrics
 

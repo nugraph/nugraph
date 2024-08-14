@@ -19,7 +19,6 @@ class EventDecoder(nn.Module):
 
     Args:
         interaction_features: Number of interaction node features
-        planes: List of detector planes
         event_classes: List of event classes
     """
     def __init__(self,

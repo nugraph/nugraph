@@ -13,17 +13,14 @@ class FilterDecoder(nn.Module):
     """
     NuGraph3 filter decoder module
 
-    Convolve planar node embedding down to a single node score to identify and
+    Convolve hit node embedding down to a single node score to identify and
     filter out graph nodes that are not part of the primary physics
     interaction.
 
     Args:
-        node_features: Number of planar node features
-        planes: List of detector planes
+        hit_features: Number of hit node features
     """
-    def __init__(self,
-                 node_features: int,
-                 planes: list[str]):
+    def __init__(self, hit_features: int):
         super().__init__()
 
         # loss function
@@ -40,12 +37,10 @@ class FilterDecoder(nn.Module):
         self.cm_precision = tm.ConfusionMatrix(normalize="pred", **metric_args)
 
         # network
-        self.net = nn.ModuleDict()
-        for p in planes:
-            self.net[p] = nn.Sequential(
-                nn.Linear(node_features, 1),
-                nn.Sigmoid(),
-            )
+        self.net = nn.Sequential(
+            nn.Linear(hit_features, 1),
+            nn.Sigmoid(),
+        )
 
     def forward(self, data: Data, stage: str = None) -> dict[str, Any]:
         """
@@ -57,16 +52,15 @@ class FilterDecoder(nn.Module):
         """
 
         # run network and add output to graph object
-        for p, net in self.net.items():
-            data[p].x_filter = net(data[p].x).squeeze(dim=-1)
-            if isinstance(data, Batch):
-                data._slice_dict[p]["x_filter"] = data[p].ptr
-                inc = torch.zeros(data.num_graphs, device=data[p].x.device)
-                data._inc_dict[p]["x_filter"] = inc
+        data["hit"].x_filter = self.net(data["hit"].x).squeeze(dim=-1)
+        if isinstance(data, Batch):
+            data._slice_dict["hit"]["x_filter"] = data["hit"].ptr
+            inc = torch.zeros(data.num_graphs, device=data["hit"].x.device)
+            data._inc_dict["hit"]["x_filter"] = inc
 
         # calculate loss
-        x = torch.cat([data[p].x_filter for p in self.net], dim=0)
-        y = torch.cat([data[p].y_semantic!=-1 for p in self.net], dim=0).float()
+        x = data["hit"].x_filter
+        y = (data["hit"].y_semantic != -1).float()
         w = 2 * (-1 * self.temp).exp()
         loss = w * self.loss(x, y) + self.temp
 
