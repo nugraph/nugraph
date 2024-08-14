@@ -103,12 +103,10 @@ class InstanceDecoder(nn.Module):
         device = data["hit"].x.device
         centers = (data["hit"].of > 0.1).nonzero().squeeze(1)
         data["particles"].num_nodes = centers.size(0)
-        print(f"generating {centers.size(0)} clusters")
         e = data["hit", "cluster", "particles"]
         e.edge_index = torch.empty(2, 0, dtype=torch.long, device=device)
         e.distance = torch.empty(0, dtype=torch.long, device=device)
         for i, center in enumerate(centers):
-            print(f"    instance {i+1}")
             center_coords = data["hit"].ox[center]
             dist = (data["hit"].ox - center_coords).square().sum(dim=1).sqrt()
             hits = (dist < 1).nonzero().squeeze(1)
@@ -117,8 +115,6 @@ class InstanceDecoder(nn.Module):
             edge_index[1] = i
             e.edge_index = torch.cat((e.edge_index, edge_index), dim=1)
             e.distance = torch.cat((e.distance, dist[hits]), dim=0)
-
-        print("graph has", data["hit", "cluster", "particles"].num_edges, "instance edges")
         
         _, instances = scatter_min(e.distance, e.edge_index[0], dim_size=data["hit"].num_nodes)
         mask = instances < e.num_edges
