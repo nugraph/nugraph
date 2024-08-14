@@ -1,5 +1,5 @@
 {% set name = "pynuml" %}
-{% set version = "23.11.0" %}
+{% set version = "24.7.1" %}
 
 package:
   name: {{ name|lower }}
@@ -7,7 +7,7 @@ package:
 
 source:
   url: https://pypi.io/packages/source/{{ name[0] }}/{{ name }}/pynuml-{{ version }}.tar.gz
-  sha256: 1a7e61864cfeb0b27c6a93646c33e3f457bbc384eb86aee4df76b5e02898d02f
+  sha256: 20d2f1a07887473e67c79ecc3804b8012e22b78883199fdb0d07bb1b725b6ab0
 
 build:
   noarch: python

@@ -1,5 +1,5 @@
 {% set name = "nugraph" %}
-{% set version = "24.4.0" %}
+{% set version = "24.7.1" %}
 
 package:
   name: {{ name|lower }}
@@ -7,7 +7,7 @@ package:
 
 source:
   url: https://pypi.io/packages/source/{{ name[0] }}/{{ name }}/nugraph-{{ version }}.tar.gz
-  sha256: a1e01a8c3143fc8db2cf8a3584d192a738d89eb865b1d52cd2994b24bd4175ec
+  sha256: e1449e4a37049cc774ad026d4f2db339eb60bb59109a11920bb65a4061915de8
 
 build:
   noarch: python
@@ -23,7 +23,7 @@ requirements:
     - python >=3.10
     - matplotlib-base
     - plotly
-    - pynuml >=23.11.0
+    - pynuml ==24.7.1
     - pynvml
     - seaborn
     - pytorch >=1.12.1
