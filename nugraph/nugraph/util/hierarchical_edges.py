@@ -29,7 +29,7 @@ class HierarchicalEdges(BaseTransform):
             edge_nexus.append(data[p, "nexus", "sp"].edge_index)
             edge_nexus[-1][0] += offset # increment only the plane node index
             del data[p, "nexus", "sp"]
-        data["hit", "plane", "hit"].edge_index = torch.cat(edge_plane, dim=1)
+        data["hit", "delaunay-planar", "hit"].edge_index = torch.cat(edge_plane, dim=1)
         data["hit", "nexus", "sp"].edge_index = torch.cat(edge_nexus, dim=1)
 
         # add plane index to feature tensor

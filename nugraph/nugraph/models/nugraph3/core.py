@@ -142,7 +142,7 @@ class NuGraphCore(nn.Module):
         # message-passing in hits
         data["hit"].x = self.checkpoint(
             self.plane_net, data["hit"].x,
-            data["hit", "plane", "hit"].edge_index)
+            data["hit", "delaunay-planar", "hit"].edge_index)
 
         # message-passing from hits to nexus
         data["sp"].x = self.checkpoint(
