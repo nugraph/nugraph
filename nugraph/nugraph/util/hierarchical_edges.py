@@ -17,6 +17,32 @@ class HierarchicalEdges(BaseTransform):
 
     def __call__(self, data: HeteroData) -> HeteroData:
 
+        # unify planar edges
+        edge_plane = []
+        edge_nexus = []
+        for i, p in enumerate(self.planes):
+            offset = 0
+            for j in range(i): # get offset from previous planes
+                offset += data[self.planes[j]].num_nodes
+            edge_plane.append(data[p, "plane", p].edge_index + offset)
+            del data[p, "plane", p]
+            edge_nexus.append(data[p, "nexus", "sp"].edge_index)
+            edge_nexus[-1][0] += offset # increment only the plane node index
+            del data[p, "nexus", "sp"]
+        data["hit", "plane", "hit"].edge_index = torch.cat(edge_plane, dim=1)
+        data["hit", "nexus", "sp"].edge_index = torch.cat(edge_nexus, dim=1)
+
+        # add plane index to feature tensor
+        for i, p in enumerate(self.planes):
+            ip = torch.empty_like(data[p].x[:,0]).fill_(i).unsqueeze(1)
+            data[p].x = torch.cat([data[p].x, ip], dim=1)
+        
+        # merge planar node stores
+        for attr in data[self.planes[0]].node_attrs():
+            data["hit"][attr] = torch.cat([data[p][attr] for p in self.planes], dim=0)
+        for p in self.planes:
+            del data[p]
+
         # add edges to and from event node
         data["evt"].num_nodes = 1
         for p in self.planes + ["sp"]:
