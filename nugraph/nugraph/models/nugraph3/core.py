@@ -74,27 +74,6 @@ class NuGraphBlock(MessagePassing):
             _, x = x
         return self.net(torch.cat((aggr_out, x), dim=1))
 
-class PlanarConv(nn.Module):
-    """
-    Planar convolution module
-    
-    Args:
-        module_dict: Dictionary containing convolution modules for each plane
-    """
-    def __init__(self, module_dict: dict[str, nn.Module]):
-        super().__init__()
-        self.net = nn.ModuleDict(module_dict)
-
-    def forward(self, data: Data) -> None:
-        """
-        PlanarConv forward pass
-        
-        Args:
-            data: Graph data object
-        """
-        for p, net in self.net.items():
-            data[p].x = net(data[p].x)
-
 class NuGraphCore(nn.Module):
     """
     NuGraph core message-passing engine
