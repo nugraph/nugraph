@@ -81,34 +81,31 @@ class NuGraphCore(nn.Module):
     This is the core NuGraph message-passing loop
 
     Args:
-        planar_features: Number of features in planar embedding
+        hit_features: Number of features in planar embedding
         nexus_features: Number of features in nexus embedding
         interaction_features: Number of features in interaction embedding
-        planes: List of detector planes
         use_checkpointing: Whether to use checkpointing
     """
     def __init__(self,
-                 planar_features: int,
+                 hit_features: int,
                  nexus_features: int,
                  interaction_features: int,
-                 planes: list[str],
                  use_checkpointing: bool = True):
         super().__init__()
 
-        self.planes = planes
         self.use_checkpointing = use_checkpointing
 
         # internal planar message-passing
-        plane = NuGraphBlock(planar_features, planar_features,
-                             planar_features)
         self.plane_net = HeteroConv(
-            {(p, "plane", p): plane for p in planes})
+            {("hit", "plane", "hit"): NuGraphBlock(hit_features, hit_features,
+                                                   hit_features)})
 
         # message-passing from planar nodes to nexus nodes
-        nexus_up = NuGraphBlock(planar_features, nexus_features,
+        nexus_up = NuGraphBlock(hit_features, nexus_features,
                                 nexus_features)
         self.plane_to_nexus = HeteroConv(
-            {(p, "nexus", "sp"): nexus_up for p in planes})
+            {("hit", "nexus", "sp"): NuGraphBlock(hit_features, nexus_features,
+                                                  nexus_features)})
 
         # message-passing from nexus nodes to interaction nodes
         self.nexus_to_interaction = HeteroConv({
@@ -123,10 +120,9 @@ class NuGraphCore(nn.Module):
                                                 nexus_features)})
 
         # message-passing from nexus nodes to planar nodes
-        nexus_down = NuGraphBlock(nexus_features, planar_features,
-                                  planar_features)
         self.nexus_to_plane = HeteroConv(
-            {("sp", "nexus", p): nexus_down for p in planes})
+            {("sp", "nexus", "hit"): NuGraphBlock(nexus_features, hit_features,
+                                                  hit_features)})
         
     def checkpoint(self, net: nn.Module, *args) -> TD:
         """
