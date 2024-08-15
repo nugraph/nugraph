@@ -9,6 +9,8 @@ from pytorch_lightning.callbacks import LearningRateMonitor
 import nugraph as ng
 import signal
 
+torch.set_num_threads(4)
+
 import warnings
 warnings.filterwarnings('ignore', '.*TypedStorage is deprecated.*')
 
