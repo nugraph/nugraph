@@ -24,7 +24,8 @@ class InstanceDecoder(nn.Module):
         hit_features: Number of hit node features
         instance_features: Number of instance features
     """
-    def __init__(self, hit_features: int, instance_features: int):
+    def __init__(self, hit_features: int, instance_features: int,
+                 debug_plots: bool = False):
         super().__init__()
 
         # loss function
@@ -40,6 +41,7 @@ class InstanceDecoder(nn.Module):
         self.beta_net = nn.Linear(hit_features, 1)
         self.coord_net = nn.Linear(hit_features, instance_features)
 
+        self.debug_plots = debug_plots
         self.dfs = []
 
     def forward(self, data: Data, stage: str = None) -> dict[str, Any]:
@@ -84,10 +86,7 @@ class InstanceDecoder(nn.Module):
         if stage == "train":
             metrics["temperature/instance"] = self.temp
 
-        # disable event displays
-        return loss, metrics
-
-        if stage == "val" and isinstance(data, Batch):
+        if self.debug_plots and stage == "val" and isinstance(data, Batch):
             for d in data.to_data_list():
                 if len(self.dfs) >= 100:
                     break
@@ -158,7 +157,7 @@ class InstanceDecoder(nn.Module):
             stage: Training stage
             epoch: Training epoch index
         """
-        if not logger:
+        if not self.debug_plots or not logger:
             return
         path = pathlib.Path(logger.log_dir) / "objcon-plots"
         path.mkdir(exist_ok=True)
