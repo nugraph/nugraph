@@ -166,7 +166,7 @@ class NuGraph3(LightningModule):
     def test_step(self,
                   batch,
                   batch_idx: int = 0) -> None:
-        loss, metrics = self(batch, 'test', True)
+        loss, metrics = self(batch, 'test')
         self.log('loss/test', loss, batch_size=batch.num_graphs)
         self.log_dict(metrics, batch_size=batch.num_graphs)
 
