@@ -66,7 +66,7 @@ class InstanceDecoder(nn.Module):
         if stage:
             metrics[f"instance/loss-{stage}"] = loss
         if stage == "train":
-            metrics["instance/temperature"] = self.temp
+            metrics["temperature/instance"] = self.temp
         if stage == "val" and isinstance(data, Batch):
             for d in data.to_data_list():
                 if len(self.dfs) >= 100:

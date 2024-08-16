@@ -78,7 +78,7 @@ class SemanticDecoder(nn.Module):
             metrics[f"semantic/recall-{stage}"] = self.recall(x, y)
             metrics[f"semantic/precision-{stage}"] = self.precision(x, y)
         if stage == "train":
-            metrics["semantic/temperature"] = self.temp
+            metrics["temperature/semantic"] = self.temp
         if stage in ["val", "test"]:
             self.cm_recall.update(x, y)
             self.cm_precision.update(x, y)
