@@ -153,52 +153,65 @@ class HitGraphProducer(ProcessorBase):
         else:
             data['sp'].num_nodes = spacepoints.shape[0]
 
-        # draw graph edges
-        for i, plane_hits in hits.groupby('local_plane'):
+        hits = hits.reset_index(names="index_2d")
 
+        # node position
+        hits[self.node_pos] *= self.pos_norm
+        data["hit"].pos = torch.tensor(hits[self.node_pos].values).float()
+
+        # node features
+        data["hit"].x = torch.tensor(hits[self.node_feats].values).float()
+
+        # node true position
+        if self.label_position:
+            data["hit"].c = torch.tensor(hits[["x_position", "y_position", "z_position"]].values).float()
+
+        # hit indices
+        data["hit"].id = torch.tensor(hits['hit_id'].values).long()
+
+        # 2D graph edges
+        data["hit", "delaunay", "hit"].edge_index = self.transform(data["hit"]).edge_index
+        edge_plane = []
+        for i, plane_hits in hits.groupby("local_plane"):
+            tmp = pyg.data.Data()
+            tmp.index_2d = torch.tensor(plane_hits.index_2d.values).long()
+            tmp.pos = torch.tensor(plane_hits[self.node_pos].values).float()
+            edge_plane.append(tmp.index_2d[self.transform(tmp).edge_index])
+        data["hit", "delaunay-planar", "hit"].edge_index = torch.cat(edge_plane, dim=1)
+
+        # 3D graph edges
+        edge_nexus = []
+        for i, plane_hits in hits.groupby("local_plane"):
             p = self.planes[i]
-            plane_hits = plane_hits.reset_index(drop=True).reset_index(names='index_2d')
+            edge = spacepoints.merge(hits[['hit_id','index_2d']].add_suffix(f'_{p}'),
+                                     on=f'hit_id_{p}',
+                                     how='inner')
+            edge = edge[[f'index_2d_{p}','index_3d']].values.transpose()
+            edge = torch.tensor(edge) if edge.size else torch.empty((2,0))
+            edge_nexus.append(edge.long())
+        data["hit", "nexus", "sp"].edge_index = torch.cat(edge_nexus, dim=1)
 
-            # node position
-            pos = torch.tensor(plane_hits[self.node_pos].values).float()
-            data[p].pos = pos * self.pos_norm[None,:]
+        # add edges to event node
+        data["evt"].num_nodes = 1
+        lo = torch.arange(data["hit"].num_nodes, dtype=torch.long)
+        hi = torch.zeros(data["hit"].num_nodes, dtype=torch.long)
+        data["hit", "in", "evt"].edge_index = torch.stack((lo, hi), dim=0)
+        lo = torch.arange(data["sp"].num_nodes, dtype=torch.long)
+        hi = torch.zeros(data["sp"].num_nodes, dtype=torch.long)
+        data["sp", "in", "evt"].edge_index = torch.stack((lo, hi), dim=0)
 
-            # node features
-            data[p].x = torch.tensor(plane_hits[self.node_feats].values).float()
-
-            # node true position
-            if self.label_position:
-                data[p].c = torch.tensor(plane_hits[["x_position", "y_position", "z_position"]].values).float()
-
-            # hit indices
-            data[p].id = torch.tensor(plane_hits['hit_id'].values).long()
-
-            # 2D edges
-            data[p, 'plane', p].edge_index = self.transform(data[p]).edge_index
-
-            # 3D edges
-            edge3d = spacepoints.merge(plane_hits[['hit_id','index_2d']].add_suffix(f'_{p}'),
-                                       on=f'hit_id_{p}',
-                                       how='inner')
-            edge3d = edge3d[[f'index_2d_{p}','index_3d']].values.transpose()
-            edge3d = torch.tensor(edge3d) if edge3d.size else torch.empty((2,0))
-            data[p, 'nexus', 'sp'].edge_index = edge3d.long()
-
-            # truth information
-            if self.semantic_labeller:
-                data[p].y_semantic = torch.tensor(plane_hits['semantic_label'].fillna(-1).values).long()
-                data[p].y_instance = torch.tensor(plane_hits['instance_label'].fillna(-1).values).long()
-                if self.store_detailed_truth:
-                    data[p].g4_id = torch.tensor(plane_hits['g4_id'].fillna(-1).values).long()
-                    data[p].parent_id = torch.tensor(plane_hits['parent_id'].fillna(-1).values).long()
-                    data[p].pdg = torch.tensor(plane_hits['type'].fillna(-1).values).long()
-            if self.label_vertex:
-                vtx_2d = torch.tensor([ event[f'nu_vtx_wire_pos_{i}'], event.nu_vtx_wire_time ]).float()
-                data[p].y_vtx = vtx_2d * self.pos_norm[None,:]
+        # truth information
+        if self.semantic_labeller:
+            data["hit"].y_semantic = torch.tensor(hits['semantic_label'].fillna(-1).values).long()
+            data["hit"].y_instance = torch.tensor(hits['instance_label'].fillna(-1).values).long()
+            if self.store_detailed_truth:
+                data["hit"].g4_id = torch.tensor(hits['g4_id'].fillna(-1).values).long()
+                data["hit"].parent_id = torch.tensor(hits['parent_id'].fillna(-1).values).long()
+                data["hit"].pdg = torch.tensor(hits['type'].fillna(-1).values).long()
 
         # event label
         if self.event_labeller:
-            data['evt'].y = torch.tensor(self.event_labeller(event)).long()
+            data['evt'].y = torch.tensor(self.event_labeller(event)).long().reshape([1])
 
         # 3D vertex truth
         if self.label_vertex:

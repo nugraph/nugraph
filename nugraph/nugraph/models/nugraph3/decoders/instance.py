@@ -4,6 +4,7 @@ import pathlib
 import torch
 from torch import nn
 from torchmetrics.clustering import AdjustedRandScore
+from torch_scatter import scatter_min
 from torch_geometric.data import Batch, HeteroData
 from pytorch_lightning.loggers import TensorBoardLogger
 from torch_scatter import scatter_min
@@ -21,12 +22,11 @@ class InstanceDecoder(nn.Module):
     coordinates for each hit.
 
     Args:
-        planar_features: Number of planar features
+        hit_features: Number of hit node features
         instance_features: Number of instance features
-        planes: List of detector planes
     """
-    def __init__(self, planar_features: int,
-                 instance_features: int, planes: list[str]):
+    def __init__(self, hit_features: int, instance_features: int,
+                 debug_plots: bool = False):
         super().__init__()
 
         # loss function
@@ -39,13 +39,13 @@ class InstanceDecoder(nn.Module):
         self.temp = nn.Parameter(torch.tensor(0.))
 
         # network
-        self.beta_net = nn.Linear(planar_features, 1)
-        self.coord_net = nn.Linear(planar_features, instance_features)
+        self.beta_net = nn.Linear(hit_features, 1)
+        self.coord_net = nn.Linear(hit_features, instance_features)
 
+        self.debug_plots = debug_plots
         self.dfs = []
-        self.planes = planes
 
-    def forward(self, data: Data, stage: str = None, step: int = None) -> dict[str, Any]:
+    def forward(self, data: Data, stage: str = None) -> dict[str, Any]:
         """
         NuGraph3 instance decoder forward pass
 
@@ -55,48 +55,39 @@ class InstanceDecoder(nn.Module):
         """
 
         # run network and add output to graph object
-        for p in self.planes:
-            data[p].of = self.beta_net(data[p].x).squeeze(dim=-1).sigmoid()
-            data[p].ox = self.coord_net(data[p].x)
-            if isinstance(data, Batch):
-                data._slice_dict[p]["of"] = data[p].ptr
-                data._slice_dict[p]["ox"] = data[p].ptr
-                inc = torch.zeros(data.num_graphs, device=data[p].x.device)
-                data._inc_dict[p]["of"] = inc
-                data._inc_dict[p]["ox"] = inc
+        data["hit"].of = self.beta_net(data["hit"].x).squeeze(dim=-1).sigmoid()
+        data["hit"].ox = self.coord_net(data["hit"].x)
+        if isinstance(data, Batch):
+            data._slice_dict["hit"]["of"] = data["hit"].ptr
+            data._slice_dict["hit"]["ox"] = data["hit"].ptr
+            inc = torch.zeros(data.num_graphs, device=data["hit"].x.device)
+            data._inc_dict["hit"]["of"] = inc
+            data._inc_dict["hit"]["ox"] = inc
 
         # materialize instances
-        if step > 1000:
+        materialize = (data["hit"].of > 0.1).sum() < 2000
+        if materialize:
             if isinstance(data, Batch):
-                data = Batch([self.materialize(b) for b in data.to_data_list()])
+                data = Batch.from_data_list([self.materialize(b) for b in data.to_data_list()])
             else:
                 self.instance_decoder.materialize(data)
 
         # calculate loss
-        of = torch.cat([data[p].of for p in self.planes], dim=0)
-        ox = torch.cat([data[p].ox for p in self.planes], dim=0)
-        y = torch.cat([data[p].y_instance for p in self.planes], dim=0)
+        y = data["hit"].y_instance
         w = (-1 * self.temp).exp()
-        loss = w * self.loss((ox, of), y) + self.temp
+        loss = w * self.loss((data["hit"].ox, data["hit"].of), y) + self.temp
 
         # calculate metrics
         metrics = {}
         if stage:
             metrics[f"loss_instance/{stage}"] = loss
-            metrics[f"num_instances/{stage}"] = (of>0.1).sum().float()
-
-            # Calculate Adjusted Rand Index
-            if step > 1000:
-                i = torch.cat([data[p].i for p in self.planes], dim=0)
-                metrics[f"adjusted_rand_index/{stage}"] = self.rand(i, y)
-            
+            if materialize:
+                x = data["hit"].i
+                metrics[f"adjusted-rand-score/{stage}"] = self.rand(x, y)
         if stage == "train":
             metrics["temperature/instance"] = self.temp
 
-        # disable event displays
-        return loss, metrics
-
-        if stage == "val" and isinstance(data, Batch):
+        if self.debug_plots and stage == "val" and isinstance(data, Batch):
             for d in data.to_data_list():
                 if len(self.dfs) >= 100:
                     break
@@ -111,34 +102,29 @@ class InstanceDecoder(nn.Module):
         Args:
             data: Heterodata graph object
         """
-        of = torch.cat([data[p].of for p in self.planes], dim=0)
-        ox = torch.cat([data[p].ox for p in self.planes], dim=0)
-        centers = (of > 0.1).nonzero().squeeze(1)
+        device = data["hit"].x.device
+        centers = (data["hit"].of > 0.1).nonzero().squeeze(1)
         data["particles"].num_nodes = centers.size(0)
-        print(f"generating {centers.size(0)} clusters")
-        for p in self.planes:
-            print(f"  plane {p}")
-            e = data[p, "cluster", "particles"]
-            e.edge_index = torch.empty(2, 0, device=of.device)
-            e.distance = torch.empty(0,  device=of.device)
-            for i, center in enumerate(centers):
-                print(f"    instance {i+1}")
-                center_coords = ox[center]
-                dist = (data[p].ox - center_coords).square().sum(dim=1).sqrt()
-                hits = (dist < 1).nonzero().squeeze(1)
-                edge_index = torch.empty(2, hits.size(0), dtype=int, device=of.device)
-                edge_index[0] = hits
-                edge_index[1] = i
-                e.edge_index = torch.cat((e.edge_index, edge_index), dim=1)
-                e.distance = torch.cat((e.distance, dist[hits]), dim=0)
+        e = data["hit", "cluster", "particles"]
+        e.edge_index = torch.empty(2, 0, dtype=torch.long, device=device)
+        e.distance = torch.empty(0, dtype=torch.long, device=device)
+        for i, center in enumerate(centers):
+            center_coords = data["hit"].ox[center]
+            dist = (data["hit"].ox - center_coords).square().sum(dim=1).sqrt()
+            hits = (dist < 1).nonzero().squeeze(1)
+            edge_index = torch.empty(2, hits.size(0), dtype=int, device=device)
+            edge_index[0] = hits
+            edge_index[1] = i
+            e.edge_index = torch.cat((e.edge_index, edge_index), dim=1)
+            e.distance = torch.cat((e.distance, dist[hits]), dim=0)
+        
+        _, instances = scatter_min(e.distance, e.edge_index[0], dim_size=data["hit"].num_nodes)
+        mask = instances < e.num_edges
+        instances[~mask] = -1
+        instances[mask] = e.edge_index[1,instances[mask]]
+        data["hit"].i = instances
 
-            e.edge_index=e.edge_index.long()
-            print("plane", p, "has", data[p, "cluster", "particles"].num_edges, "instance edges")
-         
-            _, instances = scatter_min(e.distance, e.edge_index[0], dim_size=data[p].num_nodes)
-            mask = instances != -1
-            instances[mask] = e.edge_index[1,instances[mask]]
-            data[p].i = instances
+        return data
 
     def draw_event_display(self, data: HeteroData) -> pd.DataFrame:
         """
@@ -147,14 +133,15 @@ class InstanceDecoder(nn.Module):
         Args:
             data: Graph data object
         """
-        coords = torch.cat([data[p].ox for p in self.planes], dim=0).cpu()
+        coords = data["hit"].ox.cpu()
         pca = PCA(n_components=2)
         c1, c2 = pca.fit_transform(coords).transpose()
-        beta = torch.cat([data[p].of for p in self.planes], dim=0).cpu()
+        beta = data["hit"].of.cpu()
         logbeta = beta.log10()
-        xy = torch.cat([data[p].pos for p in self.planes], dim=0).cpu()
-        i = torch.cat([data[p].y_instance for p in self.planes], dim=0).cpu()
-        plane = [p for p in self.planes for _ in range(data[p].num_nodes)]
+        xy = data["hit"].pos.cpu()
+        i = data["hit"].y_instance.cpu()
+        plane = data["hit"].plane.cpu()
+        plane = data["hit"].plane.cpu()
         return pd.DataFrame(dict(c1=c1, c2=c2, beta=beta, logbeta=logbeta,
                                  plane=plane, x=xy[:,0], y=xy[:,1],
                                  instance=pd.Series(i).astype(str)))
@@ -171,7 +158,7 @@ class InstanceDecoder(nn.Module):
             stage: Training stage
             epoch: Training epoch index
         """
-        if not logger:
+        if not self.debug_plots or not logger:
             return
         path = pathlib.Path(logger.log_dir) / "objcon-plots"
         path.mkdir(exist_ok=True)

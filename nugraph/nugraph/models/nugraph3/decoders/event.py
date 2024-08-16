@@ -19,7 +19,6 @@ class EventDecoder(nn.Module):
 
     Args:
         interaction_features: Number of interaction node features
-        planes: List of detector planes
         event_classes: List of event classes
     """
     def __init__(self,
@@ -49,7 +48,7 @@ class EventDecoder(nn.Module):
 
         self.classes = event_classes
 
-    def forward(self, data: Data, stage: str = None, step: int = None) -> dict[str, Any]:
+    def forward(self, data: Data, stage: str = None) -> dict[str, Any]:
         """
         NuGraph3 event decoder forward pass
 

@@ -29,7 +29,7 @@ class VertexDecoder(nn.Module):
         # network
         self.net = nn.Linear(interaction_features, 3)
 
-    def forward(self, data: Data, stage: str = None, step: int = None) -> dict[str, Any]:
+    def forward(self, data: Data, stage: str = None) -> dict[str, Any]:
         """
         NuGraph3 vertex decoder forward pass
 

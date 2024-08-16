@@ -23,11 +23,10 @@ class NuGraph3(LightningModule):
 
     Args:
         in_features: Number of input node features
-        planar_features: Number of planar node features
+        hit_features: Number of hit node features
         nexus_features: Number of nexus node features
         interaction_features: Number of interaction node features
         instance_features: Number of instance features
-        planes: Tuple of planes
         semantic_classes: Tuple of semantic classes
         event_classes: Tuple of event classes
         num_iters: Number of message-passing iterations
@@ -40,11 +39,10 @@ class NuGraph3(LightningModule):
     """
     def __init__(self,
                  in_features: int = 4,
-                 planar_features: int = 128,
+                 hit_features: int = 128,
                  nexus_features: int = 32,
                  interaction_features: int = 32,
                  instance_features: int = 32,
-                 planes: tuple[str] = ('u','v','y'),
                  semantic_classes: tuple[str] = ('MIP','HIP','shower','michel','diffuse'),
                  event_classes: tuple[str] = ('numu','nue','nc'),
                  num_iters: int = 5,
@@ -64,20 +62,17 @@ class NuGraph3(LightningModule):
         self.nexus_features = nexus_features
         self.interaction_features = interaction_features
 
-        self.planes = planes
         self.semantic_classes = semantic_classes
         self.event_classes = event_classes
         self.num_iters = num_iters
         self.lr = lr
 
-        self.encoder = Encoder(in_features, planar_features,
-                               nexus_features, interaction_features,
-                               planes)
+        self.encoder = Encoder(in_features, hit_features,
+                               nexus_features, interaction_features)
 
-        self.core_net = NuGraphCore(planar_features,
+        self.core_net = NuGraphCore(hit_features,
                                     nexus_features,
                                     interaction_features,
-                                    planes,
                                     use_checkpointing)
 
         self.decoders = []
@@ -90,15 +85,13 @@ class NuGraph3(LightningModule):
 
         if semantic_head:
             self.semantic_decoder = SemanticDecoder(
-                planar_features,
-                planes,
+                hit_features,
                 semantic_classes)
             self.decoders.append(self.semantic_decoder)
 
         if filter_head:
             self.filter_decoder = FilterDecoder(
-                planar_features,
-                planes,
+                hit_features,
             )
             self.decoders.append(self.filter_decoder)
 
@@ -108,9 +101,8 @@ class NuGraph3(LightningModule):
 
         if instance_head:
             self.instance_decoder = InstanceDecoder(
-                planar_features,
+                hit_features,
                 instance_features,
-                planes,
             )
             self.decoders.append(self.instance_decoder)
 
@@ -140,7 +132,7 @@ class NuGraph3(LightningModule):
         total_loss = 0.
         total_metrics = {}
         for decoder in self.decoders:
-            loss, metrics = decoder(data, stage, self.global_step)
+            loss, metrics = decoder(data, stage)
             total_loss += loss
             total_metrics.update(metrics)
 
@@ -249,10 +241,10 @@ class NuGraph3(LightningModule):
         model = parser.add_argument_group('model', 'NuGraph3 model configuration')
         model.add_argument('--num-iters', type=int, default=5,
                            help='Number of message-passing iterations')
-        model.add_argument('--in-feats', type=int, default=4,
+        model.add_argument('--in-feats', type=int, default=5,
                            help='Number of input node features')
-        model.add_argument('--planar-feats', type=int, default=128,
-                           help='Hidden dimensionality of planar convolutions')
+        model.add_argument('--hit-feats', type=int, default=128,
+                           help='Hidden dimensionality of hit convolutions')
         model.add_argument('--nexus-feats', type=int, default=32,
                            help='Hidden dimensionality of nexus convolutions')
         model.add_argument('--interaction-feats', type=int, default=32,
@@ -289,11 +281,10 @@ class NuGraph3(LightningModule):
         """
         return cls(
             in_features=args.in_feats,
-            planar_features=args.planar_feats,
+            hit_features=args.hit_feats,
             nexus_features=args.nexus_feats,
             interaction_features=args.interaction_feats,
             instance_features=args.instance_feats,
-            planes=nudata.planes,
             semantic_classes=nudata.semantic_classes,
             event_classes=nudata.event_classes,
             num_iters=args.num_iters,
