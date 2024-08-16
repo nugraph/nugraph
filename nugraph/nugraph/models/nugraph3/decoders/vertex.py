@@ -56,9 +56,9 @@ class VertexDecoder(nn.Module):
         if stage:
             metrics[f"vertex/loss-{stage}"] = loss
             xyz = (x-y).abs().mean(dim=0)
-            metrics[f"vertex/resolution-x-{stage}"] = xyz[0]
-            metrics[f"vertex/resolution-y-{stage}"] = xyz[1]
-            metrics[f"vertex/resolution-z-{stage}"] = xyz[2]
+            metrics[f"vertex/x-resolution-{stage}"] = xyz[0]
+            metrics[f"vertex/y-resolution-{stage}"] = xyz[1]
+            metrics[f"vertex/z-resolution-{stage}"] = xyz[2]
             metrics[f"vertex/resolution-{stage}"] = xyz.square().sum().sqrt()
         if stage == "train":
             metrics["temperature/vertex"] = self.temp
