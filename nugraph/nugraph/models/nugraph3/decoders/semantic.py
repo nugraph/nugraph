@@ -3,7 +3,8 @@ from typing import Any
 import torch
 from torch import nn
 from torch_geometric.data import Batch
-from pytorch_lightning.loggers import TensorBoardLogger
+from pytorch_lightning.loggers import WandbLogger
+import wandb
 import matplotlib.pyplot as plt
 import seaborn as sn
 import torchmetrics as tm
@@ -87,7 +88,7 @@ class SemanticDecoder(nn.Module):
 
         return loss, metrics
 
-    def draw_confusion_matrix(self, cm: tm.ConfusionMatrix) -> plt.Figure:
+    def draw_matrix(self, cm: tm.ConfusionMatrix, title: str) -> wandb.viz.CustomChart:
         """
         Draw confusion matrix
 
@@ -95,20 +96,21 @@ class SemanticDecoder(nn.Module):
             cm: Confusion matrix object
         """
         confusion = cm.compute().cpu()
-        fig = plt.figure(figsize=[8,6])
-        sn.heatmap(confusion,
-                   xticklabels=self.classes,
-                   yticklabels=self.classes,
-                   vmin=0, vmax=1,
-                   annot=True)
-        plt.ylim(0, len(self.classes))
-        plt.xlabel("Assigned label")
-        plt.ylabel("True label")
-        return fig
 
-    def on_epoch_end(self,
-                     logger: TensorBoardLogger,
-                     stage: str,
+        data = []
+        for i in range(confusion.size(0)):
+            for j in range(confusion.size(1)):
+                data.append([self.classes[i], self.classes[j], confusion[i, j].item()])
+        cols = ["Actual", "Predicted", "nPredictions"]
+        return wandb.plot_table(
+            "wandb/confusion_matrix/v1",
+            wandb.Table(columns=cols, data=data),
+            {col: col for col in cols},
+            {"title": title},
+            split_table=True,
+        )
+
+    def on_epoch_end(self, logger: WandbLogger, stage: str,
                      epoch: int) -> None:
         """
         NuGraph3 decoder end-of-epoch callback function
@@ -121,12 +123,10 @@ class SemanticDecoder(nn.Module):
         if not logger:
             return
 
-        logger.experiment.add_figure(f"recall_semantic_matrix/{stage}",
-                                     self.draw_confusion_matrix(self.cm_recall),
-                                     global_step=epoch)
+        table = self.draw_matrix(self.cm_recall, "Recall matrix")
+        wandb.log({f"semantic/recall-matrix-{stage}": table})
         self.cm_recall.reset()
 
-        logger.experiment.add_figure(f"precision_semantic_matrix/{stage}",
-                                self.draw_confusion_matrix(self.cm_precision),
-                                global_step=epoch)
+        table = self.draw_matrix(self.cm_precision, "Precision matrix")
+        wandb.log({f"semantic/precision-matrix-{stage}": table})
         self.cm_precision.reset()
