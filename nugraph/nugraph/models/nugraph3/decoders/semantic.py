@@ -112,7 +112,7 @@ class SemanticDecoder(nn.Module):
         NuGraph3 decoder end-of-epoch callback function
 
         Args:
-            logger: Tensorboard logger object
+            logger: Wandb logger object
             stage: Training stage
             epoch: Training epoch index
         """
