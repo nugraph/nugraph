@@ -1,7 +1,6 @@
 """NuGraph3 model architecture"""
 import argparse
 import warnings
-import psutil
 
 import torch
 from torch.optim import AdamW
@@ -138,30 +137,12 @@ class NuGraph3(LightningModule):
 
         return total_loss, total_metrics
 
-    def on_train_start(self):
-        hpmetrics = { 'max_lr': self.hparams.lr }
-        self.logger.log_hyperparams(self.hparams, metrics=hpmetrics)
-        self.max_mem_cpu = 0.
-        self.max_mem_gpu = 0.
-
-        scalars = {
-            'loss': {'loss': [ 'Multiline', [ 'loss/train', 'loss/val' ]]},
-            'acc': {}
-        }
-        for c in self.semantic_classes:
-            scalars['acc'][c] = [ 'Multiline', [
-                f'semantic_accuracy_class_train/{c}',
-                f'semantic_accuracy_class_val/{c}'
-            ]]
-        self.logger.experiment.add_custom_scalars(scalars)
-
     def training_step(self,
                       batch: Data,
                       batch_idx: int) -> float:
         loss, metrics = self(batch, 'train')
         self.log('loss/train', loss, batch_size=batch.num_graphs, prog_bar=True)
         self.log_dict(metrics, batch_size=batch.num_graphs)
-        self.log_memory(batch, 'train')
         return loss
 
     def validation_step(self,
@@ -179,10 +160,9 @@ class NuGraph3(LightningModule):
     def test_step(self,
                   batch,
                   batch_idx: int = 0) -> None:
-        loss, metrics = self(batch, 'test', True)
+        loss, metrics = self(batch, 'test')
         self.log('loss/test', loss, batch_size=batch.num_graphs)
         self.log_dict(metrics, batch_size=batch.num_graphs)
-        self.log_memory(batch, 'test')
 
     def on_test_epoch_end(self) -> None:
         epoch = self.trainer.current_epoch + 1
@@ -203,32 +183,6 @@ class NuGraph3(LightningModule):
                 max_lr=self.lr,
                 total_steps=self.trainer.estimated_stepping_batches)
         return [optimizer], {'scheduler': onecycle, 'interval': 'step'}
-
-    def log_memory(self, batch: Data, stage: str) -> None:
-        """
-        Log CPU and GPU memory usage
-
-        Args:
-            batch: Data object to step over
-            stage: String tag defining the step type
-        """
-        # log CPU memory
-        if not hasattr(self, 'max_mem_cpu'):
-            self.max_mem_cpu = 0.
-        cpu_mem = psutil.Process().memory_info().rss / float(1073741824)
-        self.max_mem_cpu = max(self.max_mem_cpu, cpu_mem)
-        self.log(f'memory_cpu/{stage}', self.max_mem_cpu,
-                 batch_size=batch.num_graphs, reduce_fx=torch.max)
-
-        # log GPU memory
-        if not hasattr(self, 'max_mem_gpu'):
-            self.max_mem_gpu = 0.
-        if self.device != torch.device('cpu'):
-            gpu_mem = torch.cuda.memory_reserved(self.device)
-            gpu_mem = float(gpu_mem) / float(1073741824)
-            self.max_mem_gpu = max(self.max_mem_gpu, gpu_mem)
-            self.log(f'memory_gpu/{stage}', self.max_mem_gpu,
-                     batch_size=batch.num_graphs, reduce_fx=torch.max)
 
     @staticmethod
     def add_model_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:

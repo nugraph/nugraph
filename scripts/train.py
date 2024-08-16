@@ -55,9 +55,8 @@ def train(args):
     else:
         raise Exception('You must pass either the --name and --logdir arguments to start an existing training, or the --resume argument to resume an existing one.')
 
-    logger = pl.loggers.TensorBoardLogger(save_dir=logdir,
-                                          name=name, version=version,
-                                          default_hp_metric=False)
+    logger = pl.loggers.WandbLogger(save_dir=logdir, project=name,
+                                    name=version, version=version)
 
     callbacks = [
         LearningRateMonitor(logging_interval='step'),
