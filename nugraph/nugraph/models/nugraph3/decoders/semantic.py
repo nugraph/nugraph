@@ -88,7 +88,7 @@ class SemanticDecoder(nn.Module):
 
         return loss, metrics
 
-    def draw_matrix(self, cm: tm.ConfusionMatrix, title: str) -> wandb.viz.CustomChart:
+    def draw_matrix(self, cm: tm.ConfusionMatrix, label: str) -> wandb.Table:
         """
         Draw confusion matrix
 
