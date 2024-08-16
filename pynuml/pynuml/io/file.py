@@ -681,8 +681,9 @@ class File:
                     idx_found[group] = False
                     dim = self._seq_cnt[group].shape[0]
 
-                    # check against the max of this group's
-                    if idx > self._seq_cnt[group][dim-1, 0]:
+                    # check against the min and max of this group's
+                    if idx < self._seq_cnt[group][0, 0] or \
+                       idx > self._seq_cnt[group][dim-1, 0]:
                         continue
 
                     # check and search for idx in _seq_cnt[group][:,0]
