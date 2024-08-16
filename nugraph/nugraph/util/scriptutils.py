@@ -1,4 +1,5 @@
-from pynvml_utils import nvidia_smi
+import os
+from pynvml.smi import nvidia_smi
 
 def configure_device(cpu: bool = False) -> tuple[str, str | list[int]]:
     if not cpu:
