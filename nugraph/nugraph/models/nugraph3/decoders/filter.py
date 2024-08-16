@@ -91,7 +91,7 @@ class FilterDecoder(nn.Module):
         fig = px.imshow(
             confusion, zmax=1, text_auto=True,
             labels=dict(x="Predicted", y="True", color=label),
-            x=self.classes, y=self.classes)
+            x=("noise", "signal"), y=("noise", "signal"))
         with tempfile.NamedTemporaryFile() as f:
             fig.write_html(f.name, auto_play=False)
             table.add_data(wandb.Html(f.name))
