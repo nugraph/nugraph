@@ -2,12 +2,12 @@
 from typing import Any
 import torch
 from torch import nn
+import torchmetrics as tm
 from torch_geometric.data import Batch
 from pytorch_lightning.loggers import WandbLogger
 import wandb
 import plotly.express as px
 import tempfile
-import torchmetrics as tm
 from ....util import RecallLoss
 from ..types import Data
 
