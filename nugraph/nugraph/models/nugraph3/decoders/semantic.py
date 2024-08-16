@@ -5,8 +5,8 @@ from torch import nn
 from torch_geometric.data import Batch
 from pytorch_lightning.loggers import WandbLogger
 import wandb
-import matplotlib.pyplot as plt
-import seaborn as sn
+import plotly.express as px
+import tempfile
 import torchmetrics as tm
 from ....util import RecallLoss
 from ..types import Data
@@ -96,19 +96,15 @@ class SemanticDecoder(nn.Module):
             cm: Confusion matrix object
         """
         confusion = cm.compute().cpu()
-
-        data = []
-        for i in range(confusion.size(0)):
-            for j in range(confusion.size(1)):
-                data.append([self.classes[i], self.classes[j], confusion[i, j].item()])
-        cols = ["Actual", "Predicted", "nPredictions"]
-        return wandb.plot_table(
-            "wandb/confusion_matrix/v1",
-            wandb.Table(columns=cols, data=data),
-            {col: col for col in cols},
-            {"title": title},
-            split_table=True,
-        )
+        table = wandb.Table(columns=["plotly_figure"])
+        fig = px.imshow(
+            confusion, zmax=1, text_auto=True,
+            labels=dict(x="Predicted", y="True", color=label),
+            x=self.classes, y=self.classes)
+        with tempfile.NamedTemporaryFile() as f:
+            fig.write_html(f.name, auto_play=False)
+            table.add_data(wandb.Html(f.name))
+        return table
 
     def on_epoch_end(self, logger: WandbLogger, stage: str,
                      epoch: int) -> None:
@@ -123,10 +119,10 @@ class SemanticDecoder(nn.Module):
         if not logger:
             return
 
-        table = self.draw_matrix(self.cm_recall, "Recall matrix")
+        table = self.draw_matrix(self.cm_recall, "Recall")
         wandb.log({f"semantic/recall-matrix-{stage}": table})
         self.cm_recall.reset()
 
-        table = self.draw_matrix(self.cm_precision, "Precision matrix")
+        table = self.draw_matrix(self.cm_precision, "Precision")
         wandb.log({f"semantic/precision-matrix-{stage}": table})
         self.cm_precision.reset()
