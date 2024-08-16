@@ -4,9 +4,10 @@ import torch
 from torch import nn
 import torchmetrics as tm
 from torch_geometric.data import Batch
-from pytorch_lightning.loggers import TensorBoardLogger
-import matplotlib.pyplot as plt
-import seaborn as sn
+from pytorch_lightning.loggers import WandbLogger
+import wandb
+import plotly.express as px
+import tempfile
 from ..types import Data
 
 class FilterDecoder(nn.Module):
@@ -67,18 +68,18 @@ class FilterDecoder(nn.Module):
         # calculate metrics
         metrics = {}
         if stage:
-            metrics[f"loss_filter/{stage}"] = loss
-            metrics[f"recall_filter/{stage}"] = self.recall(x, y)
-            metrics[f"precision_filter/{stage}"] = self.precision(x, y)
+            metrics[f"filter/loss-{stage}"] = loss
+            metrics[f"filter/recall-{stage}"] = self.recall(x, y)
+            metrics[f"filter/precision-{stage}"] = self.precision(x, y)
         if stage == "train":
-            metrics["temperature/filter"] = self.temp
+            metrics["filter/temperature"] = self.temp
         if stage in ["val", "test"]:
             self.cm_recall.update(x, y)
             self.cm_precision.update(x, y)
 
         return loss, metrics
 
-    def draw_confusion_matrix(self, cm: tm.ConfusionMatrix) -> plt.Figure:
+    def draw_matrix(self, cm: tm.ConfusionMatrix, label: str) -> wandb.Table:
         """
         Draw confusion matrix
 
@@ -86,38 +87,33 @@ class FilterDecoder(nn.Module):
             cm: Confusion matrix object
         """
         confusion = cm.compute().cpu()
-        fig = plt.figure(figsize=[8,6])
-        sn.heatmap(confusion,
-                   xticklabels=("noise", "signal"),
-                   yticklabels=("noise", "signal"),
-                   vmin=0, vmax=1,
-                   annot=True)
-        plt.ylim(0, 2)
-        plt.xlabel("Assigned label")
-        plt.ylabel("True label")
-        return fig
+        table = wandb.Table(columns=["plotly_figure"])
+        fig = px.imshow(
+            confusion, zmax=1, text_auto=True,
+            labels=dict(x="Predicted", y="True", color=label),
+            x=self.classes, y=self.classes)
+        with tempfile.NamedTemporaryFile() as f:
+            fig.write_html(f.name, auto_play=False)
+            table.add_data(wandb.Html(f.name))
+        return table
 
-    def on_epoch_end(self,
-                     logger: TensorBoardLogger,
-                     stage: str,
+    def on_epoch_end(self, logger: WandbLogger, stage: str,
                      epoch: int) -> None:
         """
         NuGraph3 decoder end-of-epoch callback function
 
         Args:
-            logger: Tensorboard logger object
+            logger: Wandb logger object
             stage: Training stage
             epoch: Training epoch index
         """
         if not logger:
             return
 
-        logger.experiment.add_figure(f"recall_filter_matrix/{stage}",
-                                     self.draw_confusion_matrix(self.cm_recall),
-                                     global_step=epoch)
+        table = self.draw_matrix(self.cm_recall, "Recall")
+        wandb.log({f"filter/recall-matrix-{stage}": table})
         self.cm_recall.reset()
 
-        logger.experiment.add_figure(f"precision_filter_matrix/{stage}",
-                                self.draw_confusion_matrix(self.cm_precision),
-                                global_step=epoch)
+        table = self.draw_matrix(self.cm_precision, "Precision")
+        wandb.log({f"filter/precision-matrix-{stage}": table})
         self.cm_precision.reset()
