@@ -44,22 +44,24 @@ class VertexDecoder(nn.Module):
         w = (-1 * self.temp).exp()
         loss = w * self.loss(x, y) + self.temp
 
-        # calculate metrics
-        metrics = {}
-        if stage:
-            metrics[f"loss_vertex/{stage}"] = loss
-            xyz = (x-y).abs().mean(dim=0)
-            metrics[f"vertex-resolution-x/{stage}"] = xyz[0]
-            metrics[f"vertex-resolution-y/{stage}"] = xyz[1]
-            metrics[f"vertex-resolution-z/{stage}"] = xyz[2]
-            metrics[f"vertex-resolution/{stage}"] = xyz.square().sum().sqrt()
-
         # add inference output to graph object
         data["evt"].v = x
         if isinstance(data, Batch):
             data._slice_dict["evt"]["v"] = data["evt"].ptr
             inc = torch.zeros(data.num_graphs, device=data["evt"].x.device)
             data._inc_dict["evt"]["v"] = inc
+
+        # calculate metrics
+        metrics = {}
+        if stage:
+            metrics[f"vertex/loss-{stage}"] = loss
+            xyz = (x-y).abs().mean(dim=0)
+            metrics[f"vertex/resolution-x-{stage}"] = xyz[0]
+            metrics[f"vertex/resolution-y-{stage}"] = xyz[1]
+            metrics[f"vertex/resolution-z-{stage}"] = xyz[2]
+            metrics[f"vertex/resolution-{stage}"] = xyz.square().sum().sqrt()
+        if stage == "train":
+            metrics["temperature/vertex"] = self.temp
 
         return loss, metrics
 

@@ -64,8 +64,7 @@ class InstanceDecoder(nn.Module):
         # calculate metrics
         metrics = {}
         if stage:
-            metrics[f"loss_instance/{stage}"] = loss
-            metrics[f"num_instances/{stage}"] = (data["hit"].of>0.1).sum().float()
+            metrics[f"instance/loss-{stage}"] = loss
         if stage == "train":
             metrics["temperature/instance"] = self.temp
         if stage == "val" and isinstance(data, Batch):
