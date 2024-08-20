@@ -59,7 +59,7 @@ class HierarchicalEdges(BaseTransform):
                 remap = torch.full((imax,), -1, dtype=torch.long)
                 remap[instances] = torch.arange(instances.size(0))
                 y = remap[y]
-            data["particle-truth"].num_nodes = instances.size(0)
+            data["particle-truth"].x = torch.empty(instances.size(0), 0)
             edges = torch.stack((mask.nonzero().squeeze(1), y), dim=0).long()
             data["hit", "cluster-truth", "particle-truth"].edge_index = edges
             del data["hit"].y_instance
