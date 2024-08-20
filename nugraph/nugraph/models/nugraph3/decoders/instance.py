@@ -82,7 +82,7 @@ class InstanceDecoder(nn.Module):
             metrics[f"instance/loss-{stage}"] = loss
             if materialize:
                 x = data["hit"].i
-                metrics[f"instance/adjusted-rand-{stage}"] = self.rand(x, y)   
+                metrics[f"instance/adjusted-rand-{stage}"] = self.rand(x, y)
         if stage == "train":
             metrics["temperature/instance"] = self.temp
 
@@ -116,7 +116,7 @@ class InstanceDecoder(nn.Module):
             edge_index[1] = i
             e.edge_index = torch.cat((e.edge_index, edge_index), dim=1)
             e.distance = torch.cat((e.distance, dist[hits]), dim=0)
-        
+
         _, instances = scatter_min(e.distance, e.edge_index[0], dim_size=data["hit"].num_nodes)
         mask = instances < e.num_edges
         instances[~mask] = -1
