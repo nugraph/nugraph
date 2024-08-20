@@ -56,7 +56,7 @@ class HierarchicalEdges(BaseTransform):
             # remap instances
             imax = instances.max() + 1 if instances.size(0) else 0
             if instances.size(0) != imax:
-                remap = torch.empty(imax, dtype=torch.long).fill_(-1)
+                remap = torch.full((imax,), -1, dtype=torch.long)
                 remap[instances] = torch.arange(instances.size(0))
                 y = remap[y]
             data["particle-truth"].num_nodes = instances.size(0)
