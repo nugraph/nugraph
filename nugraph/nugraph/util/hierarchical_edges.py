@@ -47,6 +47,17 @@ class HierarchicalEdges(BaseTransform):
         for p in self.planes:
             del data[p]
 
+        # add true instance nodes
+        if hasattr(data["hit"], "y_instance"):
+            y = data["hit"].y_instance
+            mask = y != -1
+            y = y[mask]
+            instances = y.unique()
+            data["particle-truth"].num_nodes = instances.size(0)
+            edges = torch.stack((mask.nonzero().squeeze(1), instances[y]), dim=0).long()
+            data["hit", "cluster-truth", "particle-truth"].edge_index = edges
+            del data["hit"].y_instance
+
         # add edges to and from event node
         data["evt"].num_nodes = 1
         lo = torch.arange(data["hit"].num_nodes, dtype=torch.long)
