@@ -40,7 +40,7 @@ class HierarchicalEdges(BaseTransform):
         for i, p in enumerate(self.planes):
             data[p].plane = torch.empty_like(data[p].x[:,0], dtype=int).fill_(i)
             data[p].x = torch.cat([data[p].x, data[p].plane.unsqueeze(1)], dim=1)
-        
+
         # merge planar node stores
         for attr in data[self.planes[0]].node_attrs():
             data["hit"][attr] = torch.cat([data[p][attr] for p in self.planes], dim=0)
