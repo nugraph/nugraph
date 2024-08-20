@@ -6,6 +6,7 @@ from torch import nn
 from torchmetrics.clustering import AdjustedRandScore
 from torch_scatter import scatter_min
 from torch_geometric.data import Batch, HeteroData
+from torch_geometric.utils import cumsum
 from pytorch_lightning.loggers import TensorBoardLogger
 import pandas as pd
 from sklearn.decomposition import PCA
@@ -59,17 +60,47 @@ class InstanceDecoder(nn.Module):
         if isinstance(data, Batch):
             data._slice_dict["hit"]["of"] = data["hit"].ptr
             data._slice_dict["hit"]["ox"] = data["hit"].ptr
-            inc = torch.zeros(data.num_graphs, device=data["hit"].x.device)
-            data._inc_dict["hit"]["of"] = inc
-            data._inc_dict["hit"]["ox"] = inc
+            data._inc_dict["hit"]["of"] = data._inc_dict["hit"]["x"]
+            data._inc_dict["hit"]["ox"] = data._inc_dict["hit"]["x"]
 
         # materialize instances
         materialize = (data["hit"].of > 0.1).sum() < 2000
         if materialize:
+            # form instances across batch
+            device = data["hit"].x.device
+            imask = data["hit"].of > 0.1
+            data["particle"].x = torch.empty(imask.sum(), 0, device=device)
+            data["particle"].ox = data["hit"].ox[imask]
             if isinstance(data, Batch):
+                repeats = torch.empty(data.num_graphs, dtype=torch.long, device=device)
+                data["particle"].batch = torch.empty(data["particle"].num_nodes,
+                                                     dtype=torch.long, device=device)
+                for i in range(data.num_graphs):
+                    lo, hi = data._slice_dict["hit"]["x"][i:i+2]
+                    repeats[i] = imask[lo:hi].sum()
+                    data["particle"].batch[lo:hi] = i
+                data["particle"].ptr = cumsum(repeats)
+                data._slice_dict["particle"] = {
+                    "x": data["particle"].ptr,
+                    "ox": data["particle"].ptr,
+                }
+                data._inc_dict["particle"] = {
+                    "x": data._inc_dict["hit"]["x"],
+                    "ox": data._inc_dict["hit"]["x"],
+                }
                 data = Batch.from_data_list([self.materialize(b) for b in data.to_data_list()])
             else:
                 self.instance_decoder.materialize(data)
+
+            # collapse instance edges into labels
+            e = data["hit", "cluster", "particle"]
+            _, instances = scatter_min(e.distance, e.edge_index[0], dim_size=data["hit"].num_nodes)
+            mask = instances < e.num_edges
+            instances[~mask] = -1
+            instances[mask] = e.edge_index[1, instances[mask]]
+            data["hit"].i = instances
+            data._slice_dict["hit"]["i"] = data["hit"].ptr
+            data._inc_dict["hit"]["i"] = data._inc_dict["hit"]["x"]
 
         # calculate loss
         y = torch.full_like(data["hit"].y_semantic, -1)
@@ -104,13 +135,11 @@ class InstanceDecoder(nn.Module):
             data: Heterodata graph object
         """
         device = data["hit"].x.device
-        centers = (data["hit"].of > 0.1).nonzero().squeeze(1)
-        data["particles"].num_nodes = centers.size(0)
-        e = data["hit", "cluster", "particles"]
+        e = data["hit", "cluster", "particle"]
         e.edge_index = torch.empty(2, 0, dtype=torch.long, device=device)
         e.distance = torch.empty(0, dtype=torch.long, device=device)
-        for i, center in enumerate(centers):
-            center_coords = data["hit"].ox[center]
+        for i in range(data["particle"].num_nodes):
+            center_coords = data["particle"].ox[i]
             dist = (data["hit"].ox - center_coords).square().sum(dim=1).sqrt()
             hits = (dist < 1).nonzero().squeeze(1)
             edge_index = torch.empty(2, hits.size(0), dtype=int, device=device)
@@ -118,12 +147,6 @@ class InstanceDecoder(nn.Module):
             edge_index[1] = i
             e.edge_index = torch.cat((e.edge_index, edge_index), dim=1)
             e.distance = torch.cat((e.distance, dist[hits]), dim=0)
-
-        _, instances = scatter_min(e.distance, e.edge_index[0], dim_size=data["hit"].num_nodes)
-        mask = instances < e.num_edges
-        instances[~mask] = -1
-        instances[mask] = e.edge_index[1,instances[mask]]
-        data["hit"].i = instances
 
         return data
 
