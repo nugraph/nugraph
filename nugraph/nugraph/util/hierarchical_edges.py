@@ -54,7 +54,7 @@ class HierarchicalEdges(BaseTransform):
             y = y[mask]
             instances = y.unique()
             # remap instances
-            imax = instances.max() + 1
+            imax = instances.max() + 1 if instances.size(0) else 0
             if instances.size(0) != imax:
                 remap = torch.empty(imax, dtype=torch.long).fill_(-1)
                 remap[instances] = torch.arange(instances.size(0))
