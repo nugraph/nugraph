@@ -72,7 +72,7 @@ class InstanceDecoder(nn.Module):
                 self.instance_decoder.materialize(data)
 
         # calculate loss
-        y = torch.empty_like(data["hit"].y_semantic).fill_(-1)
+        y = torch.full_like(data["hit"].y_semantic, -1)
         i, j = data["hit", "cluster-truth", "particle-truth"].edge_index
         y[i] = j
         w = (-1 * self.temp).exp()
