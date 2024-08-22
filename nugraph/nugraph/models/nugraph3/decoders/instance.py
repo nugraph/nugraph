@@ -103,11 +103,11 @@ class InstanceDecoder(nn.Module):
             data._inc_dict["hit"]["i"] = data._inc_dict["hit"]["x"]
 
         # calculate loss
-        if isinstance(data, Batch):
-            loss = torch.tensor([self.loss_wrap(d) for d in data.to_data_list()]).mean()
-        else:
-            loss = self.loss_wrap(data)
-        loss = (-1 * self.temp).exp() * loss + self.temp
+        y = torch.full_like(data["hit"].y_semantic, -1)
+        i, j = data["hit", "cluster-truth", "particle-truth"].edge_index
+        y[i] = j
+        w = (-1 * self.temp).exp()
+        loss = w * self.loss((data["hit"].ox, data["hit"].of), y) + self.temp
 
         # calculate metrics
         metrics = {}
@@ -126,18 +126,6 @@ class InstanceDecoder(nn.Module):
                 self.dfs.append(self.draw_event_display(d))
 
         return loss, metrics
-
-    def loss_wrap(self, data: HeteroData) -> torch.Tensor:
-        """
-        Extract tensors from data object and calculate loss
-
-        Args:
-            data:Heterodata graph object
-        """
-        y = torch.full_like(data["hit"].y_semantic, -1)
-        i, j = data["hit", "cluster-truth", "particle-truth"].edge_index
-        y[i] = j
-        return self.loss((data["hit"].ox, data["hit"].of), y)
 
     def materialize(self, data: Data) -> None:
         """
