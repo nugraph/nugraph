@@ -27,6 +27,8 @@ def configure():
                         help='Training version name, for logging purposes')
     parser.add_argument("--project", type=str, default="nugraph3",
                         help="wandb project to log to")
+    parser.add_argument("--offline", action="store_true",
+                        help="write wandb logs offline")
     parser.add_argument('--profiler', type=str, default=None,
                         help='Enable requested profiler')
     parser = Data.add_data_args(parser)
@@ -47,15 +49,16 @@ def train(args):
 
     logdir = pathlib.Path(os.environ["NUGRAPH_LOG"])/args.name
     logdir.mkdir(parents=True, exist_ok=True)
+    log_model = False if args.offline else "all"
     logger = pl.loggers.WandbLogger(save_dir=logdir, project=args.project,
                                     name=args.name, version=args.version,
-                                    log_model="all")
+                                    log_model=log_model, offline=args.offline)
 
     # configure callbacks
     callbacks = []
     if logger:
         callbacks.append(LearningRateMonitor(logging_interval='step'))
-    if isinstance(logger, pl.loggers.WandbLogger):
+    if isinstance(logger, pl.loggers.WandbLogger) and not args.offline:
         callbacks.append(ModelCheckpoint(monitor="loss/val", mode="min"))
 
     # configure plugins
