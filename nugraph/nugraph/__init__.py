@@ -4,3 +4,4 @@ __version__ = "24.7.dev1"
 from . import data
 from . import models
 from . import util
+from .util import setup_env

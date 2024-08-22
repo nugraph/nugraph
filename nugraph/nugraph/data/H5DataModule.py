@@ -1,6 +1,7 @@
 from argparse import ArgumentParser
 import warnings
 
+import os
 import sys
 import h5py
 import tqdm
@@ -28,7 +29,7 @@ class H5DataModule(LightningDataModule):
         # so we silence PyTorch Lightning's warnings
         warnings.filterwarnings("ignore", ".*does not have many workers.*")
 
-        self.filename = data_path
+        self.filename = os.path.expandvars(data_path)
         self.batch_size = batch_size
         if shuffle != 'random' and shuffle != 'balance':
             print('shuffle argument must be "random" or "balance".')
