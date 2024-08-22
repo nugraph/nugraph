@@ -18,7 +18,10 @@ class ObjCondensationLoss(torch.nn.Module):
             L_beta_1 = (1 - beta_ak).sum() / K
         else:
             L_beta_1 = 0
-        L_beta_2 = (self.S_b / N_b) * (n_i * beta).sum()
+        if N_b:
+            L_beta_2 = (self.S_b / N_b) * (n_i * beta).sum()
+        else:
+            L_beta_2 = 0
         L_beta = torch.sum(L_beta_1 + L_beta_2)
         return L_beta
     
