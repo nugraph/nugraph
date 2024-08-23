@@ -1,23 +1,14 @@
+"""Object condensation loss function"""
 import torch
 from torch import Tensor
+from torch_geometric.data import HeteroData
+from torch_scatter import scatter_max
 
 class ObjCondensationLoss(torch.nn.Module):
-    def __init__(self, S_b: float = 1.0, q_min: float = 0.5):
+    def __init__(self, s_b: float = 1.0, q_min: float = 0.5):
         super().__init__()
-        self.S_b = S_b
+        self.s_b = s_b
         self.q_min = q_min
-
-    def background_loss(self, beta: Tensor, y: Tensor) -> Tensor:
-        K = y.max() + 1
-        n_i = (y == -1)
-        M_ik = torch.zeros((y.size(0), K), device=y.device).long()
-        M_ik[~n_i,:] = torch.nn.functional.one_hot(y[~n_i], num_classes=K)
-        beta_ak = (beta[:,None] * M_ik).max(dim=0).values
-        N_b = n_i.sum()
-        L_beta_1 = (1 - beta_ak).sum() / K
-        L_beta_2 = (self.S_b / N_b) * (n_i * beta).sum()
-        L_beta = torch.sum(L_beta_1 + L_beta_2)
-        return L_beta
     
     def potential_loss(self, x: Tensor, beta: Tensor, y: Tensor) -> Tensor:
         K = y.max() + 1
@@ -40,16 +31,39 @@ class ObjCondensationLoss(torch.nn.Module):
         L_v=((L_v_1+L_v_2).sum(dim=2) * q_i).sum () / N
         return L_v
 
-    def forward(self, x: tuple[Tensor, Tensor], y: Tensor) -> Tensor:
+    def forward(self, data: HeteroData, y: Tensor) -> Tensor:
+
+        device = data["hit"].x.device
+
+        # hit information
+        x = data["hit"].ox
+        f = data["hit"].of
+
+        # true instances
+        n_true = data["particle-truth"].num_nodes
+        e_true = data["hit", "cluster-truth", "particle-truth"].edge_index
+
+        bkg_mask = y == -1
+        n_bkg = bkg_mask.sum()
 
         # check inputs
-        true_bkg = y == -1
-        if true_bkg.all():
+        if not n_true:
             raise RuntimeError(("Cannot compute object condensation loss "
                                 "when there are no true instances!"))
-        if not true_bkg.any():
+        if not n_bkg:
             raise RuntimeError(("Cannot compute object condensation loss "
                                 "when there is no true background!"))
 
-        x, beta = x
-        return self.background_loss(beta, y) + self.potential_loss(x, beta, y)
+        # determine which hit is the condensation point
+        # for each true instance, and get their beta values
+        # f_true and their hit indices i_true
+        i, j = e_true
+        f_centers = torch.zeros(n_true, device=device)
+        f_centers, i_centers = scatter_max(f[i], j, out=f_centers)
+        i_centers = i[i_centers]
+
+        # calculate the two background loss terms, b1 and b2
+        b1 = 1 - (f_centers.sum() / n_true)
+        b2 = (self.s_b / n_bkg) * f[bkg_mask].sum()
+
+        return b1 + b2 + self.potential_loss(x, f, y)
