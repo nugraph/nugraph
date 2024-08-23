@@ -11,17 +11,11 @@ class ObjCondensationLoss(torch.nn.Module):
         K = y.max() + 1
         n_i = (y == -1)
         N_b = n_i.sum()
-        if K:
-            M_ik = torch.zeros((y.size(0), K), device=y.device).long()
-            M_ik[~n_i,:] = torch.nn.functional.one_hot(y[~n_i], num_classes=K)
-            beta_ak = (beta[:,None] * M_ik).max(dim=0).values
-            L_beta_1 = (1 - beta_ak).sum() / K
-        else:
-            L_beta_1 = 0
-        if N_b:
-            L_beta_2 = (self.S_b / N_b) * (n_i * beta).sum()
-        else:
-            L_beta_2 = 0
+        M_ik = torch.zeros((y.size(0), K), device=y.device).long()
+        M_ik[~n_i,:] = torch.nn.functional.one_hot(y[~n_i], num_classes=K)
+        beta_ak = (beta[:,None] * M_ik).max(dim=0).values
+        L_beta_1 = (1 - beta_ak).sum() / K
+        L_beta_2 = (self.S_b / N_b) * (n_i * beta).sum()
         L_beta = torch.sum(L_beta_1 + L_beta_2)
         return L_beta
     
@@ -48,5 +42,15 @@ class ObjCondensationLoss(torch.nn.Module):
         return L_v
 
     def forward(self, x: tuple[Tensor, Tensor], y: Tensor) -> Tensor:
+
+        # check inputs
+        true_bkg = y == -1
+        if true_bkg.all():
+            raise RuntimeError(("Cannot compute object condensation loss "
+                                "when there are no true instances!"))
+        if not true_bkg.any():
+            raise RuntimeError(("Cannot compute object condensation loss "
+                                "when there is no true background!"))
+
         x, beta = x
         return self.background_loss(beta, y) + self.potential_loss(x, beta, y)
