@@ -90,7 +90,7 @@ class InstanceDecoder(nn.Module):
                 }
                 data = Batch.from_data_list([self.materialize(b) for b in data.to_data_list()])
             else:
-                self.instance_decoder.materialize(data)
+                self.materialize(data)
 
             # collapse instance edges into labels
             e = data["hit", "cluster", "particle"]
@@ -99,8 +99,9 @@ class InstanceDecoder(nn.Module):
             instances[~mask] = -1
             instances[mask] = e.edge_index[1, instances[mask]]
             data["hit"].i = instances
-            data._slice_dict["hit"]["i"] = data["hit"].ptr
-            data._inc_dict["hit"]["i"] = data._inc_dict["hit"]["x"]
+            if isinstance(data, Batch):
+                data._slice_dict["hit"]["i"] = data["hit"].ptr
+                data._inc_dict["hit"]["i"] = data._inc_dict["hit"]["x"]
 
         # calculate loss
         y = torch.full_like(data["hit"].y_semantic, -1)
