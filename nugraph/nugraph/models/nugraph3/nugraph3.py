@@ -108,10 +108,6 @@ class NuGraph3(LightningModule):
         if not self.decoders:
             raise RuntimeError('At least one decoder head must be enabled!')
 
-        # metrics
-        self.max_mem_cpu = 0.
-        self.max_mem_gpu = 0.
-
     def forward(self, data: Data,
                 stage: str = None):
         """
