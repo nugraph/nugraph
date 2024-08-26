@@ -134,20 +134,12 @@ class InstanceDecoder(nn.Module):
         Args:
             data: Heterodata graph object
         """
-        device = data["hit"].x.device
         e = data["hit", "cluster", "particle"]
-        e.edge_index = torch.empty(2, 0, dtype=torch.long, device=device)
-        e.distance = torch.empty(0, dtype=torch.long, device=device)
-        for i in range(data["particle"].num_nodes):
-            center_coords = data["particle"].ox[i]
-            dist = (data["hit"].ox - center_coords).square().sum(dim=1).sqrt()
-            hits = (dist < 1).nonzero().squeeze(1)
-            edge_index = torch.empty(2, hits.size(0), dtype=int, device=device)
-            edge_index[0] = hits
-            edge_index[1] = i
-            e.edge_index = torch.cat((e.edge_index, edge_index), dim=1)
-            e.distance = torch.cat((e.distance, dist[hits]), dim=0)
-
+        x_hit = data["hit"].ox
+        x_part = data["particle"].ox
+        dist = (x_hit[:, None, :] - x_part[None, :, :]).square().sum(dim=2)
+        e.edge_index = (dist < 1).nonzero().transpose(0, 1).detach()
+        e.distance = dist[e.edge_index[0], e.edge_index[1]].detach()
         return data
 
     def draw_event_display(self, data: HeteroData) -> pd.DataFrame:
