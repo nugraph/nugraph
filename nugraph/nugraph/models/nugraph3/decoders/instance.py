@@ -19,12 +19,14 @@ class InstanceDecoder(nn.Module):
     Args:
         hit_features: Number of hit node features
         instance_features: Number of instance features
+        s_b: Background suppression hyperparameter
     """
-    def __init__(self, hit_features: int, instance_features: int):
+    def __init__(self, hit_features: int, instance_features: int,
+                 s_b: float = 0.1):
         super().__init__()
 
         # loss function
-        self.loss = ObjCondensationLoss()
+        self.loss = ObjCondensationLoss(s_b=s_b)
 
         # Adjusted Rand Index metric
         self.rand = AdjustedRandScore()

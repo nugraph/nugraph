@@ -49,6 +49,7 @@ class NuGraph3(LightningModule):
                  semantic_head: bool = True,
                  filter_head: bool = True,
                  vertex_head: bool = False,
+                 s_b: float = 0.1,
                  instance_head: bool = False,
                  use_checkpointing: bool = False,
                  lr: float = 0.001):
@@ -77,21 +78,15 @@ class NuGraph3(LightningModule):
         self.decoders = []
 
         if event_head:
-            self.event_decoder = EventDecoder(
-                interaction_features,
-                event_classes)
+            self.event_decoder = EventDecoder(interaction_features, event_classes)
             self.decoders.append(self.event_decoder)
 
         if semantic_head:
-            self.semantic_decoder = SemanticDecoder(
-                hit_features,
-                semantic_classes)
+            self.semantic_decoder = SemanticDecoder(hit_features, semantic_classes)
             self.decoders.append(self.semantic_decoder)
 
         if filter_head:
-            self.filter_decoder = FilterDecoder(
-                hit_features,
-            )
+            self.filter_decoder = FilterDecoder(hit_features,)
             self.decoders.append(self.filter_decoder)
 
         if vertex_head:
@@ -99,10 +94,7 @@ class NuGraph3(LightningModule):
             self.decoders.append(self.vertex_decoder)
 
         if instance_head:
-            self.instance_decoder = InstanceDecoder(
-                hit_features,
-                instance_features,
-            )
+            self.instance_decoder = InstanceDecoder(hit_features, instance_features, s_b)
             self.decoders.append(self.instance_decoder)
 
         if not self.decoders:
@@ -211,6 +203,8 @@ class NuGraph3(LightningModule):
                            help='Enable instance segmentation head')
         model.add_argument('--vertex', action='store_true',
                            help='Enable vertex regression head')
+        model.add_argument("--s-b", type=float, default=0.1,
+                           help="Background suppression hyperparameter for object condensation")
         model.add_argument('--no-checkpointing', action='store_false',
                            dest="use_checkpointing",
                            help='Disable checkpointing during training')
@@ -242,6 +236,7 @@ class NuGraph3(LightningModule):
             semantic_head=args.semantic,
             filter_head=args.filter,
             vertex_head=args.vertex,
+            s_b=args.s_b,
             instance_head=args.instance,
             use_checkpointing=args.use_checkpointing,
             lr=args.learning_rate)
