@@ -9,7 +9,7 @@ from torch_geometric.data import Batch, HeteroData
 from torch_geometric.utils import cumsum
 from pytorch_lightning.loggers import TensorBoardLogger
 from ....util import ObjCondensationLoss
-from ..types import Data
+from ..types import Data, N_IT, N_IP, E_H_IT, E_H_IP
 
 class InstanceDecoder(nn.Module):
     """
@@ -62,22 +62,22 @@ class InstanceDecoder(nn.Module):
             # form instances across batch
             device = data["hit"].x.device
             imask = data["hit"].of > 0.1
-            data["particle"].x = torch.empty(imask.sum(), 0, device=device)
-            data["particle"].ox = data["hit"].ox[imask]
+            data[N_IP].x = torch.empty(imask.sum(), 0, device=device)
+            data[N_IP].ox = data["hit"].ox[imask]
             if isinstance(data, Batch):
                 repeats = torch.empty(data.num_graphs, dtype=torch.long, device=device)
-                data["particle"].batch = torch.empty(data["particle"].num_nodes,
+                data[N_IP].batch = torch.empty(data[N_IP].num_nodes,
                                                      dtype=torch.long, device=device)
                 for i in range(data.num_graphs):
                     lo, hi = data._slice_dict["hit"]["x"][i:i+2]
                     repeats[i] = imask[lo:hi].sum()
-                    data["particle"].batch[lo:hi] = i
-                data["particle"].ptr = cumsum(repeats)
-                data._slice_dict["particle"] = {
-                    "x": data["particle"].ptr,
-                    "ox": data["particle"].ptr,
+                    data[N_IP].batch[lo:hi] = i
+                data[N_IP].ptr = cumsum(repeats)
+                data._slice_dict[N_IP] = {
+                    "x": data[N_IP].ptr,
+                    "ox": data[N_IP].ptr,
                 }
-                data._inc_dict["particle"] = {
+                data._inc_dict[N_IP] = {
                     "x": data._inc_dict["hit"]["x"],
                     "ox": data._inc_dict["hit"]["x"],
                 }
@@ -86,7 +86,7 @@ class InstanceDecoder(nn.Module):
                 self.materialize(data)
 
             # collapse instance edges into labels
-            e = data["hit", "cluster", "particle"]
+            e = data[E_H_IP]
             _, instances = scatter_min(e.distance, e.edge_index[0], dim_size=data["hit"].num_nodes)
             mask = instances < e.num_edges
             instances[~mask] = -1
@@ -98,7 +98,7 @@ class InstanceDecoder(nn.Module):
 
         # calculate loss
         y = torch.full_like(data["hit"].y_semantic, -1)
-        i, j = data["hit", "cluster-truth", "particle-truth"].edge_index
+        i, j = data[E_H_IT].edge_index
         y[i] = j
         data["hit"].y_instance = y
         loss = (-1 * self.temp).exp() * self.loss(data, y) + self.temp
@@ -122,9 +122,9 @@ class InstanceDecoder(nn.Module):
         Args:
             data: Heterodata graph object
         """
-        e = data["hit", "cluster", "particle"]
+        e = data[E_H_IP]
         x_hit = data["hit"].ox
-        x_part = data["particle"].ox
+        x_part = data[N_IP].ox
         dist = (x_hit[:, None, :] - x_part[None, :, :]).square().sum(dim=2)
         e.edge_index = (dist < 1).nonzero().transpose(0, 1).detach()
         e.distance = dist[e.edge_index[0], e.edge_index[1]].detach()
