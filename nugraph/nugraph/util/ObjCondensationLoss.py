@@ -55,4 +55,4 @@ class ObjCondensationLoss(torch.nn.Module):
         v = torch.where(m_ik, dist, (1 - dist).clamp(0))
         v = ((v * q[centers]).sum(dim=1) * q).sum() / n_hit
 
-        return b1 + b2 + v
+        return torch.stack([b1 + b2, v])
