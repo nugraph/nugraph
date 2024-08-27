@@ -1,13 +1,11 @@
 """NuGraph3 instance decoder"""
 from typing import Any
-import pathlib
 import torch
 from torch import nn
 from torchmetrics.clustering import AdjustedRandScore
 from torch_scatter import scatter_min
-from torch_geometric.data import Batch, HeteroData
+from torch_geometric.data import Batch
 from torch_geometric.utils import cumsum
-from pytorch_lightning.loggers import TensorBoardLogger
 from ....util import ObjCondensationLoss
 from ..types import Data, N_IT, N_IP, E_H_IT, E_H_IP
 
