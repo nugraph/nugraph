@@ -5,7 +5,7 @@ from torch import nn
 from torchmetrics.clustering import AdjustedRandScore
 from torch_scatter import scatter_min
 from torch_geometric.data import Batch
-from torch_geometric.utils import cumsum
+from torch_geometric.utils import cumsum, unbatch
 from ....util import ObjCondensationLoss
 from ..types import Data, N_IT, N_IP, E_H_IT, E_H_IP
 
@@ -107,9 +107,24 @@ class InstanceDecoder(nn.Module):
         metrics = {}
         if stage:
             metrics[f"instance/loss-{stage}"] = loss
+
+            # number of instances
+            num_true = torch.tensor(
+                [t.size(0) for t in unbatch(data[N_IT].x, data[N_IT].batch,
+                                            batch_size=data.num_graphs)],
+                dtype=torch.float)
+            num_pred = torch.tensor(
+                [(t>0.1).sum() for t in unbatch(data["hit"].of, data["hit"].batch,
+                                                batch_size=data.num_graphs)],
+                dtype=torch.float)
+            metrics[f"instance/num-pred-{stage}"] = num_pred.mean()
+            metrics[f"instance/num-true-{stage}"] = num_true.mean()
+            metrics[f"instance/num-ratio-{stage}"] = (num_pred/num_true).mean()
+
             if materialize:
                 x = data["hit"].i
                 metrics[f"instance/adjusted-rand-{stage}"] = self.rand(x, y)
+
         if stage == "train":
             metrics["temperature/instance"] = self.temp
 
