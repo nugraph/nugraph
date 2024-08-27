@@ -8,9 +8,6 @@ from torch_scatter import scatter_min
 from torch_geometric.data import Batch, HeteroData
 from torch_geometric.utils import cumsum
 from pytorch_lightning.loggers import TensorBoardLogger
-import pandas as pd
-from sklearn.decomposition import PCA
-import plotly.express as px
 from ....util import ObjCondensationLoss
 from ..types import Data
 
@@ -25,8 +22,7 @@ class InstanceDecoder(nn.Module):
         hit_features: Number of hit node features
         instance_features: Number of instance features
     """
-    def __init__(self, hit_features: int, instance_features: int,
-                 debug_plots: bool = False):
+    def __init__(self, hit_features: int, instance_features: int):
         super().__init__()
 
         # loss function
@@ -41,9 +37,6 @@ class InstanceDecoder(nn.Module):
         # network
         self.beta_net = nn.Linear(hit_features, 1)
         self.coord_net = nn.Linear(hit_features, instance_features)
-
-        self.debug_plots = debug_plots
-        self.dfs = []
 
     def forward(self, data: Data, stage: str = None) -> dict[str, Any]:
         """
@@ -120,12 +113,6 @@ class InstanceDecoder(nn.Module):
         if stage == "train":
             metrics["temperature/instance"] = self.temp
 
-        if self.debug_plots and stage == "val" and isinstance(data, Batch):
-            for d in data.to_data_list():
-                if len(self.dfs) >= 100:
-                    break
-                self.dfs.append(self.draw_event_display(d))
-
         return loss, metrics
 
     def materialize(self, data: Data) -> None:
@@ -142,65 +129,3 @@ class InstanceDecoder(nn.Module):
         e.edge_index = (dist < 1).nonzero().transpose(0, 1).detach()
         e.distance = dist[e.edge_index[0], e.edge_index[1]].detach()
         return data
-
-    def draw_event_display(self, data: HeteroData) -> pd.DataFrame:
-        """
-        Draw event displays for NuGraph3 object condensation embedding
-
-        Args:
-            data: Graph data object
-        """
-        coords = data["hit"].ox.cpu()
-        pca = PCA(n_components=2)
-        c1, c2 = pca.fit_transform(coords).transpose()
-        beta = data["hit"].of.cpu()
-        logbeta = beta.log10()
-        xy = data["hit"].pos.cpu()
-        i = data["hit"].y_instance.cpu()
-        plane = data["hit"].plane.cpu()
-        plane = data["hit"].plane.cpu()
-        return pd.DataFrame(dict(c1=c1, c2=c2, beta=beta, logbeta=logbeta,
-                                 plane=plane, x=xy[:,0], y=xy[:,1],
-                                 instance=pd.Series(i).astype(str)))
-
-    def on_epoch_end(self,
-                     logger: TensorBoardLogger,
-                     stage: str,
-                     epoch: int) -> None:
-        """
-        NuGraph3 instance decoder end-of-epoch callback function
-
-        Args:
-            logger: Tensorboard logger object
-            stage: Training stage
-            epoch: Training epoch index
-        """
-        if not self.debug_plots or not logger:
-            return
-        path = pathlib.Path(logger.log_dir) / "objcon-plots"
-        path.mkdir(exist_ok=True)
-        if stage == "val":
-            for i, df in enumerate(self.dfs):
-
-                # object condensation true instance plot
-                fig = px.scatter(df, x="x", y="y", facet_col="plane",
-                                 color="instance", title=f"epoch {epoch}")
-                fig.update_xaxes(matches=None)
-                for a in fig.layout.annotations:
-                    a.text = a.text.replace("plane=", "")
-                fig.write_image(file=path/f"evt{i+1}-truth.png")
-
-                # object condensation beta plot
-                fig = px.scatter(df, x="x", y="y", facet_col="plane",
-                                 color="logbeta", title=f"epoch {epoch}")
-                fig.update_xaxes(matches=None)
-                for a in fig.layout.annotations:
-                    a.text = a.text.replace("plane=", "")
-                fig.write_image(file=path/f"evt{i+1}-beta.png")
-
-                # object condensation coordinate plot
-                fig = px.scatter(df, x="c1", y="c2",
-                                 color="instance", title=f"epoch {epoch}")
-                fig.write_image(file=path/f"evt{i+1}-coords.png")
-
-        self.dfs = []
