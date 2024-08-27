@@ -129,3 +129,13 @@ class InstanceDecoder(nn.Module):
         e.edge_index = (dist < 1).nonzero().transpose(0, 1).detach()
         e.distance = dist[e.edge_index[0], e.edge_index[1]].detach()
         return data
+
+    def on_epoch_end(self, logger: "WandbLogger", stage: str, epoch: int) -> None:
+        """
+        NuGraph3 decoder end-of-epoch callback function
+
+        Args:
+            logger: Tensorboard logger object
+            stage: Training stage
+            epoch: Training epoch index
+        """
