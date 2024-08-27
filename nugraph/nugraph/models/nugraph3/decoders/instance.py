@@ -107,6 +107,7 @@ class InstanceDecoder(nn.Module):
         y = torch.full_like(data["hit"].y_semantic, -1)
         i, j = data["hit", "cluster-truth", "particle-truth"].edge_index
         y[i] = j
+        data["hit"].y_instance = y
         loss = (-1 * self.temp).exp() * self.loss(data, y) + self.temp
 
         # calculate metrics
