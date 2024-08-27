@@ -49,7 +49,7 @@ class NuGraph3(LightningModule):
                  semantic_head: bool = True,
                  filter_head: bool = True,
                  vertex_head: bool = False,
-                 s_b: float = 0.1,
+                 s_b: float = 1.0,
                  instance_head: bool = False,
                  use_checkpointing: bool = False,
                  lr: float = 0.001):
@@ -203,7 +203,7 @@ class NuGraph3(LightningModule):
                            help='Enable instance segmentation head')
         model.add_argument('--vertex', action='store_true',
                            help='Enable vertex regression head')
-        model.add_argument("--s-b", type=float, default=0.1,
+        model.add_argument("--s-b", type=float, default=1.0,
                            help="Background suppression hyperparameter for object condensation")
         model.add_argument('--no-checkpointing', action='store_false',
                            dest="use_checkpointing",
