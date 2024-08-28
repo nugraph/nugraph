@@ -159,6 +159,9 @@ class HitGraphProducer(ProcessorBase):
         hits[self.node_pos] *= self.pos_norm
         data["hit"].pos = torch.tensor(hits[self.node_pos].values).float()
 
+        # plane indices
+        data["hit"].plane = torch.tensor(hits["local_plane"].values, dtype=torch.long)
+
         # node features
         data["hit"].x = torch.tensor(hits[self.node_feats].values).float()
 
