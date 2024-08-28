@@ -1,0 +1,46 @@
+name: numl
+channels:
+  - conda-forge
+  - nvidia
+  - pytorch
+  - pyg
+  - numl
+dependencies:    
+  - automake
+  - compilers
+  - flit
+  - git
+  - h5py=*=*mpich*
+  - htop
+  - ipywidgets
+  - jupyterlab
+  - jupyterlab-plotly-extension
+  - mpi4py
+  - nbstripout
+  - ncdu
+  - ninja
+  - nugraph
+  - numba
+  - numexpr>=2.8.0 # temporary fix
+  - openblas
+  - openssh
+  - particle
+  - ph5concat
+  - pip
+  - plotly
+  - pyg=2.5
+  - pynuml
+  - pynvml
+  - pytables
+  - python-kaleido
+  - pytorch::pytorch=2.2
+  - pytorch-cuda=11.8
+  - pytorch-lightning
+  - PyYAML
+  - pyzmq
+  - seaborn
+  - tensorboard
+  - torchmetrics
+  - uproot
+  - vim
+  - zlib
