@@ -1,3 +1,4 @@
+import os
 import sys
 from abc import ABC
 from typing import Any, Callable, Dict, List, Tuple
@@ -66,7 +67,7 @@ class File:
         }
 
         # open the input HDF5 file in parallel
-        self._fd = h5py.File(fname, "r", driver='mpio', comm=MPI.COMM_WORLD)
+        self._fd = h5py.File(os.path.expandvars(fname), "r", driver='mpio', comm=MPI.COMM_WORLD)
 
         # check if data partitioning key datasets exists in the file
         if parKey not in self._fd.keys():
