@@ -22,7 +22,7 @@ def setup_env(verbose: bool = True) -> None:
     env_vars = ("NUGRAPH_DIR", "NUGRAPH_DATA", "NUGRAPH_LOG")
     nugraph_env = {var: os.getenv(var) for var in env_vars}
 
-    host = platform.node()
+    host = platform.node().lower()
     if not all(nugraph_env.values()) and host not in NUGRAPH_ENV:
         print(f"Could not detect nugraph environment on host \"{host}\".")
         print(("Please export the NUGRAPH_DIR, NUGRAPH_DATA and NUGRAPH_LOG "
