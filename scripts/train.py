@@ -37,8 +37,6 @@ def configure():
 
 def train(args):
 
-    ng.setup_env()
-
     torch.manual_seed(1)
 
     # Load dataset
