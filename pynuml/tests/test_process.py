@@ -1,9 +1,12 @@
 """Test pynuml graph processing and plotting"""
 import pynuml
+import nugraph as ng
+
+UBOONE_FILE = "$NUGRAPH_DATA/uboone-opendata/uboone-opendata-e5fac1ac.test.h5"
 
 def test_process_uboone():
     """Test graph processing with MicroBooNE open data release"""
-    f = pynuml.io.File("/raid/nugraph/uboone-opendata/uboone-opendata.evt.h5")
+    f = pynuml.io.File(UBOONE_FILE)
     processor = pynuml.process.HitGraphProducer(
         file=f,
         semantic_labeller=pynuml.labels.StandardLabels(),
@@ -12,7 +15,7 @@ def test_process_uboone():
     plot = pynuml.plot.GraphPlot(
         planes=["u", "v", "y"],
         classes=pynuml.labels.StandardLabels().labels[:-1])
-    f.read_data(0, 100)
+    f.read_data_all()
     evts = f.build_evt()
     for evt in evts:
         _, data = processor(evt)
