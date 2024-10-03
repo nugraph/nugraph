@@ -1,5 +1,9 @@
 # DSI Clinic Notes
 
+# Student Information
+Alexander Bacro
+alexbacro@uchicago.edu
+
 **This README file will contain information relating to the clinic** it is NOT to be pulled back into the original nugraph repository.
   
 
