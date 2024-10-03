@@ -13,6 +13,7 @@ class ObjCondensationLoss(torch.nn.Module):
     def forward(self, data: HeteroData, y: Tensor) -> Tensor:
 
         device = data["hit"].x.device
+        dtype = data["hit"].x.dtype
 
         # hit information
         n_hit = data["hit"].num_nodes
@@ -37,7 +38,7 @@ class ObjCondensationLoss(torch.nn.Module):
         # determine which hit is the condensation point for each true instance,
         # and get beta values (f_centers) and hit indices (centers)
         e_h, e_p = e_true
-        f_centers = torch.zeros(n_true, device=device)
+        f_centers = torch.zeros(n_true, dtype=dtype, device=device)
         f_centers, centers = scatter_max(f[e_h], e_p, out=f_centers)
         centers = e_h[centers]
 
