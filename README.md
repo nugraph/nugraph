@@ -1,7 +1,10 @@
 # DSI Clinic Notes
 
+Name: Meghane Saidenberg-Coriston
+Email: msaidenberg@uchicago.edu
+
 **This README file will contain information relating to the clinic** it is NOT to be pulled back into the original nugraph repository.
-  
+
 
 This is a forked repo. The team at Fermi can cherry pick specific things back to the main repo as they would like (and they can also push down new code). Because of that this project will work a _bit_ differently.
 
