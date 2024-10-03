@@ -1,5 +1,8 @@
 # DSI Clinic Notes
 
+Name: Edward Gu
+Email: ygu0929@uchicago.edu
+
 **This README file will contain information relating to the clinic** it is NOT to be pulled back into the original nugraph repository.
   
 
