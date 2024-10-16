@@ -6,6 +6,9 @@ Email: ygu0929@uchicago.edu
 Name: Meghane Saidenberg-Coriston
 Email: msaidenberg@uchicago.edu
 
+Name: Alexander Bacro
+Email: alexbacro@uchicago.edu
+
 **This README file will contain information relating to the clinic** it is NOT to be pulled back into the original nugraph repository.
 
 
