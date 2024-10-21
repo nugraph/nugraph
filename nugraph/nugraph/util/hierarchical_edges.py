@@ -65,7 +65,7 @@ class HierarchicalEdges(BaseTransform):
             del data["hit"].y_instance
 
         # add edges to and from event node
-        data["evt"].num_nodes = 1
+        data["evt"].x = torch.empty((1, 0))
         lo = torch.arange(data["hit"].num_nodes, dtype=torch.long)
         hi = torch.zeros(data["hit"].num_nodes, dtype=torch.long)
         data["hit", "in", "evt"].edge_index = torch.stack((lo, hi), dim=0)
