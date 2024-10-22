@@ -32,7 +32,7 @@ class InstanceDecoder(nn.Module):
         self.rand = AdjustedRandScore()
 
         # temperature parameter
-        self.temp = nn.Parameter(torch.tensor([0., 0.]))
+        self.temp = nn.Parameter(torch.tensor(0.))
 
         # network
         self.beta_net = nn.Linear(hit_features, 1)
@@ -130,8 +130,7 @@ class InstanceDecoder(nn.Module):
                 metrics[f"instance/adjusted-rand-{stage}"] = self.rand(x, y)
 
         if stage == "train":
-            metrics["temperature/instance-bkg"] = self.temp[0]
-            metrics["temperature/instance-potential"] = self.temp[1]
+            metrics["temperature/instance"] = self.temp
 
         return loss, metrics
 
