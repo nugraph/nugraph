@@ -25,7 +25,7 @@ class FilterDecoder(nn.Module):
         super().__init__()
 
         # loss function
-        self.loss = nn.BCELoss()
+        self.loss = nn.BCEWithLogitsLoss()
 
         # temperature parameter
         self.temp = nn.Parameter(torch.tensor(0.))
@@ -38,10 +38,7 @@ class FilterDecoder(nn.Module):
         self.cm_precision = tm.ConfusionMatrix(normalize="pred", **metric_args)
 
         # network
-        self.net = nn.Sequential(
-            nn.Linear(hit_features, 1),
-            nn.Sigmoid(),
-        )
+        self.net = nn.Linear(hit_features, 1)
 
     def forward(self, data: Data, stage: str = None) -> dict[str, Any]:
         """
@@ -52,15 +49,8 @@ class FilterDecoder(nn.Module):
             stage: Stage name (train/val/test)
         """
 
-        # run network and add output to graph object
-        data["hit"].x_filter = self.net(data["hit"].x).squeeze(dim=-1)
-        if isinstance(data, Batch):
-            data._slice_dict["hit"]["x_filter"] = data["hit"].ptr
-            inc = torch.zeros(data.num_graphs, device=data["hit"].x.device)
-            data._inc_dict["hit"]["x_filter"] = inc
-
         # calculate loss
-        x = data["hit"].x_filter
+        x = self.net(data["hit"].x).squeeze(dim=-1)
         y = (data["hit"].y_semantic != -1).float()
         w = 2 * (-1 * self.temp).exp()
         loss = w * self.loss(x, y) + self.temp
@@ -76,6 +66,13 @@ class FilterDecoder(nn.Module):
         if stage in ["val", "test"]:
             self.cm_recall.update(x, y)
             self.cm_precision.update(x, y)
+
+        # run network and add output to graph object
+        data["hit"].x_filter = x.sigmoid()
+        if isinstance(data, Batch):
+            data._slice_dict["hit"]["x_filter"] = data["hit"].ptr
+            inc = torch.zeros(data.num_graphs, device=data["hit"].x.device)
+            data._inc_dict["hit"]["x_filter"] = inc
 
         return loss, metrics
 

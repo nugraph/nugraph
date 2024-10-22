@@ -40,15 +40,32 @@ class HierarchicalEdges(BaseTransform):
         for i, p in enumerate(self.planes):
             data[p].plane = torch.empty_like(data[p].x[:,0], dtype=int).fill_(i)
             data[p].x = torch.cat([data[p].x, data[p].plane.unsqueeze(1)], dim=1)
-        
+
         # merge planar node stores
         for attr in data[self.planes[0]].node_attrs():
             data["hit"][attr] = torch.cat([data[p][attr] for p in self.planes], dim=0)
         for p in self.planes:
             del data[p]
 
+        # add true instance nodes
+        if hasattr(data["hit"], "y_instance"):
+            y = data["hit"].y_instance
+            mask = y != -1
+            y = y[mask]
+            instances = y.unique()
+            # remap instances
+            imax = instances.max() + 1 if instances.size(0) else 0
+            if instances.size(0) != imax:
+                remap = torch.full((imax,), -1, dtype=torch.long)
+                remap[instances] = torch.arange(instances.size(0))
+                y = remap[y]
+            data["particle-truth"].x = torch.empty(instances.size(0), 0)
+            edges = torch.stack((mask.nonzero().squeeze(1), y), dim=0).long()
+            data["hit", "cluster-truth", "particle-truth"].edge_index = edges
+            del data["hit"].y_instance
+
         # add edges to and from event node
-        data["evt"].num_nodes = 1
+        data["evt"].x = torch.empty((1, 0))
         lo = torch.arange(data["hit"].num_nodes, dtype=torch.long)
         hi = torch.zeros(data["hit"].num_nodes, dtype=torch.long)
         data["hit", "in", "evt"].edge_index = torch.stack((lo, hi), dim=0)
