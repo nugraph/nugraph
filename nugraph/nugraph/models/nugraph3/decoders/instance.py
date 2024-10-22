@@ -5,6 +5,7 @@ from torch import nn
 from torchmetrics.clustering import AdjustedRandScore
 from torch_scatter import scatter_min
 from torch_geometric.data import Batch
+from torch_geometric.utils import bipartite_subgraph, cumsum, degree, unbatch
 from pytorch_lightning import LightningModule
 from ....util import ObjCondensationLoss
 from ..types import Data, N_IT, N_IP, E_H_IT, E_H_IP
@@ -22,8 +23,10 @@ class InstanceDecoder(LightningModule):
         s_b: Background suppression hyperparameter
     """
     def __init__(self, hit_features: int, instance_features: int,
-                 s_b: float = 0.1):
+                 s_b: float = 0.1, min_degree: int = 1):
         super().__init__()
+
+        self.min_degree = min_degree
 
         # loss function
         self.loss = ObjCondensationLoss(s_b=s_b)
@@ -142,10 +145,40 @@ class InstanceDecoder(LightningModule):
         """
         e = data[E_H_IP]
         x_hit = data["hit"].ox
-        x_part = data[N_IP].ox
-        dist = (x_hit[:, None, :] - x_part[None, :, :]).square().sum(dim=2)
+
+        # condensation mask
+        fmask = data["hit"].of > 0.1 # which hits are condensation points
+        fidx = fmask.nonzero().squeeze(1)
+
+        # initial particle instance nodes
+        data[N_IP].x = torch.empty(fidx.size(0), 0, device=self.device)
+        data[N_IP].ox = x_hit[fmask]
+
+        # add edges from condensation hits to non-condensation hits
+        dist = (x_hit[~fmask, None, :] - x_hit[None, fmask, :]).square().sum(dim=2)
         e.edge_index = (dist < 1).nonzero().transpose(0, 1).detach()
         e.distance = dist[e.edge_index[0], e.edge_index[1]].detach()
+        e.edge_index[0] = torch.nonzero(~fmask).squeeze(1)[e.edge_index[0]]
+
+        # prune particle instances with no hits
+        deg = degree(e.edge_index[1], num_nodes=data[N_IP].num_nodes)
+        dmask = deg >= self.min_degree
+        e.edge_index, e.distance = bipartite_subgraph(
+            (torch.ones(data["hit"].num_nodes, dtype=torch.bool, device=self.device), dmask),
+            e.edge_index, e.distance, size=(data["hit"].num_nodes, data[N_IP].num_nodes), relabel_nodes=True)
+        data[N_IP].x = data[N_IP].x[dmask]
+        data[N_IP].ox = data[N_IP].ox[dmask]
+
+        #  add edges from particle nodes to condensation hits
+        pidx = fidx[dmask]
+        dist = (x_hit[fidx, None, :] - x_hit[None, pidx, :]).square().sum(dim=2)
+        edge_index = (dist < 1).nonzero().transpose(0, 1).detach()
+        if edge_index.size(1):
+            distance = dist[edge_index[0], edge_index[1]].detach()
+            edge_index[0] = fidx[edge_index[0]]
+            e.edge_index = torch.cat((e.edge_index, edge_index), dim=1)
+            e.distance = torch.cat((e.distance, distance), dim=0)
+
         return data
 
     def on_epoch_end(self, logger: "WandbLogger", stage: str, epoch: int) -> None:
