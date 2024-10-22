@@ -64,6 +64,8 @@ class InstanceDecoder(LightningModule):
         if materialize:
             # form instances across batch
             imask = data["hit"].of > 0.1
+            # we don't want to do this part yet. don't figure out how to
+            # unbatch the predicted particle nodes until we've filtered out vestigial ones
             data[N_IP].x = torch.empty(imask.sum(), 0, device=self.device)
             data[N_IP].ox = data["hit"].ox[imask]
             if isinstance(data, Batch):
@@ -107,6 +109,18 @@ class InstanceDecoder(LightningModule):
         b, v = loss
         loss = loss.sum()
 
+        # calculate rand score per graph
+        # note: to prevent crosstalk, we should delay materializing of the
+        # true and predicted instance labels until _after_ we've unbatched
+        if isinstance(data, Batch):
+            for x, y in zip(unbatch(data["hit"].i, batch=data["hit"].batch,
+                                    batch_size=data.num_graphs),
+                            unbatch(data["hit"].y_instance, batch=data["hit"].batch,
+                                    batch_size=data.num_graphs)):
+                self.rand.update(x, y)
+        else:
+            self.rand.update(data["hit"].i, data["hit"].y_instance)
+
         # calculate metrics
         metrics = {}
         if stage:
@@ -128,8 +142,8 @@ class InstanceDecoder(LightningModule):
             metrics[f"instance/num-ratio-{stage}"] = (num_pred/num_true).mean()
 
             if materialize:
-                x = data["hit"].i
-                metrics[f"instance/adjusted-rand-{stage}"] = self.rand(x, y)
+                metrics[f"instance/adjusted-rand-{stage}"] = self.rand.compute()
+                self.rand.reset()
 
         if stage == "train":
             metrics["temperature/instance"] = self.temp
