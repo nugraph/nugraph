@@ -5,11 +5,11 @@ from torch import nn
 from torchmetrics.clustering import AdjustedRandScore
 from torch_scatter import scatter_min
 from torch_geometric.data import Batch
-from torch_geometric.utils import cumsum, unbatch
+from pytorch_lightning import LightningModule
 from ....util import ObjCondensationLoss
 from ..types import Data, N_IT, N_IP, E_H_IT, E_H_IP
 
-class InstanceDecoder(nn.Module):
+class InstanceDecoder(LightningModule):
     """
     NuGraph3 instance decoder module
 
@@ -60,14 +60,13 @@ class InstanceDecoder(nn.Module):
         materialize = (data["hit"].of > 0.1).sum() < 2000
         if materialize:
             # form instances across batch
-            device = data["hit"].x.device
             imask = data["hit"].of > 0.1
-            data[N_IP].x = torch.empty(imask.sum(), 0, device=device)
+            data[N_IP].x = torch.empty(imask.sum(), 0, device=self.device)
             data[N_IP].ox = data["hit"].ox[imask]
             if isinstance(data, Batch):
-                repeats = torch.empty(data.num_graphs, dtype=torch.long, device=device)
+                repeats = torch.empty(data.num_graphs, dtype=torch.long, device=self.device)
                 data[N_IP].batch = torch.empty(data[N_IP].num_nodes,
-                                                     dtype=torch.long, device=device)
+                                               dtype=torch.long, device=self.device)
                 for i in range(data.num_graphs):
                     lo, hi = data._slice_dict["hit"]["x"][i:i+2]
                     repeats[i] = imask[lo:hi].sum()
