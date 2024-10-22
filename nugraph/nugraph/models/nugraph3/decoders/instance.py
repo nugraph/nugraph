@@ -60,7 +60,7 @@ class InstanceDecoder(LightningModule):
             data._inc_dict["hit"]["ox"] = data._inc_dict["hit"]["x"]
 
         # materialize instances
-        materialize = (data["hit"].of > 0.1).sum() < 2000
+        materialize = True
         if materialize:
             # form instances across batch
             imask = data["hit"].of > 0.1
