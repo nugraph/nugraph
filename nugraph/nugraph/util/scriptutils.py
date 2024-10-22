@@ -1,6 +1,5 @@
 """Utility functions for scripts and notebooks"""
 import os
-import sys
 import platform
 from pynvml.smi import nvidia_smi
 
@@ -45,6 +44,7 @@ def setup_env(verbose: bool = True) -> None:
         print()
 
 def configure_device(cpu: bool = False) -> tuple[str, str | list[int]]:
+    """Automatically select GPU device"""
     if not cpu:
         try:
             # query GPU information using pynvml
@@ -61,4 +61,3 @@ def configure_device(cpu: bool = False) -> tuple[str, str | list[int]]:
         except:
             pass
     return 'cpu', 'auto'
-
