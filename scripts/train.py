@@ -66,8 +66,16 @@ def train(args):
 
     model = Model.from_args(args, nudata)
 
+<<<<<<< Updated upstream
     accelerator, devices = ng.util.configure_device()
     trainer = pl.Trainer(accelerator=accelerator, devices=devices,
+=======
+    # profiler = pl.profilers.PyTorchProfiler(profile_memory=True,
+    #                                         filename="./profile.txt")
+
+    # accelerator, devices = ng.util.configure_device()
+    trainer = pl.Trainer(accelerator="gpu", devices=[3],
+>>>>>>> Stashed changes
                          max_epochs=args.epochs,
                          limit_train_batches=args.limit_train_batches,
                          limit_val_batches=args.limit_val_batches,

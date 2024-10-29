@@ -164,11 +164,11 @@ class NuGraph3(LightningModule):
     def configure_optimizers(self) -> tuple:
         optimizer = AdamW(self.parameters(),
                           lr=self.lr)
-        onecycle = OneCycleLR(
-                optimizer,
-                max_lr=self.lr,
-                total_steps=self.trainer.estimated_stepping_batches)
-        return [optimizer], {'scheduler': onecycle, 'interval': 'step'}
+        # onecycle = OneCycleLR(
+        #         optimizer,
+        #         max_lr=self.lr,
+        #         total_steps=self.trainer.estimated_stepping_batches)
+        return [optimizer] #, {'scheduler': onecycle, 'interval': 'step'}
 
     @staticmethod
     def add_model_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
