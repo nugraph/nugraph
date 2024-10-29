@@ -7,17 +7,37 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    - uses: conda-incubator/setup-miniconda@v3
+    - name: setting up the conda environment
+      uses: conda-incubator/setup-miniconda@v3
       with:
-        environment-file: numl.yaml
         miniforge-version: latest
-    - name: Analysing the code with pylint
+        activate-environment: numl
+    - name: getting the date
+      id: get-date
+      run: echo "today=$(/bin/date -u '+%Y%m%d')" >> $GITHUB_OUTPUT
+      shell: bash
+    - name: caching the conda environment
+      uses: actions/cache@v3
+      id: cache
+      with:
+        path: ${{ env.CONDA }}/envs
+        key:
+          conda-${{ runner.os }}--${{ runner.arch }}--${{
+          steps.get-date.outputs.today }}-${{
+          hashFiles('numl.yml')}}-${{env.CACHE_NUMBER}}
+      env:
+        CACHE_NUMBER: 0
+    - name: updating the conda environment
+      run:
+        mamba env update -n anaconda-client-env -f numl.yaml
+      if: steps.cache.outputs.cache-hit != 'true'
+    - name: analysing the code with pylint
       id: pylint
       run: |
         pylint $(git ls-files '*.py')
-    - name: Install packages
+    - name: installing local packages
       run: |
         pip install --no-deps ./pynuml ./nugraph
-    - name: Run unit tests
+    - name: running python unit tests
       run: pytest
       
