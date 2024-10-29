@@ -2,7 +2,7 @@
 from typing import Any
 import torch
 from torch import nn
-from torchmetrics.clustering import AdjustedRandScore
+from torchmetrics.functional.clustering import adjusted_rand_score
 from torch_scatter import scatter_min
 from torch_geometric.data import Batch
 from torch_geometric.utils import bipartite_subgraph, cumsum, degree, unbatch
@@ -30,9 +30,6 @@ class InstanceDecoder(LightningModule):
 
         # loss function
         self.loss = ObjCondensationLoss(s_b=s_b)
-
-        # Adjusted Rand Index metric
-        self.rand = AdjustedRandScore()
 
         # temperature parameter
         self.temp = nn.Parameter(torch.tensor(0.))
@@ -113,13 +110,15 @@ class InstanceDecoder(LightningModule):
         # note: to prevent crosstalk, we should delay materializing of the
         # true and predicted instance labels until _after_ we've unbatched
         if isinstance(data, Batch):
-            for x, y in zip(unbatch(data["hit"].i, batch=data["hit"].batch,
-                                    batch_size=data.num_graphs),
-                            unbatch(data["hit"].y_instance, batch=data["hit"].batch,
-                                    batch_size=data.num_graphs)):
-                self.rand.update(x, y)
+            z = zip(unbatch(data["hit"].i, batch=data["hit"].batch,
+                            batch_size=data.num_graphs),
+                    unbatch(data["hit"].y_instance, batch=data["hit"].batch,
+                            batch_size=data.num_graphs))
+            rand = torch.mean(torch.stack([adjusted_rand_score(x, y) for x, y in z]))
         else:
-            self.rand.update(data["hit"].i, data["hit"].y_instance)
+            rand = adjusted_rand_score(data["hit"].i, data["hit"].y_instance)
+        if not -1. < rand < 1.:
+            raise RuntimeError(f"Adjusted Rand Score metric value {rand} is outside allowed range!")
 
         # calculate metrics
         metrics = {}
@@ -134,16 +133,14 @@ class InstanceDecoder(LightningModule):
                                             batch_size=data.num_graphs)],
                 dtype=torch.float)
             num_pred = torch.tensor(
-                [(t>0.1).sum() for t in unbatch(data["hit"].of, data["hit"].batch,
-                                                batch_size=data.num_graphs)],
+                [t.size(0) for t in unbatch(data[N_IP].x, data[N_IP].batch,
+                                            batch_size=data.num_graphs)],
                 dtype=torch.float)
             metrics[f"instance/num-pred-{stage}"] = num_pred.mean()
             metrics[f"instance/num-true-{stage}"] = num_true.mean()
             metrics[f"instance/num-ratio-{stage}"] = (num_pred/num_true).mean()
 
-            if materialize:
-                metrics[f"instance/adjusted-rand-{stage}"] = self.rand.compute()
-                self.rand.reset()
+            metrics[f"instance/adjusted-rand-{stage}"] = rand
 
         if stage == "train":
             metrics["temperature/instance"] = self.temp
