@@ -6,7 +6,7 @@ from pynvml.smi import nvidia_smi
 NUGRAPH_ENV = {
     "sneezy": {
         "NUGRAPH_DIR": "/data/home/$USER/nugraph",
-        "NUGRAPH_DATA": "/share/lazy/nugraph",
+        "NUGRAPH_DATA": "/data/home/hewesje/data",
         "NUGRAPH_LOG": "/data/home/$USER/logs",
     },
     "heimdall": {
