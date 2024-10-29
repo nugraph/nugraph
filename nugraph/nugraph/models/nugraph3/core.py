@@ -102,7 +102,6 @@ class NuGraphCore(nn.Module):
         # message-passing from planar nodes to nexus nodes
         self.plane_to_nexus = NuGraphBlock(hit_features, nexus_features,
                                            nexus_features)
-        
 
         # message-passing from nexus nodes to interaction nodes
         self.nexus_to_interaction = NuGraphBlock(nexus_features,

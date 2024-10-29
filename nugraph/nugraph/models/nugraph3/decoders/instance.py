@@ -1,17 +1,16 @@
 """NuGraph3 instance decoder"""
 from typing import Any
-import pathlib
 import torch
 from torch import nn
-from torch_geometric.data import Batch, HeteroData
-from pytorch_lightning.loggers import TensorBoardLogger
-import pandas as pd
-from sklearn.decomposition import PCA
-import plotly.express as px
+from torchmetrics.functional.clustering import adjusted_rand_score
+from torch_scatter import scatter_min
+from torch_geometric.data import Batch
+from torch_geometric.utils import bipartite_subgraph, cumsum, degree, unbatch
+from pytorch_lightning import LightningModule
 from ....util import ObjCondensationLoss
-from ..types import Data
+from ..types import Data, N_IT, N_IP, E_H_IT, E_H_IP
 
-class InstanceDecoder(nn.Module):
+class InstanceDecoder(LightningModule):
     """
     NuGraph3 instance decoder module
 
@@ -21,12 +20,16 @@ class InstanceDecoder(nn.Module):
     Args:
         hit_features: Number of hit node features
         instance_features: Number of instance features
+        s_b: Background suppression hyperparameter
     """
-    def __init__(self, hit_features: int, instance_features: int):
+    def __init__(self, hit_features: int, instance_features: int,
+                 s_b: float = 0.1, min_degree: int = 1):
         super().__init__()
 
+        self.min_degree = min_degree
+
         # loss function
-        self.loss = ObjCondensationLoss()
+        self.loss = ObjCondensationLoss(s_b=s_b)
 
         # temperature parameter
         self.temp = nn.Parameter(torch.tensor(0.))
@@ -34,8 +37,6 @@ class InstanceDecoder(nn.Module):
         # network
         self.beta_net = nn.Linear(hit_features, 1)
         self.coord_net = nn.Linear(hit_features, instance_features)
-
-        self.dfs = []
 
     def forward(self, data: Data, stage: str = None) -> dict[str, Any]:
         """
@@ -52,26 +53,97 @@ class InstanceDecoder(nn.Module):
         if isinstance(data, Batch):
             data._slice_dict["hit"]["of"] = data["hit"].ptr
             data._slice_dict["hit"]["ox"] = data["hit"].ptr
-            inc = torch.zeros(data.num_graphs, device=data["hit"].x.device)
-            data._inc_dict["hit"]["of"] = inc
-            data._inc_dict["hit"]["ox"] = inc
+            data._inc_dict["hit"]["of"] = data._inc_dict["hit"]["x"]
+            data._inc_dict["hit"]["ox"] = data._inc_dict["hit"]["x"]
+
+        # materialize instances
+        materialize = True
+        if materialize:
+            # form instances across batch
+            imask = data["hit"].of > 0.1
+            # we don't want to do this part yet. don't figure out how to
+            # unbatch the predicted particle nodes until we've filtered out vestigial ones
+            data[N_IP].x = torch.empty(imask.sum(), 0, device=self.device)
+            data[N_IP].ox = data["hit"].ox[imask]
+            if isinstance(data, Batch):
+                repeats = torch.empty(data.num_graphs, dtype=torch.long, device=self.device)
+                data[N_IP].batch = torch.empty(data[N_IP].num_nodes,
+                                               dtype=torch.long, device=self.device)
+                for i in range(data.num_graphs):
+                    lo, hi = data._slice_dict["hit"]["x"][i:i+2]
+                    repeats[i] = imask[lo:hi].sum()
+                    data[N_IP].batch[lo:hi] = i
+                data[N_IP].ptr = cumsum(repeats)
+                data._slice_dict[N_IP] = {
+                    "x": data[N_IP].ptr,
+                    "ox": data[N_IP].ptr,
+                }
+                data._inc_dict[N_IP] = {
+                    "x": data._inc_dict["hit"]["x"],
+                    "ox": data._inc_dict["hit"]["x"],
+                }
+                data = Batch.from_data_list([self.materialize(b) for b in data.to_data_list()])
+            else:
+                self.materialize(data)
+
+            # collapse instance edges into labels
+            e = data[E_H_IP]
+            _, instances = scatter_min(e.distance, e.edge_index[0], dim_size=data["hit"].num_nodes)
+            mask = instances < e.num_edges
+            instances[~mask] = -1
+            instances[mask] = e.edge_index[1, instances[mask]]
+            data["hit"].i = instances
+            if isinstance(data, Batch):
+                data._slice_dict["hit"]["i"] = data["hit"].ptr
+                data._inc_dict["hit"]["i"] = data._inc_dict["hit"]["x"]
 
         # calculate loss
-        y = data["hit"].y_instance
-        w = (-1 * self.temp).exp()
-        loss = w * self.loss((data["hit"].ox, data["hit"].of), y) + self.temp
+        y = torch.full_like(data["hit"].y_semantic, -1)
+        i, j = data[E_H_IT].edge_index
+        y[i] = j
+        data["hit"].y_instance = y
+        loss = (-1 * self.temp).exp() * self.loss(data, y) + self.temp
+        b, v = loss
+        loss = loss.sum()
+
+        # calculate rand score per graph
+        # note: to prevent crosstalk, we should delay materializing of the
+        # true and predicted instance labels until _after_ we've unbatched
+        if isinstance(data, Batch):
+            z = zip(unbatch(data["hit"].i, batch=data["hit"].batch,
+                            batch_size=data.num_graphs),
+                    unbatch(data["hit"].y_instance, batch=data["hit"].batch,
+                            batch_size=data.num_graphs))
+            rand = torch.mean(torch.stack([adjusted_rand_score(x, y) for x, y in z]))
+        else:
+            rand = adjusted_rand_score(data["hit"].i, data["hit"].y_instance)
+        if not -1. < rand < 1.:
+            raise RuntimeError(f"Adjusted Rand Score metric value {rand} is outside allowed range!")
 
         # calculate metrics
         metrics = {}
         if stage:
             metrics[f"instance/loss-{stage}"] = loss
+            metrics[f"instance/bkg-loss-{stage}"] = b
+            metrics[f"instance/potential-loss-{stage}"] = v
+
+            # number of instances
+            num_true = torch.tensor(
+                [t.size(0) for t in unbatch(data[N_IT].x, data[N_IT].batch,
+                                            batch_size=data.num_graphs)],
+                dtype=torch.float)
+            num_pred = torch.tensor(
+                [t.size(0) for t in unbatch(data[N_IP].x, data[N_IP].batch,
+                                            batch_size=data.num_graphs)],
+                dtype=torch.float)
+            metrics[f"instance/num-pred-{stage}"] = num_pred.mean()
+            metrics[f"instance/num-true-{stage}"] = num_true.mean()
+            metrics[f"instance/num-ratio-{stage}"] = (num_pred/num_true).mean()
+
+            metrics[f"instance/adjusted-rand-{stage}"] = rand
+
         if stage == "train":
             metrics["temperature/instance"] = self.temp
-        if stage == "val" and isinstance(data, Batch):
-            for d in data.to_data_list():
-                if len(self.dfs) >= 100:
-                    break
-                self.dfs.append(self.draw_event_display(d))
 
         return loss, metrics
 
@@ -82,89 +154,50 @@ class InstanceDecoder(nn.Module):
         Args:
             data: Heterodata graph object
         """
-        device = data["hit"].x.device
-        centers = (data["hit"].of > 0.1).nonzero().squeeze(1)
-        data["particles"].num_nodes = centers.size(0)
-        print(f"generating {centers.size(0)} clusters")
-        e = data["hit", "cluster", "particles"]
-        e.edge_index = torch.empty(2, 0, dtype=torch.long, device=device)
-        e.distance = torch.empty(0, dtype=torch.long, device=device)
-        for i, center in enumerate(centers):
-            print(f"    instance {i+1}")
-            center_coords = data["hit"].ox[center]
-            dist = (data["hit"].ox - center_coords).square().sum(dim=1).sqrt()
-            hits = (dist < 1).nonzero().squeeze(1)
-            edge_index = torch.empty(2, hits.size(0), dtype=int, device=device)
-            edge_index[0] = hits
-            edge_index[1] = i
+        e = data[E_H_IP]
+        x_hit = data["hit"].ox
+
+        # condensation mask
+        fmask = data["hit"].of > 0.1 # which hits are condensation points
+        fidx = fmask.nonzero().squeeze(1)
+
+        # initial particle instance nodes
+        data[N_IP].x = torch.empty(fidx.size(0), 0, device=self.device)
+        data[N_IP].ox = x_hit[fmask]
+
+        # add edges from condensation hits to non-condensation hits
+        dist = (x_hit[~fmask, None, :] - x_hit[None, fmask, :]).square().sum(dim=2)
+        e.edge_index = (dist < 1).nonzero().transpose(0, 1).detach()
+        e.distance = dist[e.edge_index[0], e.edge_index[1]].detach()
+        e.edge_index[0] = torch.nonzero(~fmask).squeeze(1)[e.edge_index[0]]
+
+        # prune particle instances with no hits
+        deg = degree(e.edge_index[1], num_nodes=data[N_IP].num_nodes)
+        dmask = deg >= self.min_degree
+        e.edge_index, e.distance = bipartite_subgraph(
+            (torch.ones(data["hit"].num_nodes, dtype=torch.bool, device=self.device), dmask),
+            e.edge_index, e.distance, size=(data["hit"].num_nodes, data[N_IP].num_nodes), relabel_nodes=True)
+        data[N_IP].x = data[N_IP].x[dmask]
+        data[N_IP].ox = data[N_IP].ox[dmask]
+
+        #  add edges from particle nodes to condensation hits
+        pidx = fidx[dmask]
+        dist = (x_hit[fidx, None, :] - x_hit[None, pidx, :]).square().sum(dim=2)
+        edge_index = (dist < 1).nonzero().transpose(0, 1).detach()
+        if edge_index.size(1):
+            distance = dist[edge_index[0], edge_index[1]].detach()
+            edge_index[0] = fidx[edge_index[0]]
             e.edge_index = torch.cat((e.edge_index, edge_index), dim=1)
-            e.distance = torch.cat((e.distance, dist[hits]), dim=0)
+            e.distance = torch.cat((e.distance, distance), dim=0)
 
-        print("graph has", data["hit", "cluster", "particles"].num_edges, "instance edges")
-        
-        _, instances = scatter_min(e.distance, e.edge_index[0], dim_size=data["hit"].num_nodes)
-        mask = instances != -1
-        instances[mask] = e.edge_index[1,instances[mask]]
-        data["hit"].i = instances
+        return data
 
-    def draw_event_display(self, data: HeteroData) -> pd.DataFrame:
+    def on_epoch_end(self, logger: "WandbLogger", stage: str, epoch: int) -> None:
         """
-        Draw event displays for NuGraph3 object condensation embedding
-
-        Args:
-            data: Graph data object
-        """
-        coords = data["hit"].ox.cpu()
-        pca = PCA(n_components=2)
-        c1, c2 = pca.fit_transform(coords).transpose()
-        beta = data["hit"].of.cpu()
-        logbeta = beta.log10()
-        xy = data["hit"].pos.cpu()
-        i = data["hit"].y_instance.cpu()
-        plane = data["hit"].plane.cpu()
-        plane = data["hit"].plane.cpu()
-        return pd.DataFrame(dict(c1=c1, c2=c2, beta=beta, logbeta=logbeta,
-                                 plane=plane, x=xy[:,0], y=xy[:,1],
-                                 instance=pd.Series(i).astype(str)))
-
-    def on_epoch_end(self,
-                     logger: TensorBoardLogger,
-                     stage: str,
-                     epoch: int) -> None:
-        """
-        NuGraph3 instance decoder end-of-epoch callback function
+        NuGraph3 decoder end-of-epoch callback function
 
         Args:
             logger: Tensorboard logger object
             stage: Training stage
             epoch: Training epoch index
         """
-        if not logger:
-            return
-        path = pathlib.Path(logger.log_dir) / "objcon-plots"
-        path.mkdir(exist_ok=True)
-        if stage == "val":
-            for i, df in enumerate(self.dfs):
-
-                # object condensation true instance plot
-                fig = px.scatter(df, x="x", y="y", facet_col="plane",
-                                 color="instance", title=f"epoch {epoch}")
-                fig.update_xaxes(matches=None)
-                for a in fig.layout.annotations:
-                    a.text = a.text.replace("plane=", "")
-                fig.write_image(file=path/f"evt{i+1}-truth.png")
-
-                # object condensation beta plot
-                fig = px.scatter(df, x="x", y="y", facet_col="plane",
-                                 color="logbeta", title=f"epoch {epoch}")
-                fig.update_xaxes(matches=None)
-                for a in fig.layout.annotations:
-                    a.text = a.text.replace("plane=", "")
-                fig.write_image(file=path/f"evt{i+1}-beta.png")
-
-                # object condensation coordinate plot
-                fig = px.scatter(df, x="c1", y="c2",
-                                 color="instance", title=f"epoch {epoch}")
-                fig.write_image(file=path/f"evt{i+1}-coords.png")
-
-        self.dfs = []
