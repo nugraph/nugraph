@@ -7,7 +7,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    - name: setting up the conda environment
+    - name: setting up the mamba environment
       uses: conda-incubator/setup-miniconda@v3
       with:
         miniforge-version: latest
@@ -16,7 +16,7 @@ jobs:
       id: get-date
       run: echo "today=$(/bin/date -u '+%Y%m%d')" >> $GITHUB_OUTPUT
       shell: bash
-    - name: caching the conda environment
+    - name: caching the mamba environment
       uses: actions/cache@v3
       id: cache
       with:
@@ -27,9 +27,9 @@ jobs:
           hashFiles('numl.yml')}}-${{env.CACHE_NUMBER}}
       env:
         CACHE_NUMBER: 0
-    - name: updating the conda environment
+    - name: updating the mamba environment
       run:
-        mamba env update -n anaconda-client-env -f numl.yaml
+        mamba env update -n numl -f numl.yaml
       if: steps.cache.outputs.cache-hit != 'true'
     - name: analysing the code with pylint
       id: pylint
