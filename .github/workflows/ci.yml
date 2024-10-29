@@ -17,7 +17,7 @@ jobs:
       run: echo "today=$(/bin/date -u '+%Y%m%d')" >> $GITHUB_OUTPUT
       shell: bash
     - name: caching the mamba environment
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       id: cache
       with:
         path: ${{ env.CONDA }}/envs
@@ -34,6 +34,7 @@ jobs:
     - name: analysing the code with pylint
       id: pylint
       run: |
+        mamba list
         pylint $(git ls-files '*.py')
     - name: installing local packages
       run: |
