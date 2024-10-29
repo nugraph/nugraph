@@ -2,10 +2,8 @@
 import argparse
 import warnings
 
-import torch
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import OneCycleLR
-from torch_geometric.data import Batch
 
 from pytorch_lightning import LightningModule
 
