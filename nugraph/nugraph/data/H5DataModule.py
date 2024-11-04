@@ -12,13 +12,13 @@ from torch_geometric.loader import DataLoader
 from torch_geometric.transforms import Compose
 from pytorch_lightning import LightningDataModule
 
-from ..data import H5Dataset, BalanceSampler
+from ..data import NuGraphDataset, BalanceSampler
 from ..util import PositionFeatures, FeatureNormMetric, FeatureNorm, HierarchicalEdges, EventLabels
 
 DEFAULT_DATA = ("$NUGRAPH_DATA/uboone-opendata/"
                 "uboone-opendata-19be46d89d0f22f5a78641d724c1fedd.gnn.h5")
 
-class H5DataModule(LightningDataModule):
+class NuGraphDataModule(LightningDataModule):
     """PyTorch Lightning data module for neutrino graph data."""
     def __init__(self,
                  data_path: str = "auto",
@@ -88,9 +88,9 @@ class H5DataModule(LightningDataModule):
                              HierarchicalEdges(self.planes),
                              EventLabels()))
 
-        self.train_dataset = H5Dataset(self.filename, train_samples, transform)
-        self.val_dataset = H5Dataset(self.filename, val_samples, transform)
-        self.test_dataset = H5Dataset(self.filename, test_samples, transform)
+        self.train_dataset = NuGraphDataset(self.filename, train_samples, transform)
+        self.val_dataset = NuGraphDataset(self.filename, val_samples, transform)
+        self.test_dataset = NuGraphDataset(self.filename, test_samples, transform)
 
     @staticmethod
     def generate_samples(data_path: str):
@@ -122,7 +122,7 @@ class H5DataModule(LightningDataModule):
             if 'datasize/train' in f:
                 del f['datasize/train']
         transform = PositionFeatures(planes)
-        dataset = H5Dataset(data_path, train, transform)
+        dataset = NuGraphDataset(data_path, train, transform)
         def datasize(data):
             ret = 0
             for store in data.stores:
@@ -144,7 +144,7 @@ class H5DataModule(LightningDataModule):
                 print('Metadata not found in file! "planes" is required.')
                 sys.exit()
 
-            loader = DataLoader(H5Dataset(data_path,
+            loader = DataLoader(NuGraphDataset(data_path,
                                           list(f['dataset'].keys()),
                                           PositionFeatures(planes)),
                                 batch_size=batch_size)
