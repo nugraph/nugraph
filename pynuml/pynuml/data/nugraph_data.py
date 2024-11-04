@@ -1,7 +1,12 @@
 """NuGraph data object"""
 import h5py
 import torch
-from torch_geometric.data import HeteroData
+from torch_geometric.data import Batch, HeteroData
+
+N_IT = "particle-truth" # true instance node store
+N_IP = "particle" # predicted instance node store
+E_H_IT = ("hit", "cluster-truth", N_IT) # hit to true instance edges
+E_H_IP = ("hit", "cluster", N_IP) # hit to predicted instance edges
 
 class NuGraphData(HeteroData):
     """NuGraph data object"""
@@ -10,6 +15,22 @@ class NuGraphData(HeteroData):
 
     def __init__(self):
         super().__init__()
+
+    def materialize_true_particles(self, regenerate: bool = False) -> None:
+        """Materialize true particle clusters
+        
+        Args:
+            regenerate: Whether to regenerate already materialized clusters
+        """
+
+        # return if clusters already materialized
+        if hasattr(self[N_IT], "i") and not regenerate:
+            return
+
+        y = torch.full_like(self["hit"].y_semantic, -1)
+        i, j = self[E_H_IT].edge_index
+        y[i] = j
+        self["hit"].y_instance = y
 
     @classmethod
     def load(cls, dset: h5py.Dataset) -> "NuGraphData":
