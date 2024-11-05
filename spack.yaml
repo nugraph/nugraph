@@ -12,8 +12,8 @@ spack:
   repos:
   - $spack/var/spack/repos/numl-spack
 
-  # mirrors:
-  #   local-buildcache:
-  #     url: oci://ghcr.io/<username>/spack-buildcache
-  #     signed: false
+  mirrors:
+    local-buildcache:
+      url: oci://ghcr.io/nugraph/spack-buildcache
+      signed: false
     
