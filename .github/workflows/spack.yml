@@ -19,7 +19,7 @@ jobs:
         # buildcache: true  # Configure oci://ghcr.io/spack/github-actions-buildcache
         color: true       # Force color output (SPACK_COLOR=always)
         path: spack       # Where to clone Spack
-    - run: spack install py-numl py-nugraph
+    - run: spack -e . install py-numl py-nugraph
     # - name: analysing the code with pylint
     #   id: pylint
     #   run: |
