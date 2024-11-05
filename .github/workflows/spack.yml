@@ -1,0 +1,30 @@
+name: spack
+
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - name: checkout nugraph spack repo
+      uses: actions/checkout@v4
+      with:
+        name: nugraph/numl-spack
+    - name: set up spack
+      uses: spack/setup-spack@v2
+      with:
+        ref: develop      # Spack version (examples: develop, releases/v0.21)
+        # buildcache: true  # Configure oci://ghcr.io/spack/github-actions-buildcache
+        color: true       # Force color output (SPACK_COLOR=always)
+        path: spack       # Where to clone Spack
+    - run: spack install pynuml nugraph
+    # - name: analysing the code with pylint
+    #   id: pylint
+    #   run: |
+    #     mamba list
+    #     pylint $(git ls-files '*.py')
+    # - name: installing local packages
+    #   run: |
+    #     pip install --no-deps ./pynuml ./nugraph
+    # - name: running python unit tests
+    #   run: pytest
