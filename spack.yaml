@@ -1,4 +1,19 @@
 spack:
+  view: /opt/view
+  specs:
+  - py-numl
+  - py-nugraph
+
+  config:
+    install_tree:
+      root: /opt/spack
+      padded_length: 128
+
   repos:
   - ./numl-spack
+
+  # mirrors:
+  #   local-buildcache:
+  #     url: oci://ghcr.io/<username>/spack-buildcache
+  #     signed: false
     
