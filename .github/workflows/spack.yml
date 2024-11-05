@@ -6,6 +6,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+    - name: checkout nugraph repo
+      uses: actions/checkout@v4
     - name: checkout nugraph spack repo
       uses: actions/checkout@v4
       with:
