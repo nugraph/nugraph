@@ -21,7 +21,14 @@ jobs:
         repository: nugraph/numl-spack
         path: spack/var/spack/repos/numl-spack
 
-    - run: spack -e . install
+    - name: build spack environment
+      run: spack -e . install
+
+    - name: push packages to spack buildcache
+      run: |
+        spack -e . mirror set --push --oci-username ${{ github.actor }} --oci-password "${{ secrets.GITHUB_TOKEN }}" local-buildcache
+        spack -e . buildcache push --base-image ubuntu:latest --update-index local-buildcache
+      if: ${{ !cancelled() }}
 
     # - name: analysing the code with pylint
     #   id: pylint
