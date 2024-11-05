@@ -9,7 +9,7 @@ jobs:
     - name: checkout nugraph spack repo
       uses: actions/checkout@v4
       with:
-        name: nugraph/numl-spack
+        repository: nugraph/numl-spack
     - name: set up spack
       uses: spack/setup-spack@v2
       with:
