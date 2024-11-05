@@ -10,7 +10,7 @@ spack:
       padded_length: 128
 
   repos:
-  - ./numl-spack
+  - $spack/var/spack/repos/numl-spack
 
   # mirrors:
   #   local-buildcache:

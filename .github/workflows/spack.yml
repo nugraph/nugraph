@@ -8,18 +8,14 @@ jobs:
     steps:
     - name: checkout nugraph repo
       uses: actions/checkout@v4
+    - name: set up spack
+      uses: spack/setup-spack@v2
     - name: checkout nugraph spack repo
       uses: actions/checkout@v4
       with:
         repository: nugraph/numl-spack
-    - name: set up spack
-      uses: spack/setup-spack@v2
-      with:
-        ref: develop      # Spack version (examples: develop, releases/v0.21)
-        # buildcache: true  # Configure oci://ghcr.io/spack/github-actions-buildcache
-        color: true       # Force color output (SPACK_COLOR=always)
-        path: spack       # Where to clone Spack
-    - run: spack -e . install py-numl py-nugraph
+        path: spack/var/spack/repos/numl-spack
+    - run: spack -e . install
     # - name: analysing the code with pylint
     #   id: pylint
     #   run: |
