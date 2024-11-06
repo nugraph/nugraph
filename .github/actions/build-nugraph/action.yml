@@ -3,27 +3,19 @@ name: build-nugraph
 runs:
   using: "composite"
   steps:
-  - name: setting up pip cache
-    uses: actions/cache@v4
+  - name: setting up spack
+    uses: spack/setup-spack@v2
+  - name: checking out nugraph spack repo
+    uses: actions/checkout@v4
     with:
-      path: ~/.cache/pip
-      key: ${{ runner.os }}-pip-${{ hashFiles('**/pyproject.toml') }}
-      restore-keys: |
-        ${{ runner.os }}-pip-
-  - name: installing mpich
+      repository: nugraph/numl-spack
+      path: spack/var/spack/repos/numl-spack
+  - name: building spack environment
+    shell: bash
+    run: spack -e . install
+  - name: pushing packages to spack buildcache
     shell: bash
     run: |
-      sudo apt-get update
-      sudo apt-get install -y mpich
-  - name: setting up python
-    uses: actions/setup-python@v5
-    with:
-      python-version: "3.13"
-      cache: "pip"
-  - name: installing packages
-    shell: bash
-    run: |
-      pip install setuptools wheel
-      pip install torch
-      pip install torch-scatter
-      pip install pylint pytest ./pynuml ./nugraph
+      spack -e . mirror set --push --oci-username ${{ github.actor }} --oci-password "${{ secrets.GITHUB_TOKEN }}" local-buildcache
+      spack -e . buildcache push --base-image ubuntu:latest --update-index local-buildcache
+    if: ${{ !cancelled() }}
