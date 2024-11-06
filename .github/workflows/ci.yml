@@ -24,7 +24,8 @@ jobs:
     - name: installing packages
       run: |
         pip install setuptools wheel 
-        pip install --no-use-pep517 torch-scatter
+        pip install torch
+        pip install torch-scatter
         pip install pylint pytest ./pynuml ./nugraph
 
     - name: analysing the code with pylint
