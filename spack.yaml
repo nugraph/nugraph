@@ -9,6 +9,10 @@ spack:
       root: /opt/spack
       padded_length: 128
 
+  packages:
+    all:
+      require: 'target=x86_64_v3'
+
   repos:
   - $spack/var/spack/repos/numl-spack
 
