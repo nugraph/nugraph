@@ -22,8 +22,10 @@ jobs:
         cache: "pip"
 
     - name: installing packages
-      run: pip install setuptools wheel torch-scatter pylint pytest \
-                       ./pynuml ./nugraph
+      run: |
+        pip install setuptools wheel 
+        pip install --no-use-pep517 torch-scatter
+        pip install pylint pytest ./pynuml ./nugraph
 
     - name: analysing the code with pylint
       id: pylint
