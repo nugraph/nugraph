@@ -30,4 +30,3 @@ jobs:
       uses: ./.github/actions/build-nugraph
     - name: running python unit tests
       run: pytest
-      
