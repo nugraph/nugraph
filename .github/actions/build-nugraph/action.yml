@@ -1,5 +1,10 @@
 name: build-nugraph
 
+inputs:
+  token:
+    description: "github token"
+    required: true
+
 runs:
   using: "composite"
   steps:
@@ -16,6 +21,6 @@ runs:
   - name: pushing packages to spack buildcache
     shell: bash
     run: |
-      spack -e . mirror set --push --oci-username ${{ github.actor }} --oci-password "${{ secrets.GITHUB_TOKEN }}" local-buildcache
+      spack -e . mirror set --push --oci-username ${{ github.actor }} --oci-password "${{ inputs.token }}" local-buildcache
       spack -e . buildcache push --base-image ubuntu:latest --update-index local-buildcache
     if: ${{ !cancelled() }}

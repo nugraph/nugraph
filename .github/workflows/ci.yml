@@ -20,15 +20,21 @@ jobs:
       uses: actions/checkout@v4
     - name: building nugraph
       uses: ./.github/actions/build-nugraph
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
     - name: analysing the code with pylint
       run: pylint --fail-under=6 $(git ls-files '*.py')
 
   test:
     runs-on: ubuntu-latest
+    permissions:
+      packages: write
     steps:
     - name: checking out repository
       uses: actions/checkout@v4
     - name: building nugraph
       uses: ./.github/actions/build-nugraph
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
     - name: running python unit tests
       run: pytest
