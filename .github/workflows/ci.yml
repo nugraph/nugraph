@@ -16,50 +16,18 @@ jobs:
     steps:
     - name: checking out repository
       uses: actions/checkout@v4
-    - name: setting up pip cache
-      uses: actions/cache@v4
-      with:
-        path: ~/.cache/pip
-        key: ${{ runner.os }}-pip-${{ hashFiles('**/pyproject.toml') }}
-        restore-keys: |
-          ${{ runner.os }}-pip-
-    - name: setting up python
-      uses: actions/setup-python@v5
-      with:
-        python-version: "3.13"
-        cache: "pip"
+    - name: building nugraph
+      uses: ./.github/actions/build-nugraph
     - name: analysing the code with pylint
-      run: |
-        pip install pylint
-        pylint --fail-under=6 $(git ls-files '*.py')
+      run: pylint --fail-under=6 $(git ls-files '*.py')
 
   test:
     runs-on: ubuntu-latest
     steps:
     - name: checking out repository
       uses: actions/checkout@v4
-    - name: setting up pip cache
-      uses: actions/cache@v4
-      with:
-        path: ~/.cache/pip
-        key: ${{ runner.os }}-pip-${{ hashFiles('**/pyproject.toml') }}
-        restore-keys: |
-          ${{ runner.os }}-pip-
-    - name: installing mpich
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y mpich
-    - name: setting up python
-      uses: actions/setup-python@v5
-      with:
-        python-version: "3.13"
-        cache: "pip"
-    - name: installing packages
-      run: |
-        pip install setuptools wheel 
-        pip install torch
-        pip install torch-scatter
-        pip install pytest ./pynuml ./nugraph
+    - name: building nugraph
+      uses: ./.github/actions/build-nugraph
     - name: running python unit tests
       run: pytest
       
