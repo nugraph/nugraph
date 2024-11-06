@@ -6,31 +6,19 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-    - name: caching mamba packages
-      uses: actions/cache@v4
-      env:
-        CACHE_NUMBER: 0
+    - name: check out repository
+      uses: actions/checkout@v4
+    - name: set up python
+      uses: actions/setup-python@v5
       with:
-        path: ~/conda_pkgs_dir
-        key:
-          ${{ runner.os }}-conda-${{ env.CACHE_NUMBER }}-${{
-          hashFiles('numl.yaml') }}
-    - name: setting up the mamba environment
-      uses: conda-incubator/setup-miniconda@v3
-      with:
-        miniforge-version: latest
-        activate-environment: numl
-        environment-file: numl.yaml
-        use-only-tar-bz2: true
+        python-version: '3.13'
+        cache: 'pip' # caching pip dependencies
+    - name: install packages
+      run: pip install ./pynuml ./nugraph
     - name: analysing the code with pylint
       id: pylint
       run: |
-        mamba list
         pylint $(git ls-files '*.py')
-    - name: installing local packages
-      run: |
-        pip install --no-deps ./pynuml ./nugraph
     - name: running python unit tests
       run: pytest
       
