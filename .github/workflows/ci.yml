@@ -6,19 +6,30 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-    - name: check out repository
+
+    - name: checking out repository
       uses: actions/checkout@v4
-    - name: set up python
+
+    - name: installing mpich
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y mpich
+
+    - name: setting up python
       uses: actions/setup-python@v5
       with:
-        python-version: '3.13'
-        cache: 'pip' # caching pip dependencies
-    - name: install packages
-      run: pip install ./pynuml ./nugraph
+        python-version: "3.13"
+        cache: "pip"
+
+    - name: installing packages
+      run: pip install setuptools wheel torch-scatter pylint pytest \
+                       ./pynuml ./nugraph
+
     - name: analysing the code with pylint
       id: pylint
       run: |
         pylint $(git ls-files '*.py')
+
     - name: running python unit tests
       run: pytest
       
