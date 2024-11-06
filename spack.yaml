@@ -20,4 +20,3 @@ spack:
     local-buildcache:
       url: oci://ghcr.io/nugraph/spack-buildcache
       signed: false
-    
