@@ -15,14 +15,13 @@ runs:
     with:
       repository: nugraph/numl-spack
       path: spack/var/spack/repos/numl-spack
+  - name: setting spack oci permissions
+    shell: bash
+    run: spack -e . mirror set --oci-username ${{ github.actor }} --oci-password "${{ inputs.token }}" local-buildcache
   - name: building spack environment
     shell: bash
-    run: |
-      spack mirror list
-      spack -e . install
+    run: spack -e . install
   - name: pushing packages to spack buildcache
     shell: bash
-    run: |
-      spack -e . mirror set --push --oci-username ${{ github.actor }} --oci-password "${{ inputs.token }}" local-buildcache
-      spack -e . buildcache push --base-image ubuntu:latest --update-index local-buildcache
+    run: spack -e . buildcache push --base-image ubuntu:latest --update-index local-buildcache
     if: ${{ !cancelled() }}
