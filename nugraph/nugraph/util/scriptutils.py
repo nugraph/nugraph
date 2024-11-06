@@ -1,7 +1,13 @@
 """Utility functions for scripts and notebooks"""
 import os
 import platform
-from pynvml.smi import nvidia_smi
+
+# special handling for pynvml import
+import importlib.util
+if importlib.util.find_spec("pynvml_utils"):
+    from pynvml_utils import nvidia_smi
+else:
+    from pynvml.smi import nvidia_smi
 
 NUGRAPH_ENV = {
     "sneezy": {
