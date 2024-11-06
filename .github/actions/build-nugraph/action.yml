@@ -17,7 +17,9 @@ runs:
       path: spack/var/spack/repos/numl-spack
   - name: building spack environment
     shell: bash
-    run: spack -e . install
+    run: |
+      spack mirror list
+      spack -e . install
   - name: pushing packages to spack buildcache
     shell: bash
     run: |
