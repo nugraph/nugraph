@@ -5,25 +5,30 @@ on: [push]
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      packages: write
     steps:
 
     - name: checking out repository
       uses: actions/checkout@v4
 
-    - name: installing mpich
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y mpich
+    - name: setting up spack
+      uses: spack/setup-spack@v2
 
-    - name: setting up python
-      uses: actions/setup-python@v5
+    - name: checking out nugraph spack repo
+      uses: actions/checkout@v4
       with:
-        python-version: "3.13"
-        cache: "pip"
+        repository: nugraph/numl-spack
+        path: spack/var/spack/repos/numl-spack
 
-    - name: installing packages
-      run: pip install setuptools wheel torch-scatter pylint pytest \
-                       ./pynuml ./nugraph
+    - name: building spack environment
+      run: spack -e . install
+
+    - name: pushing packages to spack buildcache
+      run: |
+        spack -e . mirror set --push --oci-username ${{ github.actor }} --oci-password "${{ secrets.GITHUB_TOKEN }}" local-buildcache
+        spack -e . buildcache push --base-image ubuntu:latest --update-index local-buildcache
+      if: ${{ !cancelled() }}
 
     - name: analysing the code with pylint
       id: pylint
@@ -32,4 +37,3 @@ jobs:
 
     - name: running python unit tests
       run: pytest
-      
