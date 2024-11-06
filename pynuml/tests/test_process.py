@@ -4,6 +4,9 @@ import nugraph as ng
 
 UBOONE_FILE = "$NUGRAPH_DATA/uboone-opendata/uboone-opendata-e5fac1ac.test.h5"
 
+def test_process_placeholder():
+    pass
+
 # def test_process_uboone():
 #     """Test graph processing with MicroBooNE open data release"""
 #     f = pynuml.io.File(UBOONE_FILE)
