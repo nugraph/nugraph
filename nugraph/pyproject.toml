@@ -22,6 +22,7 @@ dependencies = [
     "torch-geometric>=2.1.0",
     "torch-scatter",
     "pytorch-lightning>=1.7.1",
+    "wandb",
 ]
 dynamic = ["version", "description"]
 

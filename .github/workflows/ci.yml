@@ -1,39 +1,34 @@
 name: ci
 
-on: [push]
+on:
+  pull_request:
+    branches: [main]
+
+env:
+  NUGRAPH_DIR: ${{ github.workspace }}
+  NUGRAPH_DATA: ${{ github.workspace }}/data
+  NUGRAPH_LOG: ${{ github.workspace}}/log
 
 jobs:
-  build:
+
+  lint:
     runs-on: ubuntu-latest
     permissions:
       packages: write
     steps:
-
     - name: checking out repository
       uses: actions/checkout@v4
-
-    - name: setting up spack
-      uses: spack/setup-spack@v2
-
-    - name: checking out nugraph spack repo
-      uses: actions/checkout@v4
-      with:
-        repository: nugraph/numl-spack
-        path: spack/var/spack/repos/numl-spack
-
-    - name: building spack environment
-      run: spack -e . install
-
-    - name: pushing packages to spack buildcache
-      run: |
-        spack -e . mirror set --push --oci-username ${{ github.actor }} --oci-password "${{ secrets.GITHUB_TOKEN }}" local-buildcache
-        spack -e . buildcache push --base-image ubuntu:latest --update-index local-buildcache
-      if: ${{ !cancelled() }}
-
+    - name: building nugraph
+      uses: ./.github/actions/build-nugraph
     - name: analysing the code with pylint
-      id: pylint
-      run: |
-        pylint $(git ls-files '*.py')
+      run: pylint --fail-under=6 $(git ls-files '*.py')
 
+  test:
+    runs-on: ubuntu-latest
+    steps:
+    - name: checking out repository
+      uses: actions/checkout@v4
+    - name: building nugraph
+      uses: ./.github/actions/build-nugraph
     - name: running python unit tests
       run: pytest
