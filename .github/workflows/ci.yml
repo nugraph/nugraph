@@ -7,11 +7,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
 
-    - name: setting up pip cache
-      uses: actions/cache@v4
-      with:
-        path: ~/.cache/pip
-
     - name: checking out repository
       uses: actions/checkout@v4
 
@@ -24,6 +19,7 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: "3.13"
+        cache: "pip"
 
     - name: installing packages
       run: |
