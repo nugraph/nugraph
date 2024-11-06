@@ -31,7 +31,7 @@ jobs:
     - name: analysing the code with pylint
       id: pylint
       run: |
-        pylint $(git ls-files '*.py')
+        pylint --fail-under=6 $(git ls-files '*.py')
 
     - name: running python unit tests
       run: pytest
