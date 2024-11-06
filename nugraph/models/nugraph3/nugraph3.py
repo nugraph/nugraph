@@ -29,6 +29,9 @@ class NuGraph3(LightningModule):
         planar_features: Number of planar node features
         nexus_features: Number of nexus node features
         interaction_features: Number of interaction node features
+        ophit_features: Number of features in optical hit embedding
+        pmt_features: Number of features in PMT (flashsumpe) embedding
+        flash_features: Number of features in optical flash embedding
         planes: Tuple of planes
         semantic_classes: Tuple of semantic classes
         event_classes: Tuple of event classes
@@ -41,13 +44,17 @@ class NuGraph3(LightningModule):
         lr: Learning rate
     """
     def __init__(self,
-                 in_features: int = 4,
+                 in_features: dict = {'u': 4, 'v': 4, 'y': 4, 
+                                      'oph': 8, 'pmt': 2, 'opf': 10},
                  planar_features: int = 128,
                  nexus_features: int = 32,
                  interaction_features: int = 32,
-                 planes: tuple[str] = ('u','v','y'),
-                 semantic_classes: tuple[str] = ('MIP','HIP','shower','michel','diffuse'),
-                 event_classes: tuple[str] = ('numu','nue','nc'),
+                 ophit_features: int = 128,
+                 pmt_features: int = 64,
+                 flash_features: int = 32,
+                 planes: list[str] = ['u','v','y'],
+                 semantic_classes: list[str] = ['MIP','HIP','shower','michel','diffuse'],
+                 event_classes: list[str] = ['numu','nue','nc'],
                  num_iters: int = 5,
                  event_head: bool = False,
                  semantic_head: bool = True,
@@ -70,14 +77,29 @@ class NuGraph3(LightningModule):
         self.num_iters = num_iters
         self.lr = lr
 
-        self.encoder = HeteroDictLinear({
-            p: in_features for p in planes},
+        self.planar_encoder = HeteroDictLinear({
+            p: in_features[p] for p in planes},
             planar_features)
 
-        self.core_net = NuGraphCore(planar_features,
-                                    nexus_features,
-                                    interaction_features,
-                                    planes)
+        self.ophit_encoder = HeteroDictLinear({
+            'ophits': in_features['oph']}, 
+            ophit_features) 
+        
+        self.pmt_encoder = HeteroDictLinear({
+            'opflashsumpe': in_features['pmt']}, 
+            pmt_features)
+        
+        self.flash_encoder = HeteroDictLinear({
+            'opflash': in_features['opf']}, 
+            flash_features)
+
+        self.core_net = NuGraphCore(planar_features=planar_features,
+                                    nexus_features=nexus_features,
+                                    interaction_features=interaction_features,
+                                    ophit_features=ophit_features,
+                                    pmt_features=ophit_features,
+                                    flash_features=flash_features,
+                                    planes=planes)
 
         self.loop = self.ckpt if use_checkpointing else self.core_net
 
@@ -119,19 +141,22 @@ class NuGraph3(LightningModule):
         self.max_mem_gpu = 0.
 
     @torch.jit.ignore
-    def ckpt(self, p: TD, n: TD, i: TD, edges: ED) -> tuple[TD, TD, TD]:
+    def ckpt(self, p: TD, n: TD, oph: TD, pmt: TD, opf: TD, i: TD, edges: ED) -> tuple[TD, TD, TD, TD, TD, TD]:
         """
         Checkpointing wrapper for core loop
 
         Args:
             p: Planar embedding tensor dictionary
             n: Nexus embedding tensor dictionary
+            oph: Optical hit embedding tensor dictionary
+            pmt: PMT (flashsumpe) embedding tensor dictionary
+            opf: Optical flash embedding tensor dictionary
             i: Interaction embedding tensor dictionary
             edges: Edge index tensor dictionary
         """
-        return checkpoint(self.core_net, p, n, i, edges, use_reentrant=False)
+        return checkpoint(self.core_net, p, n, oph, pmt, opf, i, edges, use_reentrant=False)
 
-    def forward(self, p: TD, n: TD, i: TD, edges: ED):
+    def forward(self, p: TD, n: TD, oph, pmt, opf, i: TD, edges: ED):
         """
         NuGraph3 forward pass
 
@@ -139,11 +164,19 @@ class NuGraph3(LightningModule):
             p: Planar embedding tensor dictionary
             n: Nexus embedding tensor dictionary
             i: Interaction embedding tensor dictionary
+            oph: Optical hit embedding tensor dictionary
+            pmt: PMT (flashsumpe) embedding tensor dictionary
+            opf: Optical flash embedding tensor dictionary
             edges: Edge index tensor dictionary
         """
-        p = self.encoder(p)
+        # generating feature embedding for each node type
+        p = self.planar_encoder(p)
+        oph = self.ophit_encoder(oph)
+        pmt = self.pmt_encoder(pmt)
+        opf = self.flash_encoder(opf)
+        
         for _ in range(self.num_iters):
-            p, n, i = self.loop(p, n, i, edges)
+            p, n, oph, pmt, opf, i = self.loop(p, n, oph, pmt, opf, i, edges)
         ret = {}
         for decoder in self.decoders:
             ret.update(decoder(p|n|i))
@@ -175,8 +208,15 @@ class NuGraph3(LightningModule):
         i = dict(evt=torch.zeros(data["evt"].num_nodes,
                                  self.interaction_features,
                                  device=self.device))
+        
+        # extracting input features from the data object
+        p = {p: data[p]['x'] for p in self.planes}
+        oph = {'ophits': data['ophits']['x']}
+        pmt = {'opflashsumpe': data['opflashsumpe']['x']}
+        opf = {'opflash': data['opflash']['x']}
 
-        x = self(data.x_dict, n, i, data.edge_index_dict)
+        # forward pass
+        x = self(p, n, oph, pmt, opf, i, data.edge_index_dict)
 
         # append output tensors back onto input data object
         if isinstance(data, Batch):
@@ -315,14 +355,21 @@ class NuGraph3(LightningModule):
         model = parser.add_argument_group('model', 'NuGraph3 model configuration')
         model.add_argument('--num-iters', type=int, default=5,
                            help='Number of message-passing iterations')
-        model.add_argument('--in-feats', type=int, default=4,
+        model.add_argument('--in-feats', type=dict, default={'u': 4, 'v': 4, 'y': 4, 
+                                      'oph': 8, 'pmt': 2, 'opf': 10},
                            help='Number of input node features')
         model.add_argument('--planar-feats', type=int, default=128,
                            help='Hidden dimensionality of planar convolutions')
         model.add_argument('--nexus-feats', type=int, default=32,
                            help='Hidden dimensionality of nexus convolutions')
-        model.add_argument('--interaction-feats', type=int, default=32,
+        model.add_argument('--interaction-feats', type=int, default=64,
                            help='Hidden dimensionality of interaction layer')
+        model.add_argument('--ophit_features', type=int, default=128,
+                           help='Number of optical hit features')
+        model.add_argument('--pmt_features', type=int, default=64, 
+                            help='Number of PMT features')
+        model.add_argument('--flash_features', type=int, default=32,
+                           help='Number of optical flashes features')
         model.add_argument('--event', action='store_true',
                            help='Enable event classification head')
         model.add_argument('--semantic', action='store_true',
@@ -354,6 +401,9 @@ class NuGraph3(LightningModule):
             planar_features=args.planar_feats,
             nexus_features=args.nexus_feats,
             interaction_features=args.interaction_feats,
+            ophit_features=args.ophit_features,
+            pmt_features=args.pmt_features,
+            flash_features=args.flash_features,
             planes=nudata.planes,
             semantic_classes=nudata.semantic_classes,
             event_classes=nudata.event_classes,
@@ -364,3 +414,4 @@ class NuGraph3(LightningModule):
             vertex_head=args.vertex,
             use_checkpointing=args.use_checkpointing,
             lr=args.learning_rate)
+    

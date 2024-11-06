@@ -4,6 +4,11 @@ from torch import nn
 from torch_geometric.nn import MessagePassing, HeteroConv
 from .types import T, TD
 
+# # Change 4: Single Linear Layer with Mish
+# class Mish(nn.Module):
+#     def forward(self, x):
+#         return x * torch.tanh(nn.functional.softplus(x))
+
 class NuGraphBlock(MessagePassing):
     """
     Standard NuGraph message-passing block
@@ -23,9 +28,30 @@ class NuGraphBlock(MessagePassing):
                  out_features: int):
         super().__init__(aggr="softmax")
 
+        # Original MLP
         self.edge_net = nn.Sequential(
             nn.Linear(source_features+target_features, source_features),
             nn.Sigmoid())
+        
+        # # Change 1: Single Linear Layer with Sigmoid Activation
+        # self.edge_net = nn.Sequential(
+        #     nn.Linear(source_features + target_features, 1),
+        #     nn.Sigmoid())
+
+        # # Change 2: Single Linear Layer with ReLU
+        # self.edge_net = nn.Sequential(
+        #     nn.Linear(source_features + target_features, source_features),
+        #     nn.ReLU())
+
+        # # Change 3: Single Linear Layer with Leaky ReLU
+        # self.edge_net = nn.Sequential(
+        #     nn.Linear(source_features + target_features, source_features),
+        #     nn.LeakyReLU(negative_slope=0.01))
+
+        # # Change 4: Single Linear Layer with Mish
+        # self.edge_net = nn.Sequential(
+        #     nn.Linear(source_features + target_features, source_features),
+        #     Mish())
 
         self.net = nn.Sequential(
             nn.Linear(source_features+target_features, out_features),
@@ -83,12 +109,18 @@ class NuGraphCore(nn.Module):
         planar_features: Number of features in planar embedding
         nexus_features: Number of features in nexus embedding
         interaction_features: Number of features in interaction embedding
+        ophit_features: Number of features in optical hit embedding
+        pmt_features: Number of features in PMT (flashsumpe) embedding
+        flash_features: Number of features in optical flash embedding
         planes: List of detector planes
     """
     def __init__(self,
                  planar_features: int,
                  nexus_features: int,
                  interaction_features: int,
+                 ophit_features: int,
+                 pmt_features: int,
+                 flash_features: int,
                  planes: list[str]):
         super().__init__()
 
@@ -107,12 +139,27 @@ class NuGraphCore(nn.Module):
                                              nexus_features,
                                              nexus_features)
             for p in planes}, aggr="cat")
+        
+        # message-passing from optical hit nodes to PMT nodes
+        self.hit_to_pmt = HeteroConv({
+           ('ophits', 'sumpe', 'opflashsumpe'): NuGraphBlock(ophit_features,
+                                                 pmt_features,
+                                                 pmt_features)})
+        
+        # message-passing from PMT nodes to flash nodes
+        self.pmt_to_flash = HeteroConv({
+           ('opflashsumpe', 'flash', 'opflash'): NuGraphBlock(pmt_features,
+                                                flash_features,
+                                                flash_features)})
 
-        # message-passing from nexus nodes to interaction nodes
-        self.nexus_to_interaction = HeteroConv({
+        # message-passing from nexus and flash nodes to interaction nodes
+        self.nexus_flash_to_interaction = HeteroConv({
             ("sp", "in", "evt"): NuGraphBlock(full_nexus_features,
                                               interaction_features,
-                                              interaction_features)})
+                                              interaction_features), 
+            ('opflash', 'in', 'evt'): NuGraphBlock(flash_features, 
+                                                interaction_features, 
+                                                interaction_features)})
 
         # message-passing from interaction nodes to nexus nodes
         self.interaction_to_nexus = HeteroConv({
@@ -127,7 +174,27 @@ class NuGraphCore(nn.Module):
                                              planar_features)
             for p in planes})
 
-    def forward(self, p: TD, n: TD, i: TD, edges: TD) -> tuple[TD, TD, TD]:
+
+        # message-passing from interaction nodes to flash node
+        self.interaction_to_flash = HeteroConv({
+            ("evt", "in", "opflash"): NuGraphBlock(interaction_features,
+                                                   flash_features,
+                                                   flash_features)})
+        
+        # message-passing from flash node to PMT nodes
+        self.flash_to_pmt = HeteroConv({
+            ("opflash", "flash", "opflashsumpe"): NuGraphBlock(flash_features,
+                                                pmt_features,
+                                                pmt_features)})
+
+        # message-passing from PMT nodes to optical hit nodes
+        self.pmt_to_ophit = HeteroConv({
+            ("opflashsumpe", "sumpe", "ophits"): NuGraphBlock(pmt_features,
+                                                ophit_features,
+                                                ophit_features)})
+
+    def forward(self, p: TD, n: TD,  oph: TD, pmt: TD,
+                opf: TD, i: TD, edges: TD) -> tuple[TD, TD, TD, TD, TD, TD]:
         """
         NuGraphCore forward pass
         
@@ -135,11 +202,23 @@ class NuGraphCore(nn.Module):
             p: Planar embedding tensor dictionary
             n: Nexus embedding tensor dictionary
             i: Interaction embedding tensor dictionary
+            oph: Optical hit embedding tensor dictionary
+            pmt: PMT (flashsumpe) embedding tensor dictionary
+            opf: Optical flash embedding tensor dictionary
             edges: Edge index tensor dictionary
-        """
+        """ 
+        # one upward pass
         p = self.plane_net(p, edges)
         n = self.plane_to_nexus(p|n, edges)
-        i = self.nexus_to_interaction(n|i, edges)
-        n = self.interaction_to_nexus(n|i, edges)
-        p = self.nexus_to_plane(p|n, edges)
-        return p, n, i
+        pmt = self.hit_to_pmt(oph|pmt, edges)
+        opf = self.pmt_to_flash(pmt|opf, edges)
+        i = self.nexus_flash_to_interaction(n|opf|i, edges)
+
+        # one downward pass
+        n = self.interaction_to_nexus(i|n, edges)
+        p = self.nexus_to_plane(n|p, edges)
+        opf = self.interaction_to_flash(i|opf, edges)
+        pmt = self.flash_to_pmt(opf|pmt, edges)
+        oph = self.pmt_to_ophit(pmt|oph, edges)
+
+        return p, n, oph, pmt, opf, i
