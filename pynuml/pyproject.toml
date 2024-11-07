@@ -19,6 +19,7 @@ dependencies = [
     "pandas",
     "particle",
     "plotly",
+    "scikit-learn",
     "torch>=1.12.1",
     "torch-geometric>=2.1.0",
 ]
