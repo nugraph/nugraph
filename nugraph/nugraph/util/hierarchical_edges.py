@@ -73,4 +73,22 @@ class HierarchicalEdges(BaseTransform):
         hi = torch.zeros(data["sp"].num_nodes, dtype=torch.long)
         data["sp", "in", "evt"].edge_index = torch.stack((lo, hi), dim=0)
 
+        # fix optical hierarchical edges, if necessary
+        key = ("ophits", "sumpe", "opflashsumpe")
+        if key in data.edge_types:
+            mask = data[key].edge_index[1] > -1
+            data[key].edge_index = data[key].edge_index[:, mask]
+            lo, hi = data[key].edge_index
+            data["opflashsumpe", "sumpe", "ophits"].edge_index = torch.stack((hi, lo), dim=0)
+
+            hi = torch.zeros(len(lo), dtype=torch.int8)
+            data["ophits", "in", "evt"].edge_index = torch.stack((lo, hi), dim=0)
+            data["evt", "in", "ophits"].edge_index = torch.stack((hi, lo), dim=0)
+
+            lo, hi = data["opflashsumpe", "flash", "opflash"].edge_index
+            data["opflash", "flash", "opflashsumpe"].edge_index = torch.stack((hi, lo), dim=0)
+
+            lo, hi = data["opflash", "in", "evt"].edge_index
+            data["evt", "in", "opflash"].edge_index = torch.stack((hi, lo), dim=0)
+
         return data

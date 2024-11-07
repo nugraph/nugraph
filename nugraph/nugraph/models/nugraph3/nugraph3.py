@@ -23,6 +23,9 @@ class NuGraph3(LightningModule):
         hit_features: Number of hit node features
         nexus_features: Number of nexus node features
         interaction_features: Number of interaction node features
+        ophit_features: Number of features in optical hit embedding
+        pmt_features: Number of features in PMT (flashsumpe) embedding
+        flash_features: Number of features in optical flash embedding
         instance_features: Number of instance features
         semantic_classes: Tuple of semantic classes
         event_classes: Tuple of event classes
@@ -35,10 +38,14 @@ class NuGraph3(LightningModule):
         lr: Learning rate
     """
     def __init__(self,
-                 in_features: int = 4,
-                 hit_features: int = 128,
+                 in_features: dict = {'u': 4, 'v': 4, 'y': 4, 
+                                      'oph': 8, 'pmt': 2, 'opf': 10},
+                 planar_features: int = 128,
                  nexus_features: int = 32,
                  interaction_features: int = 32,
+                 ophit_features: int = 128,
+                 pmt_features: int = 64,
+                 flash_features: int = 32,
                  instance_features: int = 32,
                  semantic_classes: tuple[str] = ('MIP','HIP','shower','michel','diffuse'),
                  event_classes: tuple[str] = ('numu','nue','nc'),
@@ -68,10 +75,25 @@ class NuGraph3(LightningModule):
         self.encoder = Encoder(in_features, hit_features,
                                nexus_features, interaction_features)
 
-        self.core_net = NuGraphCore(hit_features,
-                                    nexus_features,
-                                    interaction_features,
-                                    use_checkpointing)
+        self.ophit_encoder = HeteroDictLinear({
+            'ophits': in_features['oph']}, 
+            ophit_features) 
+        
+        self.pmt_encoder = HeteroDictLinear({
+            'opflashsumpe': in_features['pmt']}, 
+            pmt_features)
+        
+        self.flash_encoder = HeteroDictLinear({
+            'opflash': in_features['opf']}, 
+            flash_features)
+
+        self.core_net = NuGraphCore(hit_features=planar_features,
+                                    nexus_features=nexus_features,
+                                    interaction_features=interaction_features,
+                                    ophit_features=ophit_features,
+                                    pmt_features=ophit_features,
+                                    flash_features=flash_features,
+                                    planes=use_checkpointing)
 
         self.decoders = []
 
@@ -181,7 +203,8 @@ class NuGraph3(LightningModule):
         model = parser.add_argument_group('model', 'NuGraph3 model configuration')
         model.add_argument('--num-iters', type=int, default=5,
                            help='Number of message-passing iterations')
-        model.add_argument('--in-feats', type=int, default=5,
+        model.add_argument('--in-feats', type=dict, default={'u': 4, 'v': 4, 'y': 4, 
+                                      'oph': 8, 'pmt': 2, 'opf': 10},
                            help='Number of input node features')
         model.add_argument('--hit-feats', type=int, default=128,
                            help='Hidden dimensionality of hit convolutions')
@@ -191,6 +214,12 @@ class NuGraph3(LightningModule):
                            help='Hidden dimensionality of interaction layer')
         model.add_argument('--instance-feats', type=int, default=32,
                            help='Hidden dimensionality of object condensation')
+        model.add_argument('--ophit_features', type=int, default=128,
+                           help='Number of optical hit features')
+        model.add_argument('--pmt_features', type=int, default=64, 
+                            help='Number of PMT features')
+        model.add_argument('--flash_features', type=int, default=32,
+                           help='Number of optical flashes features')
         model.add_argument('--event', action='store_true',
                            help='Enable event classification head')
         model.add_argument('--semantic', action='store_true',
@@ -226,6 +255,9 @@ class NuGraph3(LightningModule):
             hit_features=args.hit_feats,
             nexus_features=args.nexus_feats,
             interaction_features=args.interaction_feats,
+            ophit_features=args.ophit_features,
+            pmt_features=args.pmt_features,
+            flash_features=args.flash_features,
             instance_features=args.instance_feats,
             semantic_classes=nudata.semantic_classes,
             event_classes=nudata.event_classes,
