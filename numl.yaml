@@ -4,11 +4,13 @@ channels:
   - nvidia
   - pytorch
   - pyg
+  - rapidsai
   - numl
 dependencies:
   - act
   - automake
   - compilers
+  - cuml
   - flit
   - git
   - h5py=*=*mpich*
@@ -37,12 +39,13 @@ dependencies:
   - pytables
   - pytest
   - python-kaleido
-  - pytorch::pytorch=2.2
-  - pytorch-cuda
+  - pytorch::pytorch=2.4
+  - pytorch-cuda=12.4
   - pytorch-lightning
   - pytorch-scatter
   - PyYAML
   - pyzmq
+  - scikit-learn
   - seaborn
   - tensorboard
   - torchmetrics
