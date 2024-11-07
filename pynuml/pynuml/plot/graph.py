@@ -38,7 +38,7 @@ class GraphPlot:
             df[["x", "y", "z"]] = hit["c"]
         df["y_filter"] = hit["y_semantic"] != -1
         df['y_semantic'] = to_categorical(hit['y_semantic'])
-        df['y_instance'] = hit['y_instance'].numpy().astype(str)
+        df['y_instance'] = data.y_i.numpy().astype(str)
 
         # add detailed truth information if it's available
         for col in self._truth_cols:
@@ -51,8 +51,8 @@ class GraphPlot:
             df[self._classes] = hit['x_semantic'].detach()
         if 'x_filter' in hit.keys():
             df['x_filter'] = hit['x_filter'].detach()
-        if "i" in hit.keys():
-            df["i"] = hit["i"].numpy().astype(str)
+        if "ox" in hit.keys():
+            df["i"] = data.x_i.numpy().astype(str)
 
         # add object condensation embedding
         if "ox" in hit.keys():
