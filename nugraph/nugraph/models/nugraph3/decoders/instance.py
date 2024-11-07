@@ -58,16 +58,17 @@ class InstanceDecoder(LightningModule):
             data._inc_dict["hit"]["ox"] = data._inc_dict["hit"]["x"]
 
         # calculate loss
-        loss = (-1 * self.temp).exp() * self.loss(data, data.y_i) + self.temp
+        data.materialize_predicted_particles()
+        loss = (-1 * self.temp).exp() * self.loss(data, data.y_i()) + self.temp
         b, v = loss
         loss = loss.sum()
 
         # calculate rand score per graph
         if isinstance(data, Batch):
-            rand = torch.mean(torch.stack([adjusted_rand_score(l.x_i, l.y_i)
+            rand = torch.mean(torch.stack([adjusted_rand_score(l.x_i(), l.y_i())
                                            for l in data.to_data_list()]))
         else:
-            rand = adjusted_rand_score(data.x_i, data.y_i)
+            rand = adjusted_rand_score(data.x_i(), data.y_i())
         if not -1. < rand < 1.:
             raise RuntimeError(f"Adjusted Rand Score metric value {rand} is outside allowed range!")
 
