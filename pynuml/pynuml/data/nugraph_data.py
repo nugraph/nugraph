@@ -19,7 +19,7 @@ class NuGraphData(HeteroData):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-    def true_instance_labels(self, regenerate: bool = False) -> torch.Tensor:
+    def y_i(self, regenerate: bool = False) -> torch.Tensor:
         """Return true instance labels on hits
 
         Args:
@@ -35,7 +35,7 @@ class NuGraphData(HeteroData):
         self["hit"].y_instance[~self["hit"].y_instance_mask] = -1
         return self["hit"].y_instance
 
-    def predicted_instance_labels(self, regenerate: bool = False) -> None:
+    def x_i(self, regenerate: bool = False) -> None:
         """Return predicted instance labels on hits
 
         Args:
@@ -100,16 +100,7 @@ class NuGraphData(HeteroData):
         copy_attr(out, "hit", "x_instance")
         copy_attr(out, "hit", "x_instance_mask")
         copy_attr(out, "particle", "x")
-
-    @property
-    def y_i(self) -> torch.Tensor:
-        """True instance labels"""
-        return self.true_instance_labels()
-
-    @property
-    def x_i(self) -> torch.Tensor:
-        """Predicted instance labels"""
-        return self.predicted_instance_labels()
+        self["particle"].batch = out["particle"].batch
 
     def __inc__(self, key: str, value: torch.Tensor, *args, **kwargs) -> int:
         """Increment tensor values"""
