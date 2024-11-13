@@ -8,7 +8,7 @@ import torch
 from torch import nn
 from torchmetrics.functional.clustering import adjusted_rand_score
 from torch_geometric.data import Batch
-from torch_geometric.utils import unbatch
+from torch_geometric.utils import cumsum, unbatch
 from pytorch_lightning import LightningModule
 from pynuml.data import NuGraphData
 from ....util import ObjCondensationLoss
@@ -54,22 +54,48 @@ class InstanceDecoder(LightningModule):
             stage: Stage name (train/val/test)
         """
 
+        h = data["hit"]
+
         # run network and add output to graph object
-        data["hit"].of = self.beta_net(data["hit"].x).squeeze(dim=-1).sigmoid()
-        data["hit"].ox = self.coord_net(data["hit"].x)
+        h.of = self.beta_net(h.x).squeeze(dim=-1).sigmoid()
+        h.ox = self.coord_net(h.x)
         if isinstance(data, Batch):
             # pylint: disable=protected-access
-            data._slice_dict["hit"]["of"] = data["hit"].ptr
-            data._slice_dict["hit"]["ox"] = data["hit"].ptr
+            data._slice_dict["hit"]["of"] = h.ptr
+            data._slice_dict["hit"]["ox"] = h.ptr
             data._inc_dict["hit"]["of"] = data._inc_dict["hit"]["x"]
             data._inc_dict["hit"]["ox"] = data._inc_dict["hit"]["x"]
 
         # add materialized instances
-        mask = (data["hit"].x_filter > 0.5) & (data["hit"].x_semantic.argmax(dim=1) != 6)
+        mask = (h.x_filter > 0.5) & (h.x_semantic.argmax(dim=1) != 6)
         if isinstance(data, Batch):
-            raise NotImplementedError("Materializing instances for batched graphs in development...")
+            x_ip, e_h_ip = [], []
+            for ox, m in zip(unbatch(h.ox, h.batch), unbatch(mask, h.batch)):
+                x, e = self.materialize(ox, m)
+                x_ip.append(x)
+                e_h_ip.append(e)
+
+            # particle nodes
+            data[N_IP].x = torch.cat(x_ip, dim=0)
+            data[N_IP].batch = torch.cat(
+                [torch.empty(x.size(0), dtype=torch.long, device=self.device).fill_(i)
+                 for i, x in enumerate(x_ip)])
+            data[N_IP].ptr = cumsum(torch.tensor([x.size(0) for x in x_ip], device=self.device))
+            data._slice_dict[N_IP] = {"x": data[N_IP].ptr}
+            data._inc_dict[N_IP] = {
+                "x": torch.zeros(data.num_graphs, dtype=torch.long, device=self.device)
+            }
+
+            # particle edges
+            e_inc = torch.stack((h.ptr[:-1], data[N_IP].ptr[:-1]), dim=1).unsqueeze(2)
+            data[E_H_IP].edge_index = torch.cat([e + inc for e, inc in zip(e_h_ip, e_inc)], dim=1)
+            data._slice_dict[E_H_IP] = {
+                "edge_index": cumsum(torch.tensor([e.size(1) for e in e_h_ip]))
+            }
+            data._inc_dict[E_H_IP] = {"edge_index": e_inc}
+
         else:
-            data[N_IP].x, data[E_H_IP].edge_index = self.materialize(data["hit"].ox, mask)
+            data[N_IP].x, data[E_H_IP].edge_index = self.materialize(h.ox, mask)
 
         # calculate loss
         loss = (-1 * self.temp).exp() * self.loss(data, data.y_i()) + self.temp
@@ -122,14 +148,14 @@ class InstanceDecoder(LightningModule):
         i = torch.empty(ox.size(0), dtype=torch.long, device=self.device).fill_(-1)
         arr = ox[mask]
         output_type = "cupy" if arr.is_cuda else "numpy"
-        arr = cp.from_dlpack(arr) if arr.is_cuda else arr.numpy()
+        arr = cp.from_dlpack(arr.detach()) if arr.is_cuda else arr.numpy()
         with using_output_type(output_type):
             arr = self.dbscan.fit_predict(arr)
             i[mask] = torch.from_dlpack(arr).long()
-        n_ip = torch.empty(i.max()+1, 0, device=self.device, dtype=torch.float)
+        x_ip = torch.empty(i.max()+1, 0, dtype=torch.float, device=self.device)
         mask = i > -1
         e_h_ip = torch.stack((torch.nonzero(mask).squeeze(1), i[mask])).long()
-        return n_ip, e_h_ip
+        return x_ip, e_h_ip
 
     def on_epoch_end(self, logger: "WandbLogger", stage: str, epoch: int) -> None:
         """
