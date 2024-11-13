@@ -65,10 +65,11 @@ class InstanceDecoder(LightningModule):
             data._inc_dict["hit"]["ox"] = data._inc_dict["hit"]["x"]
 
         # add materialized instances
+        mask = (data["hit"].x_filter > 0.5) & (data["hit"].x_semantic.argmax(dim=1) != 6)
         if isinstance(data, Batch):
             raise NotImplementedError("Materializing instances for batched graphs in development...")
         else:
-            self.materialize(data)
+            data[N_IP].x, data[E_H_IP].edge_index = self.materialize(data["hit"].ox, mask)
 
         # calculate loss
         loss = (-1 * self.temp).exp() * self.loss(data, data.y_i()) + self.temp
@@ -111,23 +112,24 @@ class InstanceDecoder(LightningModule):
 
         return loss, metrics
 
-    def materialize(self, data: NuGraphData) -> None:
+    def materialize(self, ox: torch.Tensor, mask: torch.Tensor) -> tuple[torch.Tensor]:
         """Materialize instance embedding
         
         Args:
-            data: input data object
+            ox: object condensation embedding tensor
+            mask: bool mask tensor for background hit removal
         """
-        mask = data["hit"].x_filter > 0.5
-        i = torch.empty_like(data["hit"].y_semantic).fill_(-1)
-        arr = data["hit"].ox[mask]
+        i = torch.empty(ox.size(0), dtype=torch.long, device=self.device).fill_(-1)
+        arr = ox[mask]
         output_type = "cupy" if arr.is_cuda else "numpy"
         arr = cp.from_dlpack(arr) if arr.is_cuda else arr.numpy()
         with using_output_type(output_type):
             arr = self.dbscan.fit_predict(arr)
             i[mask] = torch.from_dlpack(arr).long()
-        data[N_IP].x = torch.empty(i.max()+1, 0, device=self.device, dtype=torch.float)
+        n_ip = torch.empty(i.max()+1, 0, device=self.device, dtype=torch.float)
         mask = i > -1
-        data[E_H_IP].edge_index = torch.stack((torch.nonzero(mask).squeeze(1), i[mask])).long()
+        e_h_ip = torch.stack((torch.nonzero(mask).squeeze(1), i[mask])).long()
+        return n_ip, e_h_ip
 
     def on_epoch_end(self, logger: "WandbLogger", stage: str, epoch: int) -> None:
         """
