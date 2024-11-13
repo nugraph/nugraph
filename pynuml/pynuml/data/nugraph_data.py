@@ -20,8 +20,6 @@ class NuGraphData(HeteroData):
 
     def y_i(self) -> torch.Tensor:
         """Return true instance labels on hits"""
-        if isinstance(self, Batch):
-            raise RuntimeError("Cannot materialize particle labels across a batch!")
         y_i = torch.empty_like(self["hit"].y_semantic).fill_(-1)
         i, j = self[E_H_IT].edge_index
         y_i[i] = j
@@ -29,8 +27,6 @@ class NuGraphData(HeteroData):
 
     def x_i(self) -> torch.Tensor:
         """Return predicted instance labels on hits"""
-        if isinstance(self, Batch):
-            raise RuntimeError("Cannot materialize particle labels across a batch!")
         x_i = torch.empty_like(self["hit"].y_semantic).fill_(-1)
         i, j = self[E_H_IP].edge_index
         x_i[i] = j
