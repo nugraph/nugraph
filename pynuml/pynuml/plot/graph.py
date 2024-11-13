@@ -47,7 +47,7 @@ class GraphPlot:
 
         # add model prediction if it's available
         if 'x_semantic' in hit.keys():
-            df['hit'] = to_categorical(hit['x_semantic'].argmax(dim=-1).detach())
+            df['x_semantic'] = to_categorical(hit['x_semantic'].argmax(dim=-1).detach())
             df[self._classes] = hit['x_semantic'].detach()
         if 'x_filter' in hit.keys():
             df['x_filter'] = hit['x_filter'].detach()
