@@ -1,7 +1,6 @@
 """NuGraph data object"""
 import h5py
 import numpy as np
-from sklearn.cluster import HDBSCAN
 import torch
 from torch_geometric.data import Batch, HeteroData
 from torch_geometric.utils import unbatch
@@ -19,88 +18,23 @@ class NuGraphData(HeteroData):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-    def y_i(self, regenerate: bool = False) -> torch.Tensor:
-        """Return true instance labels on hits
-
-        Args:
-            regenerate: Whether to regenerate labels if already materialized
-        """
-
-        # materialize clusters if necessary
-        if regenerate or not (hasattr(self["hit"], "y_instance") and \
-            hasattr(self["hit"], "y_instance_mask")):
-            self.materialize_true_particles()
-
-        # return labels
-        self["hit"].y_instance[~self["hit"].y_instance_mask] = -1
-        return self["hit"].y_instance
-
-    def x_i(self, regenerate: bool = False) -> None:
-        """Return predicted instance labels on hits
-
-        Args:
-            regenerate: Whether to regenerate labels if already materialized
-        """
-
-        # materialize clusters if necessary
-        if regenerate or not (hasattr(self["hit"], "x_instance") and \
-            hasattr(self["hit"], "x_instance_mask")):
-            self.materialize_predicted_particles()
-
-        # fix background labels and return
-        self["hit"].x_instance[~self["hit"].x_instance_mask] = -1
-        return self["hit"].x_instance
-
-    def materialize_true_particles(self) -> None:
-        """Materialize true particle clusters"""
-
-        # assign particle labels and mask
+    def y_i(self) -> torch.Tensor:
+        """Return true instance labels on hits"""
+        if isinstance(self, Batch):
+            raise RuntimeError("Cannot materialize particle labels across a batch!")
+        y_i = torch.empty_like(self["hit"].y_semantic).fill_(-1)
         i, j = self[E_H_IT].edge_index
-        self["hit"].y_instance = torch.empty_like(self["hit"].y_semantic).fill_(-1)
-        self["hit"].y_instance[i] = j
-        self["hit"].y_instance_mask = self["hit"].y_instance > -1
+        y_i[i] = j
+        return y_i
 
-    def materialize_predicted_particles(self) -> None:
-        """Materialize predicted particle nodes"""
-
-        def go(x, f):
-            mask = f > 0.5
-            i = torch.empty_like(mask, dtype=torch.long)
-            i[~mask] = -1
-            i[mask] = torch.tensor(HDBSCAN().fit(x[mask]).labels_)
-            return i
-
-        if not isinstance(self, Batch):
-            i = go(self["hit"].ox, self["hit"].x_filter)
-            self["hit"].x_instance = i
-            self["hit"].x_instance_mask = i > -1
-            return
-
-        coords = unbatch(self["hit"].ox, self["hit"].batch, batch_size=self.num_graphs)
-        mask = unbatch(self["hit"].x_filter, self["hit"].batch, batch_size=self.num_graphs)
-        labels = [go(x, f) for x, f in zip(coords, mask)]
-
-        out = [NuGraphData(hit={"x_instance": l, "x_instance_mask": l > -1},
-                           particle={"x": torch.empty(l.max()+1)})
-               for l in labels]
-        out = Batch.from_data_list(out)
-
-        def copy_attr(d, store, attr):
-            # pylint: disable=protected-access
-            setattr(self[store], attr, getattr(d[store], attr))
-            if store in self._slice_dict:
-                self._slice_dict[store][attr] = d._slice_dict[store][attr]
-            else:
-                self._slice_dict[store] = {attr: d._slice_dict[store][attr]}
-            if store in self._inc_dict:
-                self._inc_dict[store][attr] = d._inc_dict[store][attr]
-            else:
-                self._inc_dict[store] = {attr: d._inc_dict[store][attr]}
-
-        copy_attr(out, "hit", "x_instance")
-        copy_attr(out, "hit", "x_instance_mask")
-        copy_attr(out, "particle", "x")
-        self["particle"].batch = out["particle"].batch
+    def x_i(self) -> torch.Tensor:
+        """Return predicted instance labels on hits"""
+        if isinstance(self, Batch):
+            raise RuntimeError("Cannot materialize particle labels across a batch!")
+        x_i = torch.empty_like(self["hit"].y_semantic).fill_(-1)
+        i, j = self[E_H_IP].edge_index
+        x_i[i] = j
+        return x_i
 
     def __inc__(self, key: str, value: torch.Tensor, *args, **kwargs) -> int:
         """Increment tensor values"""
