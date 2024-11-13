@@ -1,13 +1,18 @@
 """NuGraph3 instance decoder"""
 from typing import Any
+import cupy as cp
+from cuml import DBSCAN
+from cuml.internals.memory_utils import using_output_type
+from cuml.common.device_selection import using_device_type
 import torch
 from torch import nn
 from torchmetrics.functional.clustering import adjusted_rand_score
 from torch_geometric.data import Batch
 from torch_geometric.utils import unbatch
 from pytorch_lightning import LightningModule
+from pynuml.data import NuGraphData
 from ....util import ObjCondensationLoss
-from ..types import Data, N_IT, N_IP
+from ..types import Data, N_IT, N_IP, E_H_IP
 
 class InstanceDecoder(LightningModule):
     """
@@ -37,6 +42,8 @@ class InstanceDecoder(LightningModule):
         self.beta_net = nn.Linear(hit_features, 1)
         self.coord_net = nn.Linear(hit_features, instance_features)
 
+        self.dbscan = DBSCAN()
+
     # pylint: disable=arguments-differ
     def forward(self, data: Data, stage: str = None) -> dict[str, Any]:
         """
@@ -57,8 +64,13 @@ class InstanceDecoder(LightningModule):
             data._inc_dict["hit"]["of"] = data._inc_dict["hit"]["x"]
             data._inc_dict["hit"]["ox"] = data._inc_dict["hit"]["x"]
 
+        # add materialized instances
+        if isinstance(data, Batch):
+            raise NotImplementedError("Materializing instances for batched graphs in development...")
+        else:
+            self.materialize(data)
+
         # calculate loss
-        data.materialize_predicted_particles()
         loss = (-1 * self.temp).exp() * self.loss(data, data.y_i()) + self.temp
         b, v = loss
         loss = loss.sum()
@@ -98,6 +110,24 @@ class InstanceDecoder(LightningModule):
             metrics["temperature/instance"] = self.temp
 
         return loss, metrics
+
+    def materialize(self, data: NuGraphData) -> None:
+        """Materialize instance embedding
+        
+        Args:
+            data: input data object
+        """
+        mask = data["hit"].x_filter > 0.5
+        i = torch.empty_like(data["hit"].y_semantic).fill_(-1)
+        arr = data["hit"].ox[mask]
+        output_type = "cupy" if arr.is_cuda else "numpy"
+        arr = cp.from_dlpack(arr) if arr.is_cuda else arr.numpy()
+        with using_output_type(output_type):
+            arr = self.dbscan.fit_predict(arr)
+            i[mask] = torch.from_dlpack(arr).long()
+        data[N_IP].x = torch.empty(i.max()+1, 0, device=self.device, dtype=torch.float)
+        mask = i > -1
+        data[E_H_IP].edge_index = torch.stack((torch.nonzero(mask).squeeze(1), i[mask])).long()
 
     def on_epoch_end(self, logger: "WandbLogger", stage: str, epoch: int) -> None:
         """
