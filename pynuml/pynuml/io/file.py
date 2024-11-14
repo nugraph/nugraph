@@ -809,8 +809,13 @@ class File:
                         # event ID == idx
                         data = self._data[group][dataset][lower : upper]
 
+                    # ensure array has correct shape if empty
+                    columns = self._cols(group, dataset)
+                    if not data.size:
+                        data = data.reshape(0, len(columns))
+
                     # create a Pandas DataFrame to store the numpy array
-                    df = pd.DataFrame(data, columns=self._cols(group, dataset))
+                    df = pd.DataFrame(data, columns=columns)
                     for col in df.columns:
                         if df[col].dtype == '|S64' or df[col].dtype == 'object':
                             df[col] = df[col].str.decode('utf-8')
