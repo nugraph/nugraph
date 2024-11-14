@@ -74,27 +74,6 @@ class NuGraphBlock(MessagePassing):
             _, x = x
         return self.net(torch.cat((aggr_out, x), dim=1))
 
-class PlanarConv(nn.Module):
-    """
-    Planar convolution module
-    
-    Args:
-        module_dict: Dictionary containing convolution modules for each plane
-    """
-    def __init__(self, module_dict: dict[str, nn.Module]):
-        super().__init__()
-        self.net = nn.ModuleDict(module_dict)
-
-    def forward(self, data: Data) -> None:
-        """
-        PlanarConv forward pass
-        
-        Args:
-            data: Graph data object
-        """
-        for p, net in self.net.items():
-            data[p].x = net(data[p].x)
-
 class NuGraphCore(nn.Module):
     """
     NuGraph core message-passing engine
@@ -102,52 +81,41 @@ class NuGraphCore(nn.Module):
     This is the core NuGraph message-passing loop
 
     Args:
-        planar_features: Number of features in planar embedding
+        hit_features: Number of features in planar embedding
         nexus_features: Number of features in nexus embedding
         interaction_features: Number of features in interaction embedding
-        planes: List of detector planes
         use_checkpointing: Whether to use checkpointing
     """
     def __init__(self,
-                 planar_features: int,
+                 hit_features: int,
                  nexus_features: int,
                  interaction_features: int,
-                 planes: list[str],
                  use_checkpointing: bool = True):
         super().__init__()
 
-        self.planes = planes
         self.use_checkpointing = use_checkpointing
 
         # internal planar message-passing
-        plane = NuGraphBlock(planar_features, planar_features,
-                             planar_features)
-        self.plane_net = HeteroConv(
-            {(p, "plane", p): plane for p in planes})
+        self.plane_net = NuGraphBlock(hit_features, hit_features,
+                                      hit_features)
 
         # message-passing from planar nodes to nexus nodes
-        nexus_up = NuGraphBlock(planar_features, nexus_features,
-                                nexus_features)
-        self.plane_to_nexus = HeteroConv(
-            {(p, "nexus", "sp"): nexus_up for p in planes})
+        self.plane_to_nexus = NuGraphBlock(hit_features, nexus_features,
+                                           nexus_features)
 
         # message-passing from nexus nodes to interaction nodes
-        self.nexus_to_interaction = HeteroConv({
-            ("sp", "in", "evt"): NuGraphBlock(nexus_features,
-                                              interaction_features,
-                                              interaction_features)})
+        self.nexus_to_interaction = NuGraphBlock(nexus_features,
+                                                 interaction_features,
+                                                 interaction_features)
 
         # message-passing from interaction nodes to nexus nodes
-        self.interaction_to_nexus = HeteroConv({
-            ("evt", "owns", "sp"): NuGraphBlock(interaction_features,
-                                                nexus_features,
-                                                nexus_features)})
+        self.interaction_to_nexus = NuGraphBlock(interaction_features,
+                                                 nexus_features,
+                                                 nexus_features)
 
         # message-passing from nexus nodes to planar nodes
-        nexus_down = NuGraphBlock(nexus_features, planar_features,
-                                  planar_features)
-        self.nexus_to_plane = HeteroConv(
-            {("sp", "nexus", p): nexus_down for p in planes})
+        self.nexus_to_plane = NuGraphBlock(nexus_features, hit_features,
+                                           hit_features)
         
     def checkpoint(self, net: nn.Module, *args) -> TD:
         """
@@ -162,7 +130,6 @@ class NuGraphCore(nn.Module):
         else:
             return net(*args)
 
-
     def forward(self, data: Data) -> None:
         """
         NuGraphCore forward pass
@@ -170,8 +137,28 @@ class NuGraphCore(nn.Module):
         Args:
             data: Graph data object
         """
-        for net in [self.plane_net, self.plane_to_nexus,
-                    self.nexus_to_interaction, self.interaction_to_nexus,
-                    self.nexus_to_plane]:
-            x = self.checkpoint(net, data.x_dict, data.edge_index_dict)
-            data.set_value_dict("x", x)
+
+        # message-passing in hits
+        data["hit"].x = self.checkpoint(
+            self.plane_net, data["hit"].x,
+            data["hit", "delaunay-planar", "hit"].edge_index)
+
+        # message-passing from hits to nexus
+        data["sp"].x = self.checkpoint(
+            self.plane_to_nexus, (data["hit"].x, data["sp"].x),
+            data["hit", "nexus", "sp"].edge_index)
+
+        # message-passing from nexus to interaction
+        data["evt"].x = self.checkpoint(
+            self.nexus_to_interaction, (data["sp"].x, data["evt"].x),
+            data["sp", "in", "evt"].edge_index)
+
+        # message-passing from interaction to nexus
+        data["sp"].x = self.checkpoint(
+            self.interaction_to_nexus, (data["evt"].x, data["sp"].x),
+            data["sp", "in", "evt"].edge_index[(1,0), :])
+
+        # message-passing from nexus to hits
+        data["hit"].x = self.checkpoint(
+            self.nexus_to_plane, (data["sp"].x, data["hit"].x),
+            data["hit", "nexus", "sp"].edge_index[(1,0), :])

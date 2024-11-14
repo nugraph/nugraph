@@ -1,0 +1,32 @@
+name: ci
+
+on:
+  pull_request:
+    branches: [main]
+
+env:
+  NUGRAPH_DIR: ${{ github.workspace }}
+  NUGRAPH_DATA: ${{ github.workspace }}/data
+  NUGRAPH_LOG: ${{ github.workspace}}/log
+
+jobs:
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+    - name: checking out repository
+      uses: actions/checkout@v4
+    - name: building nugraph
+      uses: ./.github/actions/build-nugraph
+    - name: analysing the code with pylint
+      run: pylint --fail-under=6 $(git ls-files '*.py')
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+    - name: checking out repository
+      uses: actions/checkout@v4
+    - name: building nugraph
+      uses: ./.github/actions/build-nugraph
+    - name: running python unit tests
+      run: pytest

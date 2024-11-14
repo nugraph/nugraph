@@ -15,12 +15,14 @@ classifiers = [
 dependencies = [
     "matplotlib",
     "plotly",
-    "pynuml==24.7.1",
+    "pynuml==24.7.dev1",
     "pynvml",
     "seaborn",
     "torch>=1.12.1",
     "torch-geometric>=2.1.0",
+    "torch-scatter",
     "pytorch-lightning>=1.7.1",
+    "wandb",
 ]
 dynamic = ["version", "description"]
 

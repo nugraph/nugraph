@@ -1,6 +1,7 @@
 from argparse import ArgumentParser
 import warnings
 
+import os
 import sys
 import h5py
 import tqdm
@@ -14,11 +15,14 @@ from pytorch_lightning import LightningDataModule
 from ..data import H5Dataset, BalanceSampler
 from ..util import PositionFeatures, FeatureNormMetric, FeatureNorm, HierarchicalEdges, EventLabels
 
+DEFAULT_DATA = ("$NUGRAPH_DATA/uboone-opendata/"
+                "uboone-opendata-19be46d89d0f22f5a78641d724c1fedd.gnn.h5")
+
 class H5DataModule(LightningDataModule):
     """PyTorch Lightning data module for neutrino graph data."""
     def __init__(self,
-                 data_path: str,
-                 batch_size: int,
+                 data_path: str = "auto",
+                 batch_size: int = 64,
                  shuffle: str = 'random',
                  balance_frac: float = 0.1,
                  prepare: bool = False):
@@ -28,7 +32,9 @@ class H5DataModule(LightningDataModule):
         # so we silence PyTorch Lightning's warnings
         warnings.filterwarnings("ignore", ".*does not have many workers.*")
 
-        self.filename = data_path
+        if data_path == "auto":
+            data_path = DEFAULT_DATA
+        self.filename = os.path.expandvars(data_path)
         self.batch_size = batch_size
         if shuffle != 'random' and shuffle != 'balance':
             print('shuffle argument must be "random" or "balance".')
@@ -184,8 +190,7 @@ class H5DataModule(LightningDataModule):
     @staticmethod
     def add_data_args(parser: ArgumentParser) -> ArgumentParser:
         data = parser.add_argument_group('data', 'Data module configuration')
-        data.add_argument('--data-path', type=str,
-                          default='/raid/uboone/NuGraph2/NG2-paper.gnn.h5',
+        data.add_argument('--data-path', type=str, default="auto",
                           help='Location of input data file')
         data.add_argument('--batch-size', type=int, default=64,
                           help='Size of each batch of graphs')

@@ -1,3 +1,4 @@
+import os
 import sys
 from abc import ABC
 from typing import Any, Callable, Dict, List, Tuple
@@ -66,14 +67,13 @@ class File:
         }
 
         # open the input HDF5 file in parallel
-        self._fd = h5py.File(fname, "r", driver='mpio', comm=MPI.COMM_WORLD)
+        self._fd = h5py.File(os.path.expandvars(fname), "r", driver='mpio', comm=MPI.COMM_WORLD)
 
         # check if data partitioning key datasets exists in the file
         if parKey not in self._fd.keys():
             raise Exception(f'Error: dataset {parKey} is not found in file {fname}!')
 
         # parse the name of data partitioning key
-        import os.path
         self._parTable = os.path.dirname(parKey)
         # remove leading '/'
         if self._parTable[0] == '/': self._parTable = self._parTable[1:]
@@ -681,8 +681,10 @@ class File:
                     idx_found[group] = False
                     dim = self._seq_cnt[group].shape[0]
 
-                    # check against the max of this group's
-                    if idx > self._seq_cnt[group][dim-1, 0]:
+                    # check against the min and max of this group's seq IDs
+                    if len(self._seq_cnt[group]) <= 0 or \
+                       idx < self._seq_cnt[group][0, 0] or \
+                       idx > self._seq_cnt[group][dim-1, 0]:
                         continue
 
                     # check and search for idx in _seq_cnt[group][:,0]
