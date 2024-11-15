@@ -145,6 +145,13 @@ class InstanceDecoder(LightningModule):
             ox: object condensation embedding tensor
             mask: bool mask tensor for background hit removal
         """
+
+        # if there are no signal hits to cluster, skip dbscan and return empty tensors
+        if not mask.sum():
+            x_ip = torch.empty(0, 0, dtype=torch.float, device=self.device)
+            e_h_ip = torch.empty(2, 0, dtype=torch.long, device=self.device)
+            return x_ip, e_h_ip
+
         i = torch.empty(ox.size(0), dtype=torch.long, device=self.device).fill_(-1)
         arr = ox[mask]
         output_type = "cupy" if arr.is_cuda else "numpy"
