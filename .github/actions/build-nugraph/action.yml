@@ -6,7 +6,7 @@ runs:
   - name: setting up conda cache
     uses: actions/cache@v3
     env:
-      CACHE_NUMBER: 0
+      CACHE_NUMBER: 1
     with:
       path: ~/conda_pkgs_dir
       key:
