@@ -20,6 +20,7 @@ jobs:
     - name: building nugraph
       uses: ./.github/actions/build-nugraph
     - name: analysing the code with pylint
+      shell: bash
       run: pylint --fail-under=6 $(git ls-files '*.py')
 
   test:
@@ -30,4 +31,5 @@ jobs:
     - name: building nugraph
       uses: ./.github/actions/build-nugraph
     - name: running python unit tests
+      shell: bash
       run: pytest
