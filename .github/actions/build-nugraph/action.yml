@@ -14,7 +14,7 @@ runs:
     shell: bash
     run: |
       sudo apt-get update
-      sudo apt-get install -y mpich
+      sudo apt-get install -y mpich hdf5
   - name: setting up python
     uses: actions/setup-python@v5
     with:
