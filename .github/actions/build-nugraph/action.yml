@@ -9,6 +9,7 @@ runs:
       environment-file: numl.yaml
       miniforge-version: latest
   - name: installing local packages
-    runs: |
+    shell: bash
+    run: |
       pip install --no-deps -e ./pynuml
       pip install --no-deps -e ./nugraph
