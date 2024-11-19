@@ -15,6 +15,7 @@ runs:
   - name: installing conda environment
     uses: conda-incubator/setup-miniconda@v3
     with:
+      activate-environment: numl
       environment-file: numl.yaml
       miniforge-version: latest
       conda-remove-defaults: "true"
