@@ -13,6 +13,7 @@ dependencies:
   - cuml
   - flit
   - git
+  - gh
   - h5py=*=*mpich*
   - htop
   - ipywidgets
