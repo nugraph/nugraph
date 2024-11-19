@@ -24,6 +24,7 @@ runs:
     shell: bash
     run: |
       pip install setuptools wheel
+      pip install --no-binary=h5py h5py
       pip install torch
       pip install torch-scatter
       pip install pylint pytest ./pynuml ./nugraph
