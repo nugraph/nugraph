@@ -27,4 +27,5 @@ runs:
       pip install --no-binary=h5py h5py
       pip install torch
       pip install torch-scatter
+      pip install --extra-index-url https://pypi.nvidia.com cuml-cu12
       pip install pylint pytest ./pynuml ./nugraph
