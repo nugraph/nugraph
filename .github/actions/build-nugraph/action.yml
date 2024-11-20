@@ -20,7 +20,6 @@ runs:
       python-version: 3.12
       activate-environment: numl
       environment-file: numl.yaml
-      conda-remove-defaults: true
       use-only-tar-bz2: true
   - name: installing local packages
     shell: bash
