@@ -39,7 +39,6 @@ dependencies:
   - pynvml
   - pytables
   - pytest
-  - python=3.12
   - python-kaleido
   - pytorch::pytorch=2.4
   - pytorch-cuda=12.4
