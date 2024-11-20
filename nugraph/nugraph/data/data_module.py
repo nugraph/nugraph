@@ -24,7 +24,7 @@ class NuGraphDataModule(LightningDataModule):
                  batch_size: int = 64,
                  shuffle: str = 'random',
                  balance_frac: float = 0.1,
-                 prepare: bool = False):
+                 driver: str = None):
         super().__init__()
 
         # for this HDF5 dataloader, worker processes slow things down
@@ -33,7 +33,7 @@ class NuGraphDataModule(LightningDataModule):
 
         if data_path == "auto":
             data_path = DEFAULT_DATA
-        self.filename = os.path.expandvars(data_path)
+        filename = os.path.expandvars(data_path)
         self.batch_size = batch_size
         if shuffle != 'random' and shuffle != 'balance':
             print('shuffle argument must be "random" or "balance".')
@@ -41,55 +41,55 @@ class NuGraphDataModule(LightningDataModule):
         self.shuffle = shuffle
         self.balance_frac = balance_frac
 
-        with h5py.File(self.filename) as f:
+        f = h5py.File(filename, driver=driver)
 
-            # load metadata
-            try:
-                self.planes = f['planes'].asstr()[()].tolist()
-                self.semantic_classes = f['semantic_classes'].asstr()[()].tolist()
-            except:
-                print('Metadata not found in file! "planes" and "semantic_classes" are required.')
-                sys.exit()
+        # load metadata
+        try:
+            self.planes = f['planes'].asstr()[()].tolist()
+            self.semantic_classes = f['semantic_classes'].asstr()[()].tolist()
+        except:
+            print('Metadata not found in file! "planes" and "semantic_classes" are required.')
+            sys.exit()
 
-            # load optional event labels
-            if 'event_classes' in f:
-                self.event_classes = f['event_classes'].asstr()[()].tolist()
-            else:
-                self.event_classes = None
+        # load optional event labels
+        if 'event_classes' in f:
+            self.event_classes = f['event_classes'].asstr()[()].tolist()
+        else:
+            self.event_classes = None
 
-            # load sample splits
-            try:
-                train_samples = f['samples/train'].asstr()[()]
-                val_samples = f['samples/validation'].asstr()[()]
-                test_samples = f['samples/test'].asstr()[()]
-            except:
-                print('Sample splits not found in file! Call "generate_samples" to create them.')
-                sys.exit()
+        # load sample splits
+        try:
+            train_samples = f['samples/train'].asstr()[()]
+            val_samples = f['samples/validation'].asstr()[()]
+            test_samples = f['samples/test'].asstr()[()]
+        except:
+            print('Sample splits not found in file! Call "generate_samples" to create them.')
+            sys.exit()
 
-            # load data sizes
-            try:
-                self.train_datasize = f['datasize/train'][()]
-            except:
-                print('Data size array not found in file! Call "generate_samples" to create it.')
-                sys.exit()
+        # load data sizes
+        try:
+            self.train_datasize = f['datasize/train'][()]
+        except:
+            print('Data size array not found in file! Call "generate_samples" to create it.')
+            sys.exit()
 
-            # load feature normalisations
-            try:
-                norm = {}
-                for p in self.planes:
-                    norm[p] = tensor(f[f'norm/{p}'][()])
-            except:
-                print('Feature normalisations not found in file! Call "generate_norm" to create them.')
-                sys.exit()
+        # load feature normalisations
+        try:
+            norm = {}
+            for p in self.planes:
+                norm[p] = tensor(f[f'norm/{p}'][()])
+        except:
+            print('Feature normalisations not found in file! Call "generate_norm" to create them.')
+            sys.exit()
 
         transform = Compose((PositionFeatures(self.planes),
                              FeatureNorm(self.planes, norm),
                              HierarchicalEdges(self.planes),
                              EventLabels()))
 
-        self.train_dataset = NuGraphDataset(self.filename, train_samples, transform)
-        self.val_dataset = NuGraphDataset(self.filename, val_samples, transform)
-        self.test_dataset = NuGraphDataset(self.filename, test_samples, transform)
+        self.train_dataset = NuGraphDataset(f, train_samples, transform)
+        self.val_dataset = NuGraphDataset(f, val_samples, transform)
+        self.test_dataset = NuGraphDataset(f, test_samples, transform)
 
     @staticmethod
     def generate_samples(data_path: str):

@@ -5,20 +5,20 @@ from torch_geometric.data import Dataset
 
 from pynuml.data import NuGraphData
 
-class NuGraphDataset(Dataset):
+class NuGraphDataset(Dataset): # pylint: disable=abstract-method
     """NuGraph dataset
 
     Args:
-        filename: Name of dataset file
+        file: Input HDF5 file
         samples: List of graph object dataset names in file
         transform: Transforms to apply to graph objects
     """
     def __init__(self,
-                 filename: str,
+                 file: h5py.File,
                  samples: list[str],
                  transform: Optional[Callable] = None):
         super().__init__(transform=transform)
-        self.file = h5py.File(filename)
+        self.file = file
         self.samples = samples
 
     def len(self) -> int:
