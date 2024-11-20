@@ -15,8 +15,9 @@ from .decoders import SemanticDecoder, FilterDecoder, EventDecoder, VertexDecode
 
 from ...data import H5DataModule
 
-from rmm.allocators.torch import rmm_torch_allocator
-torch.cuda.memory.change_current_allocator(rmm_torch_allocator)
+if torch.cuda.is_available():
+    from rmm.allocators.torch import rmm_torch_allocator
+    torch.cuda.memory.change_current_allocator(rmm_torch_allocator)
 
 class NuGraph3(LightningModule):
     """
