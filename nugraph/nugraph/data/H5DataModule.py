@@ -15,8 +15,7 @@ from pytorch_lightning import LightningDataModule
 from ..data import H5Dataset, BalanceSampler
 from ..util import PositionFeatures, FeatureNormMetric, FeatureNorm, HierarchicalEdges, EventLabels
 
-DEFAULT_DATA = ("$NUGRAPH_DATA/uboone-opendata/"
-                "uboone-opendata-19be46d89d0f22f5a78641d724c1fedd.gnn.h5")
+DEFAULT_DATA = "$NUGRAPH_DATA/uboone-opendata/optical-ec1e7f5c.gnn.h5"
 
 class H5DataModule(LightningDataModule):
     """PyTorch Lightning data module for neutrino graph data."""
