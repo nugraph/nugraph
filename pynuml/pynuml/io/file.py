@@ -691,6 +691,7 @@ class File:
                     if idx == idx_grp[group]:
                         # this is most likely the case when building all graphs
                         # for all events at once
+                        if idx >= dim: continue
                         idx_found[group] = True
                         idx_grp[group] = idx
                     elif idx - idx_grp[group] <= 8:
