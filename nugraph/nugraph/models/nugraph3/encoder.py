@@ -17,11 +17,19 @@ class Encoder(nn.Module):
                  in_features: int,
                  planar_features: int,
                  nexus_features: int,
-                 interaction_features: int):
+                 interaction_features: int,
+                 ophit_features: int,
+                 pmt_features: int,
+                 flash_features: int):
         super().__init__()
         self.planar_net = nn.Linear(in_features, planar_features)
         self.nexus_features = nexus_features
         self.interaction_features = interaction_features
+
+        # hardcode optical features pending redesign
+        self.ophit_net = nn.Linear(8, ophit_features)
+        self.pmt_net = nn.Linear(2, pmt_features)
+        self.flash_net = nn.Linear(10, flash_features)
 
     def forward(self, data: Data) -> None:
         """
@@ -37,3 +45,6 @@ class Encoder(nn.Module):
         data["evt"].x = torch.zeros(data["evt"].num_nodes,
                                     self.interaction_features,
                                     device=data["hit"].x.device)
+        data["ophits"].x = self.ophit_net(data["ophits"].x)
+        data["opflashsumpe"].x = self.pmt_net(data["opflashsumpe"].x)
+        data["opflash"].x = self.flash_net(data["opflash"].x)

@@ -38,9 +38,8 @@ class NuGraph3(LightningModule):
         lr: Learning rate
     """
     def __init__(self,
-                 in_features: dict = {'u': 4, 'v': 4, 'y': 4, 
-                                      'oph': 8, 'pmt': 2, 'opf': 10},
-                 planar_features: int = 128,
+                 in_features: int = 5,
+                 hit_features: int = 128,
                  nexus_features: int = 32,
                  interaction_features: int = 32,
                  ophit_features: int = 128,
@@ -72,28 +71,17 @@ class NuGraph3(LightningModule):
         self.num_iters = num_iters
         self.lr = lr
 
-        self.encoder = Encoder(in_features, hit_features,
-                               nexus_features, interaction_features)
+        self.encoder = Encoder(in_features, hit_features, nexus_features,
+                               interaction_features, ophit_features,
+                               pmt_features, flash_features)
 
-        self.ophit_encoder = HeteroDictLinear({
-            'ophits': in_features['oph']}, 
-            ophit_features) 
-        
-        self.pmt_encoder = HeteroDictLinear({
-            'opflashsumpe': in_features['pmt']}, 
-            pmt_features)
-        
-        self.flash_encoder = HeteroDictLinear({
-            'opflash': in_features['opf']}, 
-            flash_features)
-
-        self.core_net = NuGraphCore(hit_features=planar_features,
+        self.core_net = NuGraphCore(hit_features=hit_features,
                                     nexus_features=nexus_features,
                                     interaction_features=interaction_features,
                                     ophit_features=ophit_features,
-                                    pmt_features=ophit_features,
+                                    pmt_features=pmt_features,
                                     flash_features=flash_features,
-                                    planes=use_checkpointing)
+                                    use_checkpointing=use_checkpointing)
 
         self.decoders = []
 
@@ -203,8 +191,7 @@ class NuGraph3(LightningModule):
         model = parser.add_argument_group('model', 'NuGraph3 model configuration')
         model.add_argument('--num-iters', type=int, default=5,
                            help='Number of message-passing iterations')
-        model.add_argument('--in-feats', type=dict, default={'u': 4, 'v': 4, 'y': 4, 
-                                      'oph': 8, 'pmt': 2, 'opf': 10},
+        model.add_argument('--in-feats', type=dict, default=5,
                            help='Number of input node features')
         model.add_argument('--hit-feats', type=int, default=128,
                            help='Hidden dimensionality of hit convolutions')
