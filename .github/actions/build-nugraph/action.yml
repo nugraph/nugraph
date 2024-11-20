@@ -18,6 +18,7 @@ runs:
       auto-update-conda: true
       miniforge-version: latest
       mamba-version: "*"
+      python-version: 3.12
       auto-activate-base: false
       activate-environment: numl
       environment-file: numl.yaml
