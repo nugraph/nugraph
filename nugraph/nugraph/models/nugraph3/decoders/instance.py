@@ -1,14 +1,18 @@
 """NuGraph3 instance decoder"""
 from typing import Any
+import cupy as cp
+from cuml import DBSCAN
+from cuml.internals.memory_utils import using_output_type
+from cuml.common.device_selection import using_device_type
 import torch
 from torch import nn
 from torchmetrics.functional.clustering import adjusted_rand_score
-from torch_scatter import scatter_min
 from torch_geometric.data import Batch
-from torch_geometric.utils import bipartite_subgraph, cumsum, degree, unbatch
+from torch_geometric.utils import cumsum, unbatch
 from pytorch_lightning import LightningModule
+from pynuml.data import NuGraphData
 from ....util import ObjCondensationLoss
-from ..types import Data, N_IT, N_IP, E_H_IT, E_H_IP
+from ..types import Data, N_IT, N_IP, E_H_IP
 
 class InstanceDecoder(LightningModule):
     """
@@ -38,6 +42,9 @@ class InstanceDecoder(LightningModule):
         self.beta_net = nn.Linear(hit_features, 1)
         self.coord_net = nn.Linear(hit_features, instance_features)
 
+        self.dbscan = DBSCAN()
+
+    # pylint: disable=arguments-differ
     def forward(self, data: Data, stage: str = None) -> dict[str, Any]:
         """
         NuGraph3 instance decoder forward pass
@@ -47,76 +54,60 @@ class InstanceDecoder(LightningModule):
             stage: Stage name (train/val/test)
         """
 
+        h = data["hit"]
+
         # run network and add output to graph object
-        data["hit"].of = self.beta_net(data["hit"].x).squeeze(dim=-1).sigmoid()
-        data["hit"].ox = self.coord_net(data["hit"].x)
+        h.of = self.beta_net(h.x).squeeze(dim=-1).sigmoid()
+        h.ox = self.coord_net(h.x)
         if isinstance(data, Batch):
-            data._slice_dict["hit"]["of"] = data["hit"].ptr
-            data._slice_dict["hit"]["ox"] = data["hit"].ptr
+            # pylint: disable=protected-access
+            data._slice_dict["hit"]["of"] = h.ptr
+            data._slice_dict["hit"]["ox"] = h.ptr
             data._inc_dict["hit"]["of"] = data._inc_dict["hit"]["x"]
             data._inc_dict["hit"]["ox"] = data._inc_dict["hit"]["x"]
 
-        # materialize instances
-        materialize = True
-        if materialize:
-            # form instances across batch
-            imask = data["hit"].of > 0.1
-            # we don't want to do this part yet. don't figure out how to
-            # unbatch the predicted particle nodes until we've filtered out vestigial ones
-            data[N_IP].x = torch.empty(imask.sum(), 0, device=self.device)
-            data[N_IP].ox = data["hit"].ox[imask]
-            if isinstance(data, Batch):
-                repeats = torch.empty(data.num_graphs, dtype=torch.long, device=self.device)
-                data[N_IP].batch = torch.empty(data[N_IP].num_nodes,
-                                               dtype=torch.long, device=self.device)
-                for i in range(data.num_graphs):
-                    lo, hi = data._slice_dict["hit"]["x"][i:i+2]
-                    repeats[i] = imask[lo:hi].sum()
-                    data[N_IP].batch[lo:hi] = i
-                data[N_IP].ptr = cumsum(repeats)
-                data._slice_dict[N_IP] = {
-                    "x": data[N_IP].ptr,
-                    "ox": data[N_IP].ptr,
-                }
-                data._inc_dict[N_IP] = {
-                    "x": data._inc_dict["hit"]["x"],
-                    "ox": data._inc_dict["hit"]["x"],
-                }
-                data = Batch.from_data_list([self.materialize(b) for b in data.to_data_list()])
-            else:
-                self.materialize(data)
+        # add materialized instances
+        mask = (h.x_filter > 0.5) & (h.x_semantic.argmax(dim=1) != 6)
+        if isinstance(data, Batch):
+            x_ip, e_h_ip = [], []
+            for ox, m in zip(unbatch(h.ox, h.batch), unbatch(mask, h.batch)):
+                x, e = self.materialize(ox, m)
+                x_ip.append(x)
+                e_h_ip.append(e)
 
-            # collapse instance edges into labels
-            e = data[E_H_IP]
-            _, instances = scatter_min(e.distance, e.edge_index[0], dim_size=data["hit"].num_nodes)
-            mask = instances < e.num_edges
-            instances[~mask] = -1
-            instances[mask] = e.edge_index[1, instances[mask]]
-            data["hit"].i = instances
-            if isinstance(data, Batch):
-                data._slice_dict["hit"]["i"] = data["hit"].ptr
-                data._inc_dict["hit"]["i"] = data._inc_dict["hit"]["x"]
+            # particle nodes
+            data[N_IP].x = torch.cat(x_ip, dim=0)
+            data[N_IP].batch = torch.cat(
+                [torch.empty(x.size(0), dtype=torch.long, device=self.device).fill_(i)
+                 for i, x in enumerate(x_ip)])
+            data[N_IP].ptr = cumsum(torch.tensor([x.size(0) for x in x_ip], device=self.device))
+            data._slice_dict[N_IP] = {"x": data[N_IP].ptr}
+            data._inc_dict[N_IP] = {
+                "x": torch.zeros(data.num_graphs, dtype=torch.long, device=self.device)
+            }
+
+            # particle edges
+            e_inc = torch.stack((h.ptr[:-1], data[N_IP].ptr[:-1]), dim=1).unsqueeze(2)
+            data[E_H_IP].edge_index = torch.cat([e + inc for e, inc in zip(e_h_ip, e_inc)], dim=1)
+            data._slice_dict[E_H_IP] = {
+                "edge_index": cumsum(torch.tensor([e.size(1) for e in e_h_ip]))
+            }
+            data._inc_dict[E_H_IP] = {"edge_index": e_inc}
+
+        else:
+            data[N_IP].x, data[E_H_IP].edge_index = self.materialize(h.ox, mask)
 
         # calculate loss
-        y = torch.full_like(data["hit"].y_semantic, -1)
-        i, j = data[E_H_IT].edge_index
-        y[i] = j
-        data["hit"].y_instance = y
-        loss = (-1 * self.temp).exp() * self.loss(data, y) + self.temp
+        loss = (-1 * self.temp).exp() * self.loss(data, data.y_i()) + self.temp
         b, v = loss
         loss = loss.sum()
 
         # calculate rand score per graph
-        # note: to prevent crosstalk, we should delay materializing of the
-        # true and predicted instance labels until _after_ we've unbatched
         if isinstance(data, Batch):
-            z = zip(unbatch(data["hit"].i, batch=data["hit"].batch,
-                            batch_size=data.num_graphs),
-                    unbatch(data["hit"].y_instance, batch=data["hit"].batch,
-                            batch_size=data.num_graphs))
-            rand = torch.mean(torch.stack([adjusted_rand_score(x, y) for x, y in z]))
+            rand = torch.mean(torch.stack([adjusted_rand_score(l.x_i(), l.y_i())
+                                           for l in data.to_data_list()]))
         else:
-            rand = adjusted_rand_score(data["hit"].i, data["hit"].y_instance)
+            rand = adjusted_rand_score(data.x_i(), data.y_i())
         if not -1. < rand < 1.:
             raise RuntimeError(f"Adjusted Rand Score metric value {rand} is outside allowed range!")
 
@@ -147,50 +138,31 @@ class InstanceDecoder(LightningModule):
 
         return loss, metrics
 
-    def materialize(self, data: Data) -> None:
-        """
-        Materialize object condensation embedding into instances
-
+    def materialize(self, ox: torch.Tensor, mask: torch.Tensor) -> tuple[torch.Tensor]:
+        """Materialize instance embedding
+        
         Args:
-            data: Heterodata graph object
+            ox: object condensation embedding tensor
+            mask: bool mask tensor for background hit removal
         """
-        e = data[E_H_IP]
-        x_hit = data["hit"].ox
 
-        # condensation mask
-        fmask = data["hit"].of > 0.1 # which hits are condensation points
-        fidx = fmask.nonzero().squeeze(1)
+        # if there are no signal hits to cluster, skip dbscan and return empty tensors
+        if not mask.sum():
+            x_ip = torch.empty(0, 0, dtype=torch.float, device=self.device)
+            e_h_ip = torch.empty(2, 0, dtype=torch.long, device=self.device)
+            return x_ip, e_h_ip
 
-        # initial particle instance nodes
-        data[N_IP].x = torch.empty(fidx.size(0), 0, device=self.device)
-        data[N_IP].ox = x_hit[fmask]
-
-        # add edges from condensation hits to non-condensation hits
-        dist = (x_hit[~fmask, None, :] - x_hit[None, fmask, :]).square().sum(dim=2)
-        e.edge_index = (dist < 1).nonzero().transpose(0, 1).detach()
-        e.distance = dist[e.edge_index[0], e.edge_index[1]].detach()
-        e.edge_index[0] = torch.nonzero(~fmask).squeeze(1)[e.edge_index[0]]
-
-        # prune particle instances with no hits
-        deg = degree(e.edge_index[1], num_nodes=data[N_IP].num_nodes)
-        dmask = deg >= self.min_degree
-        e.edge_index, e.distance = bipartite_subgraph(
-            (torch.ones(data["hit"].num_nodes, dtype=torch.bool, device=self.device), dmask),
-            e.edge_index, e.distance, size=(data["hit"].num_nodes, data[N_IP].num_nodes), relabel_nodes=True)
-        data[N_IP].x = data[N_IP].x[dmask]
-        data[N_IP].ox = data[N_IP].ox[dmask]
-
-        #  add edges from particle nodes to condensation hits
-        pidx = fidx[dmask]
-        dist = (x_hit[fidx, None, :] - x_hit[None, pidx, :]).square().sum(dim=2)
-        edge_index = (dist < 1).nonzero().transpose(0, 1).detach()
-        if edge_index.size(1):
-            distance = dist[edge_index[0], edge_index[1]].detach()
-            edge_index[0] = fidx[edge_index[0]]
-            e.edge_index = torch.cat((e.edge_index, edge_index), dim=1)
-            e.distance = torch.cat((e.distance, distance), dim=0)
-
-        return data
+        i = torch.empty(ox.size(0), dtype=torch.long, device=self.device).fill_(-1)
+        arr = ox[mask]
+        output_type = "cupy" if arr.is_cuda else "numpy"
+        arr = cp.from_dlpack(arr.detach()) if arr.is_cuda else arr.numpy()
+        with using_output_type(output_type):
+            arr = self.dbscan.fit_predict(arr)
+            i[mask] = torch.from_dlpack(arr).long()
+        x_ip = torch.empty(i.max()+1, 0, dtype=torch.float, device=self.device)
+        mask = i > -1
+        e_h_ip = torch.stack((torch.nonzero(mask).squeeze(1), i[mask])).long()
+        return x_ip, e_h_ip
 
     def on_epoch_end(self, logger: "WandbLogger", stage: str, epoch: int) -> None:
         """

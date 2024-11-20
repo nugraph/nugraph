@@ -2,6 +2,7 @@
 import argparse
 import warnings
 
+import torch.cuda
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import OneCycleLR
 
@@ -13,6 +14,10 @@ from .core import NuGraphCore
 from .decoders import SemanticDecoder, FilterDecoder, EventDecoder, VertexDecoder, InstanceDecoder
 
 from ...data import H5DataModule
+
+if torch.cuda.is_available():
+    from rmm.allocators.torch import rmm_torch_allocator
+    torch.cuda.memory.change_current_allocator(rmm_torch_allocator)
 
 class NuGraph3(LightningModule):
     """
