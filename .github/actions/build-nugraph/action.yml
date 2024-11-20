@@ -3,6 +3,7 @@ name: build-nugraph
 runs:
   using: "composite"
   steps:
+
   - name: setting up conda cache
     uses: actions/cache@v3
     env:
@@ -12,6 +13,7 @@ runs:
       key:
         ${{ runner.os }}-conda-${{ env.CACHE_NUMBER }}-${{
         hashFiles('numl.yaml') }}
+
   - name: installing conda environment
     uses: conda-incubator/setup-miniconda@v3
     with:
@@ -19,8 +21,31 @@ runs:
       miniforge-version: latest
       python-version: 3.12
       activate-environment: numl
-      environment-file: numl.yaml
       use-only-tar-bz2: true
+
+  - name: getting date
+    shell: bash
+    id: get-date
+    run: echo "today=$(/bin/date -u '+%Y%m%d')" >> $GITHUB_OUTPUT
+
+  - name: setting up conda environment cache
+    uses: actions/cache@v3
+    with:
+      path: ${{ env.CONDA }}/envs
+      key:
+        conda-${{ runner.os }}--${{ runner.arch }}--${{
+        steps.get-date.outputs.today }}-${{
+        hashFiles('numl.yaml') }}-${{ env.CACHE_NUMBER
+        }}
+    env:
+      CACHE_NUMBER: 0
+    id: cache
+
+  - name: updating conda environment
+    run:
+      mamba env update -n numl -f numl.yaml
+    if: steps.cache.outputs.cache-hit != 'true'
+
   - name: installing local packages
     shell: bash
     run: |
