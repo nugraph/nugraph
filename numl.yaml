@@ -7,7 +7,7 @@ channels:
   - rapidsai
   - numl
 dependencies:
-  - act
+  - conda-forge::act
   - automake
   - compilers
   - cuml
