@@ -19,7 +19,6 @@ runs:
     with:
       auto-update-conda: true
       miniforge-version: latest
-      python-version: 3.12
       activate-environment: numl
       use-only-tar-bz2: true
 
