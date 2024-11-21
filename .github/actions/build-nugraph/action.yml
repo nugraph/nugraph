@@ -42,7 +42,8 @@ runs:
 
   - name: updating conda environment
     shell: bash
-    run:
+    run: |
+      mamba list
       mamba env update -n numl -f numl.yaml
     if: steps.cache.outputs.cache-hit != 'true'
 
