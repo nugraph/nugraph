@@ -3,27 +3,52 @@ name: build-nugraph
 runs:
   using: "composite"
   steps:
-  - name: setting up pip cache
-    uses: actions/cache@v4
+
+  - name: setting up conda cache
+    uses: actions/cache@v3
+    env:
+      CACHE_NUMBER: 0
     with:
-      path: ~/.cache/pip
-      key: ${{ runner.os }}-pip-${{ hashFiles('**/pyproject.toml') }}
-      restore-keys: |
-        ${{ runner.os }}-pip-
-  - name: installing mpich
+      path: ~/conda_pkgs_dir
+      key:
+        ${{ runner.os }}-conda-${{ env.CACHE_NUMBER }}-${{
+        hashFiles('numl.yaml') }}
+
+  - name: installing conda environment
+    uses: conda-incubator/setup-miniconda@v3
+    with:
+      auto-update-conda: true
+      miniforge-version: latest
+      activate-environment: numl
+      use-only-tar-bz2: true
+
+  - name: getting date
+    shell: bash
+    id: get-date
+    run: echo "today=$(/bin/date -u '+%Y%m%d')" >> $GITHUB_OUTPUT
+
+  - name: setting up conda environment cache
+    uses: actions/cache@v3
+    with:
+      path: ${{ env.CONDA }}/envs
+      key:
+        conda-${{ runner.os }}--${{ runner.arch }}--${{
+        steps.get-date.outputs.today }}-${{
+        hashFiles('numl.yaml') }}-${{ env.CACHE_NUMBER
+        }}
+    env:
+      CACHE_NUMBER: 0
+    id: cache
+
+  - name: updating conda environment
     shell: bash
     run: |
-      sudo apt-get update
-      sudo apt-get install -y mpich
-  - name: setting up python
-    uses: actions/setup-python@v5
-    with:
-      python-version: "3.13"
-      cache: "pip"
-  - name: installing packages
+      mamba list
+      mamba env update -n numl -f numl.yaml
+    if: steps.cache.outputs.cache-hit != 'true'
+
+  - name: installing local packages
     shell: bash
     run: |
-      pip install setuptools wheel
-      pip install torch
-      pip install torch-scatter
-      pip install pylint pytest ./pynuml ./nugraph
+      pip install --no-deps -e ./pynuml
+      pip install --no-deps -e ./nugraph

@@ -3,6 +3,7 @@ name: ci
 on:
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 env:
   NUGRAPH_DIR: ${{ github.workspace }}
@@ -11,22 +12,34 @@ env:
 
 jobs:
 
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - name: checking out repository
+      uses: actions/checkout@v4
+    - name: building nugraph
+      uses: ./.github/actions/build-nugraph
+
   lint:
     runs-on: ubuntu-latest
+    needs: build
     steps:
     - name: checking out repository
       uses: actions/checkout@v4
     - name: building nugraph
       uses: ./.github/actions/build-nugraph
     - name: analysing the code with pylint
+      shell: bash
       run: pylint --fail-under=6 $(git ls-files '*.py')
 
   test:
     runs-on: ubuntu-latest
+    needs: build
     steps:
     - name: checking out repository
       uses: actions/checkout@v4
     - name: building nugraph
       uses: ./.github/actions/build-nugraph
     - name: running python unit tests
+      shell: bash
       run: pytest
