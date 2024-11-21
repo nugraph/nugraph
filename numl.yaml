@@ -7,7 +7,7 @@ channels:
   - rapidsai
   - numl
 dependencies:
-  - conda-forge::act
+  - act
   - automake
   - compilers
   - cuml
@@ -25,8 +25,7 @@ dependencies:
   - ninja
   - nugraph
   - numba
-  - numexpr>=2.8.0 # temporary fix
-  - numpy<2
+  - numpy
   - openblas
   - openssh
   - particle
