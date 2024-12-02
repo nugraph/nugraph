@@ -58,20 +58,17 @@ class InstanceDecoder(LightningModule):
 
         # run network and add output to graph object
         h.of = self.beta_net(h.x).squeeze(dim=-1).sigmoid()
-        h.ox = self.coord_net(h.x)
         if isinstance(data, Batch):
             # pylint: disable=protected-access
             data._slice_dict["hit"]["of"] = h.ptr
-            data._slice_dict["hit"]["ox"] = h.ptr
             data._inc_dict["hit"]["of"] = data._inc_dict["hit"]["x"]
-            data._inc_dict["hit"]["ox"] = data._inc_dict["hit"]["x"]
 
         # add materialized instances
         mask = (h.x_filter > 0.5) & (h.x_semantic.argmax(dim=1) != 6)
         if isinstance(data, Batch):
             x_ip, e_h_ip = [], []
-            for ox, m in zip(unbatch(h.ox, h.batch), unbatch(mask, h.batch)):
-                x, e = self.materialize(ox, m)
+            for of, m in zip(unbatch(h.of, h.batch), unbatch(mask, h.batch)):
+                x, e = self.materialize(of, m)
                 x_ip.append(x)
                 e_h_ip.append(e)
 
@@ -95,7 +92,7 @@ class InstanceDecoder(LightningModule):
             data._inc_dict[E_H_IP] = {"edge_index": e_inc}
 
         else:
-            data[N_IP].x, data[E_H_IP].edge_index = self.materialize(h.ox, mask)
+            data[N_IP].x, data[E_H_IP].edge_index = self.materialize(h.of, mask)
 
         # calculate loss
         loss = (-1 * self.temp).exp() * self.loss(data, data.y_i()) + self.temp
@@ -138,7 +135,7 @@ class InstanceDecoder(LightningModule):
 
         return loss, metrics
 
-    def materialize(self, ox: torch.Tensor, mask: torch.Tensor) -> tuple[torch.Tensor]:
+    def materialize(self, of: torch.Tensor, mask: torch.Tensor) -> tuple[torch.Tensor]:
         """Materialize instance embedding
         
         Args:
@@ -152,8 +149,8 @@ class InstanceDecoder(LightningModule):
             e_h_ip = torch.empty(2, 0, dtype=torch.long, device=self.device)
             return x_ip, e_h_ip
 
-        i = torch.empty(ox.size(0), dtype=torch.long, device=self.device).fill_(-1)
-        arr = ox[mask]
+        i = torch.empty(of.size(0), dtype=torch.long, device=self.device).fill_(-1)
+        arr = of[mask]
         output_type = "cupy" if arr.is_cuda else "numpy"
         arr = cp.from_dlpack(arr.detach()) if arr.is_cuda else arr.numpy()
         with using_output_type(output_type):
