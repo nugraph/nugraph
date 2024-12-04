@@ -45,7 +45,7 @@ class InstanceDecoder(LightningModule):
         self.dbscan = DBSCAN()
 
     # pylint: disable=arguments-differ
-    def forward(self, data: Data, stage: str = None) -> dict[str, Any]:
+        def forward(self, data: Data, stage: str = None) -> dict[str, Any]:
         """
         NuGraph3 instance decoder forward pass
 
