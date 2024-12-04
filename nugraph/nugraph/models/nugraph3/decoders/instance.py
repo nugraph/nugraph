@@ -67,7 +67,7 @@ class InstanceDecoder(LightningModule):
         mask = (h.x_filter > 0.5) & (h.x_semantic.argmax(dim=1) != 6)
         if isinstance(data, Batch):
             x_ip, e_h_ip = [], []
-            for h.x, m in zip(unbatch(h.x, h.batch), unbatch(mask, h.batch)):
+            for o.x, m in zip(unbatch(o.x, h.batch), unbatch(mask, h.batch)):
                 x, e = self.materialize(h.x, m)
                 x_ip.append(x)
                 e_h_ip.append(e)
