@@ -28,7 +28,6 @@ class NuGraph3(LightningModule):
         hit_features: Number of hit node features
         nexus_features: Number of nexus node features
         interaction_features: Number of interaction node features
-        instance_features: Number of instance features
         semantic_classes: Tuple of semantic classes
         event_classes: Tuple of event classes
         num_iters: Number of message-passing iterations
@@ -41,10 +40,9 @@ class NuGraph3(LightningModule):
     """
     def __init__(self,
                  in_features: int = 4,
-                 hit_features: int = 128,
+                 hit_features: int = 32,
                  nexus_features: int = 32,
                  interaction_features: int = 32,
-                 instance_features: int = 32,
                  semantic_classes: tuple[str] = ('MIP','HIP','shower','michel','diffuse'),
                  event_classes: tuple[str] = ('numu','nue','nc'),
                  num_iters: int = 5,
@@ -97,7 +95,7 @@ class NuGraph3(LightningModule):
             self.decoders.append(self.vertex_decoder)
 
         if instance_head:
-            self.instance_decoder = InstanceDecoder(hit_features, instance_features, s_b)
+            self.instance_decoder = InstanceDecoder(hit_features, s_b)
             self.decoders.append(self.instance_decoder)
 
         if not self.decoders:
@@ -188,14 +186,12 @@ class NuGraph3(LightningModule):
                            help='Number of message-passing iterations')
         model.add_argument('--in-feats', type=int, default=5,
                            help='Number of input node features')
-        model.add_argument('--hit-feats', type=int, default=128,
+        model.add_argument('--hit-feats', type=int, default=32,
                            help='Hidden dimensionality of hit convolutions')
         model.add_argument('--nexus-feats', type=int, default=32,
                            help='Hidden dimensionality of nexus convolutions')
         model.add_argument('--interaction-feats', type=int, default=32,
                            help='Hidden dimensionality of interaction layer')
-        model.add_argument('--instance-feats', type=int, default=32,
-                           help='Hidden dimensionality of object condensation')
         model.add_argument('--event', action='store_true',
                            help='Enable event classification head')
         model.add_argument('--semantic', action='store_true',
@@ -231,7 +227,6 @@ class NuGraph3(LightningModule):
             hit_features=args.hit_feats,
             nexus_features=args.nexus_feats,
             interaction_features=args.interaction_feats,
-            instance_features=args.instance_feats,
             semantic_classes=nudata.semantic_classes,
             event_classes=nudata.event_classes,
             num_iters=args.num_iters,

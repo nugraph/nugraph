@@ -23,10 +23,9 @@ class InstanceDecoder(LightningModule):
 
     Args:
         hit_features: Number of hit node features
-        instance_features: Number of instance features
         s_b: Background suppression hyperparameter
     """
-    def __init__(self, hit_features: int, instance_features: int,
+    def __init__(self, hit_features: int,
                  s_b: float = 0.1, min_degree: int = 1):
         super().__init__()
 
@@ -40,12 +39,11 @@ class InstanceDecoder(LightningModule):
 
         # network
         self.beta_net = nn.Linear(hit_features, 1)
-        self.coord_net = nn.Linear(hit_features, instance_features)
 
         self.dbscan = DBSCAN()
 
     # pylint: disable=arguments-differ
-        def forward(self, data: Data, stage: str = None) -> dict[str, Any]:
+    def forward(self, data: Data, stage: str = None) -> dict[str, Any]:
         """
         NuGraph3 instance decoder forward pass
 
@@ -67,8 +65,8 @@ class InstanceDecoder(LightningModule):
         mask = (h.x_filter > 0.5) & (h.x_semantic.argmax(dim=1) != 6)
         if isinstance(data, Batch):
             x_ip, e_h_ip = [], []
-            for o.x, m in zip(unbatch(o.x, h.batch), unbatch(mask, h.batch)):
-                x, e = self.materialize(h.x, m)
+            for ox, m in zip(unbatch(h.x, h.batch), unbatch(mask, h.batch)):
+                x, e = self.materialize(ox, m)
                 x_ip.append(x)
                 e_h_ip.append(e)
 

@@ -17,7 +17,7 @@ class ObjCondensationLoss(torch.nn.Module):
 
         # hit information
         n_hit = data["hit"].num_nodes
-        x = data["hit"].ox
+        x = data["hit"].x
         f = data["hit"].of
 
         # true instances
