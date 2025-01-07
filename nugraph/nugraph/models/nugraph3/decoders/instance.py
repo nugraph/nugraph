@@ -22,13 +22,9 @@ class InstanceDecoder(LightningModule):
     Args:
         hit_features: Number of hit node features
         instance_features: Number of instance features
-        s_b: Background suppression hyperparameter
     """
-    def __init__(self, hit_features: int, instance_features: int,
-                 min_degree: int = 1):
+    def __init__(self, hit_features: int, instance_features: int):
         super().__init__()
-
-        self.min_degree = min_degree
 
         # loss function
         self.loss = ObjCondensationLoss()
