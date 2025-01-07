@@ -116,7 +116,7 @@ class NuGraphCore(nn.Module):
         # message-passing from nexus nodes to planar nodes
         self.nexus_to_plane = NuGraphBlock(nexus_features, hit_features,
                                            hit_features)
-        
+
     def checkpoint(self, net: nn.Module, *args) -> TD:
         """
         Checkpoint module, if enabled.
