@@ -2,8 +2,7 @@
 import h5py
 import numpy as np
 import torch
-from torch_geometric.data import Batch, HeteroData
-from torch_geometric.utils import unbatch
+from torch_geometric.data import HeteroData
 
 N_IT = "particle-truth" # true instance node store
 N_IP = "particle" # predicted instance node store
