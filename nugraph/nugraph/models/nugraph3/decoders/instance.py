@@ -60,6 +60,18 @@ class InstanceDecoder(LightningModule):
             data._inc_dict["hit"]["of"] = data._inc_dict["hit"]["x"]
             data._inc_dict["hit"]["ox"] = data._inc_dict["hit"]["x"]
 
+        # calculate loss
+        loss = (-1 * self.temp).exp() * self.loss(data, data.y_i()) + self.temp
+        b, v = loss
+        loss = loss.sum()
+
+        # calculate metrics
+        metrics = {}
+        if stage:
+            metrics[f"instance/loss-{stage}"] = loss
+            metrics[f"instance/bkg-loss-{stage}"] = b
+            metrics[f"instance/potential-loss-{stage}"] = v
+
         # add materialized instances
         mask = torch.ones_like(h.of, dtype=torch.bool)
         if hasattr(h, "x_filter"):
@@ -92,43 +104,18 @@ class InstanceDecoder(LightningModule):
             }
             data._inc_dict[E_H_IP] = {"edge_index": e_inc}
 
+            # calculate rand score per graph
+            rand = torch.mean(torch.stack([adjusted_rand_score(l.x_i(), l.y_i())
+                                        for l in data.to_data_list()]))
+
         else:
             data[N_IP].x, data[E_H_IP].edge_index = self.materialize(h.ox, mask)
-
-        # calculate loss
-        loss = (-1 * self.temp).exp() * self.loss(data, data.y_i()) + self.temp
-        b, v = loss
-        loss = loss.sum()
-
-        # calculate rand score per graph
-        if isinstance(data, Batch):
-            rand = torch.mean(torch.stack([adjusted_rand_score(l.x_i(), l.y_i())
-                                           for l in data.to_data_list()]))
-        else:
             rand = adjusted_rand_score(data.x_i(), data.y_i())
+
         if not -1. < rand < 1.:
             raise RuntimeError(f"Adjusted Rand Score metric value {rand} is outside allowed range!")
 
-        # calculate metrics
-        metrics = {}
         if stage:
-            metrics[f"instance/loss-{stage}"] = loss
-            metrics[f"instance/bkg-loss-{stage}"] = b
-            metrics[f"instance/potential-loss-{stage}"] = v
-
-            # number of instances
-            num_true = torch.tensor(
-                [t.size(0) for t in unbatch(data[N_IT].x, data[N_IT].batch,
-                                            batch_size=data.num_graphs)],
-                dtype=torch.float)
-            num_pred = torch.tensor(
-                [t.size(0) for t in unbatch(data[N_IP].x, data[N_IP].batch,
-                                            batch_size=data.num_graphs)],
-                dtype=torch.float)
-            metrics[f"instance/num-pred-{stage}"] = num_pred.mean()
-            metrics[f"instance/num-true-{stage}"] = num_true.mean()
-            metrics[f"instance/num-ratio-{stage}"] = (num_pred/num_true).mean()
-
             metrics[f"instance/adjusted-rand-{stage}"] = rand
 
         if stage == "train":
