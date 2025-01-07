@@ -52,7 +52,6 @@ class NuGraph3(LightningModule):
                  semantic_head: bool = True,
                  filter_head: bool = True,
                  vertex_head: bool = False,
-                 s_b: float = 1.0,
                  instance_head: bool = False,
                  use_checkpointing: bool = False,
                  lr: float = 0.001):
@@ -97,7 +96,7 @@ class NuGraph3(LightningModule):
             self.decoders.append(self.vertex_decoder)
 
         if instance_head:
-            self.instance_decoder = InstanceDecoder(hit_features, instance_features, s_b)
+            self.instance_decoder = InstanceDecoder(hit_features, instance_features)
             self.decoders.append(self.instance_decoder)
 
         if not self.decoders:
@@ -206,8 +205,6 @@ class NuGraph3(LightningModule):
                            help='Enable instance segmentation head')
         model.add_argument('--vertex', action='store_true',
                            help='Enable vertex regression head')
-        model.add_argument("--s-b", type=float, default=1.0,
-                           help="Background suppression hyperparameter for object condensation")
         model.add_argument('--no-checkpointing', action='store_false',
                            dest="use_checkpointing",
                            help='Disable checkpointing during training')
@@ -239,7 +236,6 @@ class NuGraph3(LightningModule):
             semantic_head=args.semantic,
             filter_head=args.filter,
             vertex_head=args.vertex,
-            s_b=args.s_b,
             instance_head=args.instance,
             use_checkpointing=args.use_checkpointing,
             lr=args.learning_rate)

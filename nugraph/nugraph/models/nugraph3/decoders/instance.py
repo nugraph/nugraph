@@ -27,13 +27,13 @@ class InstanceDecoder(LightningModule):
         s_b: Background suppression hyperparameter
     """
     def __init__(self, hit_features: int, instance_features: int,
-                 s_b: float = 0.1, min_degree: int = 1):
+                 min_degree: int = 1):
         super().__init__()
 
         self.min_degree = min_degree
 
         # loss function
-        self.loss = ObjCondensationLoss(s_b=s_b)
+        self.loss = ObjCondensationLoss()
 
         # temperature parameter
         self.temp = nn.Parameter(torch.tensor(0.))
