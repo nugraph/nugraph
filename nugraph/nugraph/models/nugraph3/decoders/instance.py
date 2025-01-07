@@ -10,7 +10,7 @@ from torch_geometric.data import Batch
 from torch_geometric.utils import cumsum, unbatch
 from pytorch_lightning import LightningModule
 from ....util import ObjCondensationLoss
-from ..types import Data, N_IT, N_IP, E_H_IP
+from ..types import Data, N_IP, E_H_IP
 
 class InstanceDecoder(LightningModule):
     """
@@ -91,18 +91,18 @@ class InstanceDecoder(LightningModule):
                 [torch.empty(x.size(0), dtype=torch.long, device=self.device).fill_(i)
                  for i, x in enumerate(x_ip)])
             data[N_IP].ptr = cumsum(torch.tensor([x.size(0) for x in x_ip], device=self.device))
-            data._slice_dict[N_IP] = {"x": data[N_IP].ptr}
-            data._inc_dict[N_IP] = {
+            data._slice_dict[N_IP] = {"x": data[N_IP].ptr} # pylint: disable=protected-access
+            data._inc_dict[N_IP] = { # pylint: disable=protected-access
                 "x": torch.zeros(data.num_graphs, dtype=torch.long, device=self.device)
             }
 
             # particle edges
             e_inc = torch.stack((h.ptr[:-1], data[N_IP].ptr[:-1]), dim=1).unsqueeze(2)
             data[E_H_IP].edge_index = torch.cat([e + inc for e, inc in zip(e_h_ip, e_inc)], dim=1)
-            data._slice_dict[E_H_IP] = {
+            data._slice_dict[E_H_IP] = { # pylint: disable=protected-access
                 "edge_index": cumsum(torch.tensor([e.size(1) for e in e_h_ip]))
             }
-            data._inc_dict[E_H_IP] = {"edge_index": e_inc}
+            data._inc_dict[E_H_IP] = {"edge_index": e_inc} # pylint: disable=protected-access
 
             # calculate rand score per graph
             rand = torch.mean(torch.stack([adjusted_rand_score(l.x_i(), l.y_i())

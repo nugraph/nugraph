@@ -1,5 +1,6 @@
 """NuGraph3 filter decoder"""
 from typing import Any
+import tempfile
 import torch
 from torch import nn
 import torchmetrics as tm
@@ -7,7 +8,6 @@ from torch_geometric.data import Batch
 from pytorch_lightning.loggers import WandbLogger
 import wandb
 import plotly.express as px
-import tempfile
 from ..types import Data
 
 class FilterDecoder(nn.Module):
@@ -70,6 +70,7 @@ class FilterDecoder(nn.Module):
         # run network and add output to graph object
         data["hit"].x_filter = x.sigmoid()
         if isinstance(data, Batch):
+            # pylint: disable=protected-access
             data._slice_dict["hit"]["x_filter"] = data["hit"].ptr
             inc = torch.zeros(data.num_graphs, device=data["hit"].x.device)
             data._inc_dict["hit"]["x_filter"] = inc
@@ -95,7 +96,7 @@ class FilterDecoder(nn.Module):
         return table
 
     def on_epoch_end(self, logger: WandbLogger, stage: str,
-                     epoch: int) -> None:
+                     epoch: int) -> None: # pylint: disable=unused-argument
         """
         NuGraph3 decoder end-of-epoch callback function
 
