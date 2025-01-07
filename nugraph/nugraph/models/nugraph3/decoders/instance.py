@@ -3,14 +3,12 @@ from typing import Any
 import cupy as cp
 from cuml import DBSCAN
 from cuml.internals.memory_utils import using_output_type
-from cuml.common.device_selection import using_device_type
 import torch
 from torch import nn
 from torchmetrics.functional.clustering import adjusted_rand_score
 from torch_geometric.data import Batch
 from torch_geometric.utils import cumsum, unbatch
 from pytorch_lightning import LightningModule
-from pynuml.data import NuGraphData
 from ....util import ObjCondensationLoss
 from ..types import Data, N_IT, N_IP, E_H_IP
 
