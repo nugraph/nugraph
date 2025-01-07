@@ -1,10 +1,9 @@
 from typing import Any, Callable
-import numpy as np
-import pandas as pd
 
 import torch
 import torch_geometric as pyg
 
+from ..data import NuGraphData
 from .base import ProcessorBase
 
 class HitGraphProducer(ProcessorBase):
@@ -139,7 +138,7 @@ class HitGraphProducer(ProcessorBase):
                 return evt.name, None
             del mask
 
-        data = pyg.data.HeteroData()
+        data = NuGraphData()
 
         # event metadata
         r, sr, e = evt.event_id
@@ -206,7 +205,19 @@ class HitGraphProducer(ProcessorBase):
         # truth information
         if self.semantic_labeller:
             data["hit"].y_semantic = torch.tensor(hits['semantic_label'].fillna(-1).values).long()
-            data["hit"].y_instance = torch.tensor(hits['instance_label'].fillna(-1).values).long()
+            y = torch.tensor(hits['instance_label'].fillna(-1).values).long()
+            mask = y != -1
+            y = y[mask]
+            instances = y.unique()
+            # remap instances
+            imax = instances.max() + 1 if instances.size(0) else 0
+            if instances.size(0) != imax:
+                remap = torch.full((imax,), -1, dtype=torch.long)
+                remap[instances] = torch.arange(instances.size(0))
+                y = remap[y]
+            data["particle-truth"].x = torch.empty(instances.size(0), 0)
+            edges = torch.stack((mask.nonzero().squeeze(1), y), dim=0).long()
+            data["hit", "cluster-truth", "particle-truth"].edge_index = edges
             if self.store_detailed_truth:
                 data["hit"].g4_id = torch.tensor(hits['g4_id'].fillna(-1).values).long()
                 data["hit"].parent_id = torch.tensor(hits['parent_id'].fillna(-1).values).long()
