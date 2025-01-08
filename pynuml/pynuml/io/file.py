@@ -68,6 +68,13 @@ class File:
 
         # open the input HDF5 file in parallel
         self._fd = h5py.File(os.path.expandvars(fname), "r", driver='mpio', comm=MPI.COMM_WORLD)
+        dtec_df1 = pd.DataFrame(np.array(self._fd['detector_table']['tpc']),columns=['tpc'])
+        dtec_df2 = pd.DataFrame(np.array(self._fd['detector_table']['tpc_center_x']),columns=['tpc_center_x'])
+        dtec_df3 = pd.DataFrame(np.array(self._fd['detector_table']['tpc_center_y']),columns=['tpc_center_y'])
+        dtec_df4 = pd.DataFrame(np.array(self._fd['detector_table']['tpc_center_z']),columns=['tpc_center_z'])
+        dtec_df5 = pd.DataFrame(np.array(self._fd['detector_table']['drift_direction']),columns=['drift_direction'])
+        self._dtec_df = dtec_df1.join([dtec_df2,dtec_df3,dtec_df4,dtec_df5]).set_index(['tpc'])
+        self._dtec_df = self._dtec_df[~self._dtec_df.index.duplicated(keep='first')]
 
         # check if data partitioning key datasets exists in the file
         if parKey not in self._fd.keys():
@@ -658,7 +665,6 @@ class File:
             raise Exception('cannot build event without adding any HDF5 groups')
 
         ret_list = []
-
         if start is None: start = self._my_start
         if count is None: count = self._my_count
 
@@ -755,7 +761,6 @@ class File:
 
             # Iterate through all groups
             for group in self._data.keys():
-
                 if self._use_seq_cnt:
                     # Note self._seq_cnt[group][:, 0] is the event ID
                     # Note self._seq_cnt[group][:, 1] is the number of elements
@@ -767,6 +772,7 @@ class File:
                         for dataset in self._data[group].keys():
                             data_dataframe = pd.DataFrame(columns=self._cols(group, dataset))
                             dfs.append(data_dataframe)
+
                         ret[group] = pd.concat(dfs, axis="columns")
                         continue
 
@@ -821,12 +827,13 @@ class File:
                         if df[col].dtype == '|S64' or df[col].dtype == 'object':
                             df[col] = df[col].str.decode('utf-8')
                     dfs.append(df)
-
-                # concatenate into the dictionary "ret" with group names as keys
-                ret[group] = pd.concat(dfs, axis="columns")
-
             # Add all dictionaries "ret" into a list.
             # Each of them corresponds to the data of one single event ID
+                if(group=='hit_table'):
+                    hit_df = pd.concat(dfs, axis="columns")
+                    ret[group] = hit_df.join(self._dtec_df, on='tpc', how='left')
+                else:
+                    ret[group] = pd.concat(dfs, axis="columns")
             ret_list.append(ret)
 
         return ret_list

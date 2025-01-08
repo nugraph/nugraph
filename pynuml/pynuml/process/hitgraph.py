@@ -19,7 +19,7 @@ class HitGraphProducer(ProcessorBase):
                  planes: list[str] = ['u','v','y'],
                  node_pos: list[str] = ['local_wire','local_time'],
                  pos_norm: list[float] = [0.3,0.055],
-                 node_feats: list[str] = ['integral','rms'],
+                 node_feats: list[str] = ['integral','rms','tpc_center_x','tpc_center_y','tpc_center_z','drift_direction'],
                  lower_bound: int = 20,
                  store_detailed_truth: bool = False):
 
@@ -43,7 +43,7 @@ class HitGraphProducer(ProcessorBase):
     @property
     def columns(self) -> dict[str, list[str]]:
         groups = {
-            'hit_table': ['hit_id','local_plane','local_time','local_wire','integral','rms'],
+            'hit_table': ['hit_id','local_plane','local_time','local_wire','integral','rms', 'tpc'],
             'spacepoint_table': []
         }
         if self.semantic_labeller:
@@ -77,7 +77,6 @@ class HitGraphProducer(ProcessorBase):
 
         hits = evt['hit_table']
         spacepoints = evt['spacepoint_table'].reset_index(drop=True)
-
         # discard any events with pathologically large hit integrals
         # this is a hotfix that should be removed once the dataset is fixed
         if hits.integral.max() > 1e6:
