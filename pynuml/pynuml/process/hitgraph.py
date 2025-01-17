@@ -62,7 +62,7 @@ class HitGraphProducer(ProcessorBase):
 
     @property
     def metadata(self):
-        metadata = { 'planes': self.planes }
+        metadata = dict(planes=self.planes, gen=torch.tensor([2]))
         if self.semantic_labeller is not None:
             metadata['semantic_classes'] = self.semantic_labeller.labels[:-1]
         if self.event_labeller is not None:
