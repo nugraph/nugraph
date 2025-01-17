@@ -83,15 +83,16 @@ class NuGraphDataModule(LightningDataModule):
 
             # load feature normalisations
             try:
-                norm = {}
-                for p in self.planes:
-                    norm[p] = tensor(f[f'norm/{p}'][()])
+                if self.gen == 1:
+                    norm = {p: tensor(f[f'norm/{p}'][()]) for p in self.planes}
+                else:
+                    norm = torch.tensor(f["norm/hit"][()])
             except KeyError:
                 print(("Feature normalisations not found in file! "
                        "Call \"generate_norm\" to create them."))
                 sys.exit()
 
-        transform = Compose((FeatureNorm(self.planes, norm),
+        transform = Compose((FeatureNorm(norm),
                              HierarchicalEdges(self.planes),
                              PositionFeatures(),
                              EventLabels()))
