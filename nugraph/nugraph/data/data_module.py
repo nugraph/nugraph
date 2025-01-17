@@ -1,3 +1,4 @@
+"""NuGraph data module"""
 from argparse import ArgumentParser
 import warnings
 
@@ -46,32 +47,38 @@ class NuGraphDataModule(LightningDataModule):
 
             # load metadata
             try:
+                # pylint: disable=no-member
                 self.planes = f['planes'].asstr()[()].tolist()
                 self.semantic_classes = f['semantic_classes'].asstr()[()].tolist()
-            except:
-                print('Metadata not found in file! "planes" and "semantic_classes" are required.')
+            except KeyError:
+                print(("Metadata not found in file! "
+                       "\"planes\" and \"semantic_classes\" are required."))
                 sys.exit()
 
             # load optional event labels
             if 'event_classes' in f:
+                # pylint: disable=no-member
                 self.event_classes = f['event_classes'].asstr()[()].tolist()
             else:
                 self.event_classes = None
 
             # load sample splits
             try:
+                # pylint: disable=no-member
                 train_samples = f['samples/train'].asstr()[()]
                 val_samples = f['samples/validation'].asstr()[()]
                 test_samples = f['samples/test'].asstr()[()]
-            except:
-                print('Sample splits not found in file! Call "generate_samples" to create them.')
+            except KeyError:
+                print(("Sample splits not found in file! "
+                       "Call \"generate_samples\" to create them."))
                 sys.exit()
 
             # load data sizes
             try:
                 self.train_datasize = f['datasize/train'][()]
-            except:
-                print('Data size array not found in file! Call "generate_samples" to create it.')
+            except KeyError:
+                print(("Data size array not found in file! "
+                       "Call \"generate_samples\" to create it."))
                 sys.exit()
 
             # load feature normalisations
@@ -79,8 +86,9 @@ class NuGraphDataModule(LightningDataModule):
                 norm = {}
                 for p in self.planes:
                     norm[p] = tensor(f[f'norm/{p}'][()])
-            except:
-                print('Feature normalisations not found in file! Call "generate_norm" to create them.')
+            except KeyError:
+                print(("Feature normalisations not found in file! "
+                       "Call \"generate_norm\" to create them."))
                 sys.exit()
 
         transform = Compose((FeatureNorm(self.planes, norm),

@@ -225,6 +225,7 @@ class HitGraphProducer(ProcessorBase):
 
         # event label
         if self.event_labeller:
+            # pylint: disable=possibly-used-before-assignment
             data['evt'].y = torch.tensor(self.event_labeller(event)).long().reshape([1])
 
         # 3D vertex truth
