@@ -83,9 +83,9 @@ class NuGraphDataModule(LightningDataModule):
                 print('Feature normalisations not found in file! Call "generate_norm" to create them.')
                 sys.exit()
 
-        transform = Compose((PositionFeatures(self.planes),
-                             FeatureNorm(self.planes, norm),
+        transform = Compose((FeatureNorm(self.planes, norm),
                              HierarchicalEdges(self.planes),
+                             PositionFeatures(),
                              EventLabels()))
 
         self.train_dataset = NuGraphDataset(self.filename, train_samples, transform)
@@ -121,7 +121,7 @@ class NuGraphDataModule(LightningDataModule):
         with h5py.File(data_path, "r+") as f:
             if 'datasize/train' in f:
                 del f['datasize/train']
-        transform = PositionFeatures(planes)
+        transform = PositionFeatures()
         dataset = NuGraphDataset(data_path, train, transform)
         def datasize(data):
             ret = 0
@@ -146,7 +146,7 @@ class NuGraphDataModule(LightningDataModule):
 
             loader = DataLoader(NuGraphDataset(data_path,
                                           list(f['dataset'].keys()),
-                                          PositionFeatures(planes)),
+                                          PositionFeatures()),
                                 batch_size=batch_size)
 
             print('  generating feature norm...')
