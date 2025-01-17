@@ -152,16 +152,13 @@ class NuGraphDataModule(LightningDataModule):
             print('  generating feature norm...')
             metrics = None
             for batch in tqdm.tqdm(loader):
-                for p in planes:
-                    if not metrics:
-                        num_feats = batch[p].x.shape[-1]
-                        metrics = { p: FeatureNormMetric(num_feats) for p in planes }
-                    metrics[p].update(batch[p].x)
-            for p in planes:
-                key = f'norm/{p}'
-                if key in f:
-                    del f[key]
-                f[key] = metrics[p].compute()
+                if not metrics:
+                    metrics = FeatureNormMetric(batch["hit"].x.shape[-1])
+                metrics.update(batch["hit"].x)
+            key = 'norm/hit'
+            if key in f:
+                del f[key]
+            f[key] = metrics.compute()
 
     def train_dataloader(self) -> DataLoader:
         if self.shuffle == 'balance':
