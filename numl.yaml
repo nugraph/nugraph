@@ -10,7 +10,6 @@ dependencies:
   - act
   - automake
   - compilers
-  - cuml
   - flit
   - git
   - gh
@@ -19,14 +18,15 @@ dependencies:
   - ipywidgets
   - jupyterlab
   - jupyterlab-plotly-extension
+  - matplotlib
   - mpi4py
   - nbstripout
   - ncdu
   - ninja
   - nugraph
   - numba
-  - numexpr>=2.8.0 # temporary fix
-  - numpy<2
+  - numexpr>=2.8.4 # temporary fix
+  - numpy
   - openblas
   - openssh
   - particle
@@ -41,11 +41,12 @@ dependencies:
   - pytest
   - python-kaleido
   - pytorch::pytorch=2.4
-  - pytorch-cuda=12.4
+  - pytorch-cuda=11
   - pytorch-lightning
   - pytorch-scatter
   - PyYAML
   - pyzmq
+  - rapids
   - scikit-learn
   - seaborn
   - tensorboard
