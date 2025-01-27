@@ -4,7 +4,6 @@ channels:
   - nvidia
   - pytorch
   - pyg
-  - rapidsai
   - numl
 dependencies:
   - act
@@ -45,7 +44,6 @@ dependencies:
   - pytorch-scatter
   - PyYAML
   - pyzmq
-  - rapids
   - scikit-learn
   - seaborn
   - tensorboard
@@ -54,3 +52,6 @@ dependencies:
   - vim
   - wandb
   - zlib
+  - pip:
+    - cupy-cuda11x
+    - cuml-cu11
