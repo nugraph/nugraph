@@ -2,12 +2,7 @@
 import os
 import platform
 
-# special handling for pynvml import
-import importlib.util
-if importlib.util.find_spec("pynvml_utils"):
-    from pynvml_utils import nvidia_smi
-else:
-    from pynvml.smi import nvidia_smi
+import torch.cuda
 
 NUGRAPH_ENV = {
     "sneezy": {
@@ -49,21 +44,22 @@ def setup_env(verbose: bool = True) -> None:
     if verbose:
         print()
 
-def configure_device(cpu: bool = False) -> tuple[str, str | list[int]]:
-    """Automatically select GPU device"""
-    if not cpu:
-        try:
-            # query GPU information using pynvml
-            nvsmi = nvidia_smi.getInstance()
-            info = nvsmi.DeviceQuery('index,memory.free')['gpu']
+def configure_device(device: int = None) -> tuple[str, str | list[int]]:
+    """
+    Convert GPU device index into a set of PyTorch Lightning arguments
 
-            # if there aren't multiple GPUs, don't do anything
-            if len(info) < 2:
-                return 'auto', 'auto'
+    Args:
+        device: index of GPU device to use
+    """
 
-            # if there are multiple GPUs, select the one with the most memory
-            info.sort(key=lambda m: m['fb_memory_usage']['free'], reverse=True)
-            return 'auto', [int(info[0]['minor_number'])]
-        except:
-            pass
-    return 'cpu', 'auto'
+    # if no device passed, run on CPU
+    if device is None:
+        return "cpu", "auto"
+
+    # if a device was requested but there are none available, raise an error
+    if not torch.cuda.is_available():
+        raise RuntimeError((f"Device {device} requested but CUDA is not "
+                             "available in the current environment."))
+
+    # return GPU device as single element list
+    return "gpu", [device]

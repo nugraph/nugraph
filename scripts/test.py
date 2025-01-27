@@ -13,6 +13,8 @@ Model = ng.models.NuGraph3
 
 def configure():
     parser = argparse.ArgumentParser()
+    parser.add_argument("--device", type=int, default=None,
+                        help="Index of GPU device to test with")
     parser.add_argument('--checkpoint', type=str, required=True,
                         help='Checkpoint file for trained model')
     parser.add_argument('--outfile', type=str, required=True,
@@ -32,7 +34,7 @@ def test(args):
     if os.path.isfile(args.outfile):
         raise Exception(f'file {args.outfile} already exists!')
 
-    accelerator, devices = ng.util.configure_device()
+    accelerator, devices = ng.util.configure_device(args.device)
     trainer = pl.Trainer(accelerator=accelerator, devices=devices,
                          logger=False)
     plot = pynuml.plot.GraphPlot(planes=nudata.planes,
