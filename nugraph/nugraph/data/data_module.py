@@ -121,9 +121,16 @@ class NuGraphDataModule(LightningDataModule):
             f.create_dataset("samples/test", data=list(test))
 
         with h5py.File(data_path, "r+") as f:
+            try:
+                planes = f['planes'].asstr()[()].tolist()
+            except:
+                print('Metadata not found in file! "planes" is required.')
+                sys.exit()
+
+        with h5py.File(data_path, "r+") as f:
             if 'datasize/train' in f:
                 del f['datasize/train']
-        transform = PositionFeatures()
+        transform = PositionFeatures(planes)
         dataset = NuGraphDataset(data_path, train, transform)
         def datasize(data):
             ret = 0
@@ -148,7 +155,7 @@ class NuGraphDataModule(LightningDataModule):
 
             loader = DataLoader(NuGraphDataset(data_path,
                                           list(f['dataset'].keys()),
-                                          PositionFeatures()),
+                                          PositionFeatures(planes)),
                                 batch_size=batch_size)
 
             print('  generating feature norm...')
