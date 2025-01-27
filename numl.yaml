@@ -19,14 +19,15 @@ dependencies:
   - ipywidgets
   - jupyterlab
   - jupyterlab-plotly-extension
+  - matplotlib
   - mpi4py
   - nbstripout
   - ncdu
   - ninja
   - nugraph
   - numba
-  - numexpr>=2.8.0 # temporary fix
-  - numpy<2
+  - numexpr>=2.8.4 # temporary fix
+  - numpy
   - openblas
   - openssh
   - particle
@@ -36,12 +37,11 @@ dependencies:
   - pyg
   - pylint
   - pynuml
-  - pynvml
   - pytables
   - pytest
   - python-kaleido
   - pytorch::pytorch=2.4
-  - pytorch-cuda=12.4
+  - pytorch-cuda=11
   - pytorch-lightning
   - pytorch-scatter
   - PyYAML
@@ -54,3 +54,6 @@ dependencies:
   - vim
   - wandb
   - zlib
+  - pip:
+    - cupy-cuda11x
+    - cuml-cu11
