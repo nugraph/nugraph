@@ -24,7 +24,7 @@ class PositionFeatures(BaseTransform):
         """
 
         # in second-generation inputs, hit nodes live in a single node store
-        if hasattr(data, "hit"):
+        if "hit" in data.node_types:
             node_types = ("hit",)
 
         # in first-generation inputs, hit nodes are separated out by plane
