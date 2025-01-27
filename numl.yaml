@@ -36,7 +36,6 @@ dependencies:
   - pyg
   - pylint
   - pynuml
-  - pynvml
   - pytables
   - pytest
   - python-kaleido
