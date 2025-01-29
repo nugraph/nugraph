@@ -138,12 +138,10 @@ class InstanceDecoder(LightningModule):
             return x_ip, e_h_ip
 
         i = torch.empty(ox.size(0), dtype=torch.long, device=self.device).fill_(-1)
-        arr = ox[mask]
-        output_type = "cupy" if arr.is_cuda else "numpy"
-        arr = cp.from_dlpack(arr.detach()) if arr.is_cuda else arr.numpy()
-        with using_output_type(output_type):
-            arr = self.dbscan.fit_predict(arr)
-            i[mask] = torch.from_dlpack(arr).long()
+        arr = ox[mask].detach()
+        if not arr.is_cuda:
+            arr = arr.numpy()
+        i[mask] = torch.as_tensor(self.dbscan.fit_predict(arr), dtype=torch.long)
         x_ip = torch.empty(i.max()+1, 0, dtype=torch.float, device=self.device)
         mask = i > -1
         e_h_ip = torch.stack((torch.nonzero(mask).squeeze(1), i[mask])).long()
