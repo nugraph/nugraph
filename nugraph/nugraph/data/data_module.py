@@ -55,6 +55,14 @@ class NuGraphDataModule(LightningDataModule):
                        "\"planes\" and \"semantic_classes\" are required."))
                 sys.exit()
 
+            # get graph structure generation
+            # if that info is missing, it's first generation
+            try:
+                # pylint: disable=no-member
+                self.gen = f["gen"][()].item()
+            except KeyError:
+                self.gen = 1
+
             # load optional event labels
             if 'event_classes' in f:
                 # pylint: disable=no-member
