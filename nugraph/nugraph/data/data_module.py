@@ -7,8 +7,7 @@ import sys
 import h5py
 import tqdm
 
-from torch import tensor, cat
-from torch.utils.data import random_split
+import torch
 from torch_geometric.loader import DataLoader
 from torch_geometric.transforms import Compose
 from pytorch_lightning import LightningDataModule
@@ -92,7 +91,7 @@ class NuGraphDataModule(LightningDataModule):
             # load feature normalisations
             try:
                 if self.gen == 1:
-                    norm = {p: tensor(f[f'norm/{p}'][()]) for p in self.planes}
+                    norm = {p: torch.tensor(f[f'norm/{p}'][()]) for p in self.planes}
                 else:
                     norm = torch.tensor(f["norm/hit"][()])
             except KeyError:
@@ -115,7 +114,7 @@ class NuGraphDataModule(LightningDataModule):
             samples = list(f['dataset'].keys())
         split = int(0.05 * len(samples))
         splits = [ len(samples)-(2*split), split, split ]
-        train, val, test = random_split(samples, splits)
+        train, val, test = torch.utils.data.random_split(samples, splits)
 
         with h5py.File(data_path, "r+") as f:
             for name in [ 'train', 'validation', 'test' ]:
