@@ -1,8 +1,6 @@
 """NuGraph3 instance decoder"""
 from typing import Any
-import cupy as cp
 from cuml import DBSCAN
-from cuml.internals.memory_utils import using_output_type
 import torch
 from torch import nn
 from torchmetrics.functional.clustering import adjusted_rand_score
@@ -10,7 +8,7 @@ from torch_geometric.data import Batch
 from torch_geometric.utils import cumsum, unbatch
 from pytorch_lightning import LightningModule
 from ....util import ObjCondensationLoss
-from ..types import Data, N_IP, E_H_IP
+from ..types import Data, N_IT, E_H_IT, N_IP, E_H_IP
 
 class InstanceDecoder(LightningModule):
     """
@@ -61,9 +59,11 @@ class InstanceDecoder(LightningModule):
             data._inc_dict["hit"]["ox"] = data._inc_dict["hit"]["x"]
 
         # calculate loss
-        loss = (-1 * self.temp).exp() * self.loss(data, data.y_i()) + self.temp
+        loss = self.loss(h.ox, h.of, data.y_i(), h.y_semantic,
+                         data[N_IT].num_nodes, data[E_H_IT].edge_index)
+        loss *= (-1 * self.temp).exp()
         b, v = loss
-        loss = loss.sum()
+        loss = loss.sum() + self.temp
 
         # calculate metrics
         metrics = {}
@@ -105,8 +105,11 @@ class InstanceDecoder(LightningModule):
             data._inc_dict[E_H_IP] = {"edge_index": e_inc} # pylint: disable=protected-access
 
             # calculate rand score per graph
-            rand = torch.mean(torch.stack([adjusted_rand_score(l.x_i(), l.y_i())
-                                        for l in data.to_data_list()]))
+            rand = []
+            for l in data.to_data_list():
+                mask = l["hit"].y_semantic >= 0
+                rand.append(adjusted_rand_score(l.x_i()[mask], l.y_i()[mask]))
+            rand = torch.stack(rand).mean()
 
         else:
             data[N_IP].x, data[E_H_IP].edge_index = self.materialize(h.ox, mask)
