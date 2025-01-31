@@ -11,7 +11,8 @@ from pytorch_lightning import LightningModule
 from .types import Data
 from .encoder import Encoder
 from .core import NuGraphCore
-from .decoders import SemanticDecoder, FilterDecoder, EventDecoder, VertexDecoder, InstanceDecoder
+from .decoders import (SemanticDecoder, FilterDecoder, EventDecoder, VertexDecoder, InstanceDecoder,
+                       SpacepointDecoder)
 
 from ...data import H5DataModule
 
@@ -36,6 +37,8 @@ class NuGraph3(LightningModule):
         semantic_head: Whether to enable semantic decoder
         filter_head: Whether to enable filter decoder
         vertex_head: Whether to enable vertex decoder
+        instance_head: Whether to enable instance decoder
+        spacepoint_head: Whether to enable spacepoint decoder
         use_checkpointing: Whether to use checkpointing
         lr: Learning rate
     """
@@ -53,6 +56,7 @@ class NuGraph3(LightningModule):
                  filter_head: bool = True,
                  vertex_head: bool = False,
                  instance_head: bool = False,
+                 spacepoint_head: bool = False,
                  use_checkpointing: bool = False,
                  lr: float = 0.001):
         super().__init__()
@@ -98,6 +102,10 @@ class NuGraph3(LightningModule):
         if instance_head:
             self.instance_decoder = InstanceDecoder(hit_features, instance_features)
             self.decoders.append(self.instance_decoder)
+
+        if spacepoint_head:
+            self.spacepoint_decoder = SpacepointDecoder(hit_features)
+            self.decoders.append(self.spacepoint_decoder)
 
         if not self.decoders:
             raise RuntimeError('At least one decoder head must be enabled!')
@@ -205,6 +213,8 @@ class NuGraph3(LightningModule):
                            help='Enable instance segmentation head')
         model.add_argument('--vertex', action='store_true',
                            help='Enable vertex regression head')
+        model.add_argument("--spacepoint", action="store_true",
+                           help="Enable spacepoint prediction head")
         model.add_argument('--no-checkpointing', action='store_false',
                            dest="use_checkpointing",
                            help='Disable checkpointing during training')
@@ -237,5 +247,6 @@ class NuGraph3(LightningModule):
             filter_head=args.filter,
             vertex_head=args.vertex,
             instance_head=args.instance,
+            spacepoint_head=args.spacepoint,
             use_checkpointing=args.use_checkpointing,
             lr=args.learning_rate)
