@@ -16,6 +16,7 @@ class HitGraphProducer(ProcessorBase):
                  event_labeller: Callable = None,
                  label_vertex: bool = False,
                  label_position: bool = False,
+                 optical: bool = False,
                  planes: list[str] = ['u','v','y'],
                  node_pos: list[str] = ['local_wire','local_time'],
                  pos_norm: list[float] = [0.3,0.055],
@@ -27,6 +28,7 @@ class HitGraphProducer(ProcessorBase):
         self.event_labeller = event_labeller
         self.label_vertex = label_vertex
         self.label_position = label_position
+        self.optical = optical
         self.planes = planes
         self.node_pos = node_pos
         self.pos_norm = torch.tensor(pos_norm).float()
@@ -59,6 +61,10 @@ class HitGraphProducer(ProcessorBase):
                 groups['event_table'] = keys
         if self.label_position:
             groups["edep_table"] = []
+        if self.optical:
+            groups["ophit_table"] = []
+            groups["opflash_table"] = []
+            groups["opflashsumpe_table"] = []
         return groups
 
     @property
@@ -211,6 +217,37 @@ class HitGraphProducer(ProcessorBase):
                 data["hit"].g4_id = torch.tensor(hits['g4_id'].fillna(-1).values).long()
                 data["hit"].parent_id = torch.tensor(hits['parent_id'].fillna(-1).values).long()
                 data["hit"].pdg = torch.tensor(hits['type'].fillna(-1).values).long()
+
+        # optical system
+        if self.optical:
+
+            ophits = evt["ophit_table"]
+            sum_pe = evt["opflashsumpe_table"]
+            opflash = evt["opflash_table"]
+
+            # node position
+            data["ophits"].pos = torch.tensor(ophits[["wire_pos_0", "wire_pos_1", "wire_pos_2"]].values).float()
+            data["opflash"].pos = torch.tensor(opflash[["wire_pos_0", "wire_pos_1", "wire_pos_2"]].values).float()
+
+            # node features
+            data["ophits"].x = torch.tensor(ophits[["amplitude", "area",  "pe", "peaktime",
+                                                    "width", "wire_pos_0", "wire_pos_1", "wire_pos_2",]].values).float()
+            data["opflash"].x = torch.tensor(opflash[["time", "time_width", "totalpe", "wire_pos_0", 
+                                                    "wire_pos_1", "wire_pos_2", "y_center", "y_width", 
+                                                    "z_center", "z_width"]].values).float()
+            data["opflashsumpe"].x = torch.tensor(sum_pe[["pmt_channel", "sumpe"]].values).float()
+
+            # 1st hierarchical layer
+            edge1 = torch.tensor(ophits[["hit_id","sumpe_id"]].values.transpose())
+            data["ophits", "sumpe", "opflashsumpe"].edge_index = edge1.long()
+
+            # 2nd hierarchical layer
+            edge2 = torch.tensor(sum_pe[["sumpe_id", "flash_id"]].values.transpose())
+            data["opflashsumpe", "flash", "opflash"].edge_index = edge2.long()
+
+            # 3rd hierarchical layer
+            edge3 = torch.tensor([opflash["flash_id"].values[0], 0])
+            data["opflash", "in", "evt"].edge_index = edge3
 
         # event label
         if self.event_labeller:
