@@ -100,7 +100,6 @@ class NuGraphDataModule(LightningDataModule):
                 sys.exit()
 
         transform = Compose((PositionFeatures(self.planes),
-                             FeatureNorm(norm),
                              HierarchicalEdges(self.planes),
                              EventLabels()))
 

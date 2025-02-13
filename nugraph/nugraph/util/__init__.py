@@ -7,3 +7,4 @@ from .feature_norm import FeatureNorm, FeatureNormMetric
 from .hierarchical_edges import HierarchicalEdges
 from .event_labels import EventLabels
 from .scriptutils import setup_env, configure_device
+from .input_norm import InputNorm
