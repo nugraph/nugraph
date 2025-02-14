@@ -9,6 +9,8 @@ runs:
     with:
       miniforge-version: latest
       activate-environment: numl
+      auto-update-conda: true
+      auto-activate-base: false
 
   - name: getting date
     shell: bash

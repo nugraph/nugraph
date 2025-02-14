@@ -37,6 +37,7 @@ jobs:
       with:
         miniforge-version: latest
         activate-environment: numl
+        auto-activate-base: false
     - name: getting date
       id: get-date
       run: echo "today=$(/bin/date -u '+%Y%m%d')" >> $GITHUB_OUTPUT
@@ -75,6 +76,7 @@ jobs:
       with:
         miniforge-version: latest
         activate-environment: numl
+        auto-activate-base: false
     - name: getting date
       id: get-date
       run: echo "today=$(/bin/date -u '+%Y%m%d')" >> $GITHUB_OUTPUT
