@@ -14,6 +14,9 @@ jobs:
 
   build:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -el {0}
     steps:
     - name: checking out repository
       uses: actions/checkout@v4
@@ -22,6 +25,9 @@ jobs:
 
   lint:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -el {0}
     needs: build
     steps:
     - name: checking out repository
@@ -32,7 +38,6 @@ jobs:
         miniforge-version: latest
         activate-environment: numl
     - name: getting date
-      shell: bash
       id: get-date
       run: echo "today=$(/bin/date -u '+%Y%m%d')" >> $GITHUB_OUTPUT
     - name: setting up conda environment cache
@@ -48,17 +53,19 @@ jobs:
         CACHE_NUMBER: 0
       id: cache
     - name: installing local packages
-      shell: bash
       run: |
+        conda list
         pip install --no-deps -e ./pynuml
         pip install --no-deps -e ./nugraph
         pip install pylint
     - name: analysing the code with pylint
-      shell: bash
       run: pylint --fail-under=6 $(git ls-files '*.py')
 
   test:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -el {0}
     needs: build
     steps:
     - name: checking out repository
@@ -69,7 +76,6 @@ jobs:
         miniforge-version: latest
         activate-environment: numl
     - name: getting date
-      shell: bash
       id: get-date
       run: echo "today=$(/bin/date -u '+%Y%m%d')" >> $GITHUB_OUTPUT
     - name: setting up conda environment cache
@@ -85,11 +91,9 @@ jobs:
         CACHE_NUMBER: 0
       id: cache
     - name: installing local packages
-      shell: bash
       run: |
         pip install --no-deps -e ./pynuml
         pip install --no-deps -e ./nugraph
         pip install pytest
     - name: running python unit tests
-      shell: bash
       run: pytest
