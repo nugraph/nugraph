@@ -1,6 +1,7 @@
 name: numl
 channels:
   - conda-forge
+  - numl
   - nvidia
   - rapidsai
 dependencies:
@@ -27,6 +28,7 @@ dependencies:
   - openblas
   - openssh
   - particle
+  - ph5concat
   - pip
   - plotly
   - pylint
