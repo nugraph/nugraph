@@ -1,11 +1,9 @@
 name: numl
 channels:
   - conda-forge
-  - numl
   - nvidia
   - rapidsai
 dependencies:
-  - compilers
   # - cuda-version=11.8 # uncomment this line to manually select a 
   - cuml
   - h5py=*=*mpich*
@@ -14,7 +12,6 @@ dependencies:
   - numba
   - numpy
   - particle
-  - ph5concat
   - pip
   - plotly
   - pylint
