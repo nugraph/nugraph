@@ -2,7 +2,7 @@
 import pynuml
 import nugraph as ng # pylint: disable=unused-import
 
-UBOONE_FILE = "test/uboone-opendata.test.h5"
+UBOONE_FILE = "$GITHUB_WORKSPACE/test/uboone-opendata.test.h5"
 
 def test_process_uboone():
     """Test graph processing with MicroBooNE open data release"""
