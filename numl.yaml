@@ -19,7 +19,7 @@ dependencies:
   - pytest
   - python-kaleido
   - pytorch_geometric
-  - pytorch-gpu=2.5
+  - pytorch-gpu
   - pytorch-lightning
   - pytorch_scatter
   - PyYAML
