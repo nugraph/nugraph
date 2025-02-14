@@ -14,9 +14,7 @@ dependencies:
   - particle
   - pip
   - plotly
-  - pylint
   - pytables
-  - pytest
   - python-kaleido
   - pytorch_geometric
   - pytorch-gpu

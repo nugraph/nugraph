@@ -52,6 +52,7 @@ jobs:
       run: |
         pip install --no-deps -e ./pynuml
         pip install --no-deps -e ./nugraph
+        pip install pylint
     - name: analysing the code with pylint
       shell: bash
       run: pylint --fail-under=6 $(git ls-files '*.py')
@@ -88,6 +89,7 @@ jobs:
       run: |
         pip install --no-deps -e ./pynuml
         pip install --no-deps -e ./nugraph
+        pip install pytest
     - name: running python unit tests
       shell: bash
       run: pytest
