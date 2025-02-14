@@ -58,7 +58,6 @@ jobs:
         conda list
         pip install --no-deps -e ./pynuml
         pip install --no-deps -e ./nugraph
-        pip install pylint
     - name: analysing the code with pylint
       run: pylint --fail-under=6 $(git ls-files '*.py')
 
@@ -98,6 +97,5 @@ jobs:
       run: |
         pip install --no-deps -e ./pynuml
         pip install --no-deps -e ./nugraph
-        pip install pytest
     - name: running python unit tests
       run: pytest
