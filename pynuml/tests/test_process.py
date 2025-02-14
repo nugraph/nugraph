@@ -4,7 +4,7 @@ import nugraph as ng # pylint: disable=unused-import
 
 def test_process_uboone():
     """Test graph processing with MicroBooNE open data release"""
-    f = pynuml.io.File("../test/uboone-opendata.test.h5")
+    f = pynuml.io.File("$NUGRAPH_DIR/test/uboone-opendata.test.h5")
     processor = pynuml.process.HitGraphProducer(
         file=f,
         semantic_labeller=pynuml.labels.StandardLabels(),
