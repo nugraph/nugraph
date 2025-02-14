@@ -16,8 +16,25 @@ jobs:
     steps:
     - name: checking out repository
       uses: actions/checkout@v4
-    - name: building nugraph
-      uses: ./.github/actions/build-nugraph
+    - name: setting up conda cache
+      uses: actions/cache@v3
+      env:
+        # Increase this value to reset cache if etc/example-environment.yml has not changed
+        CACHE_NUMBER: 0
+      with:
+        path: ~/conda_pkgs_dir
+        key:
+          ${{ runner.os }}-conda-${{ env.CACHE_NUMBER }}-${{
+          hashFiles('numl.yaml') }}
+    - name: building conda environment
+      uses: conda-incubator/setup-miniconda@v3
+      with:
+        environment-file: numl.yaml
+        miniforge-version: latest
+    - name: installing packages
+      run: |
+        pip install --no-deps ./pynuml
+        pip install --no-deps ./nugraph
     - name: analysing the code with pylint
       run: pylint --fail-under=6 $(git ls-files '*.py')
 
@@ -26,7 +43,24 @@ jobs:
     steps:
     - name: checking out repository
       uses: actions/checkout@v4
-    - name: building nugraph
-      uses: ./.github/actions/build-nugraph
+    - name: setting up conda cache
+      uses: actions/cache@v3
+      env:
+        # Increase this value to reset cache if etc/example-environment.yml has not changed
+        CACHE_NUMBER: 0
+      with:
+        path: ~/conda_pkgs_dir
+        key:
+          ${{ runner.os }}-conda-${{ env.CACHE_NUMBER }}-${{
+          hashFiles('numl.yaml') }}
+    - name: building conda environment
+      uses: conda-incubator/setup-miniconda@v3
+      with:
+        environment-file: numl.yaml
+        miniforge-version: latest
+    - name: installing packages
+      run: |
+        pip install --no-deps ./pynuml
+        pip install --no-deps ./nugraph
     - name: running python unit tests
       run: pytest
