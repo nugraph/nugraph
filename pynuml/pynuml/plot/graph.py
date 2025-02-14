@@ -33,7 +33,7 @@ class GraphPlot:
         hit = data["hit"].to_dict()
         df = pd.DataFrame(hit["id"], columns=["id"])
         df["plane"] = [self._planes[i] for i in hit["plane"]]
-        df[["wire", "time"]] = hit["pos"]
+        df[["proj", "drift"]] = hit["pos"]
         if "c" in hit:
             df[["x", "y", "z"]] = hit["c"]
         df["y_filter"] = hit["y_semantic"] != -1
@@ -195,8 +195,8 @@ class GraphPlot:
             opts["x"] = "c1"
             opts["y"] = "c2"
         else:
-            opts["x"] = "wire"
-            opts["y"] = "time"
+            opts["x"] = "proj"
+            opts["y"] = "drift"
             opts["facet_col"] = "plane"
 
         if not title:
@@ -206,8 +206,8 @@ class GraphPlot:
         opts['hover_data'] = {
             'y_semantic': True,
             "y_instance": True,
-            'wire': ':.1f',
-            'time': ':.1f',
+            'proj': ':.1f',
+            'drift': ':.1f',
         }
         opts['labels'] = {
             'y_filter': 'filter truth',

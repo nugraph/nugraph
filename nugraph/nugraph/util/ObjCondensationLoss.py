@@ -1,8 +1,8 @@
 """Object condensation loss function"""
 import torch
-from torch import Tensor
-from torch_geometric.data import HeteroData
 from torch_scatter import scatter_max
+
+T = torch.Tensor
 
 class ObjCondensationLoss(torch.nn.Module):
     def __init__(self, s_b: float = 1.0, q_min: float = 0.5):
@@ -10,30 +10,18 @@ class ObjCondensationLoss(torch.nn.Module):
         self.s_b = s_b
         self.q_min = q_min
 
-    def forward(self, data: HeteroData, y: Tensor) -> Tensor:
+    def forward(self, x: T, f: T, y_i: T, y_s: T, n_true: int, e_true: T) -> T:
 
-        device = data["hit"].x.device
-        dtype = data["hit"].x.dtype
+        device = x.device
+        dtype = x.dtype
 
         # hit information
-        n_hit = data["hit"].num_nodes
-        x = data["hit"].ox
-        f = data["hit"].of
-
-        # true instances
-        n_true = data["particle-truth"].num_nodes
-        e_true = data["hit", "cluster-truth", "particle-truth"].edge_index
-
-        bkg_mask = y == -1
-        n_bkg = bkg_mask.sum()
+        n_hit = x.size(0)
 
         # check inputs
         if not n_true:
             raise RuntimeError(("Cannot compute object condensation loss "
                                 "when there are no true instances!"))
-        if not n_bkg:
-            raise RuntimeError(("Cannot compute object condensation loss "
-                                "when there is no true background!"))
 
         # determine which hit is the condensation point for each true instance,
         # and get beta values (f_centers) and hit indices (centers)
@@ -43,8 +31,11 @@ class ObjCondensationLoss(torch.nn.Module):
         centers = e_h[centers]
 
         # calculate background loss terms
-        b1 = 1 - (f_centers.sum() / n_true)
-        b2 = (self.s_b / n_bkg) * f[bkg_mask].sum()
+        b = 1 - (f_centers.sum() / n_true)
+        bkg_mask = (y_i == -1) & (y_s >= 0)
+        n_bkg = bkg_mask.sum()
+        if n_bkg:
+            b += (self.s_b / n_bkg) * f[bkg_mask].sum()
 
         # calculate the charge on each hit
         q = f.atanh().square() + self.q_min
@@ -56,4 +47,4 @@ class ObjCondensationLoss(torch.nn.Module):
         v = torch.where(m_ik, dist, (1 - dist).clamp(0))
         v = ((v * q[centers]).sum(dim=1) * q).sum() / n_hit
 
-        return torch.stack([b1 + b2, v])
+        return torch.stack([b, v])

@@ -21,6 +21,8 @@ Model = ng.models.NuGraph3
 
 def configure():
     parser = argparse.ArgumentParser()
+    parser.add_argument('--device', type=int, default=None,
+                        help="Index of GPU device to train with")
     parser.add_argument('--name', type=str, default=None,
                         help='Training instance name, for logging purposes')
     parser.add_argument('--version', type=str, default=None,
@@ -66,7 +68,7 @@ def train(args):
 
     model = Model.from_args(args, nudata)
 
-    accelerator, devices = ng.util.configure_device()
+    accelerator, devices = ng.util.configure_device(args.device)
     trainer = pl.Trainer(accelerator=accelerator, devices=devices,
                          max_epochs=args.epochs,
                          limit_train_batches=args.limit_train_batches,
@@ -75,7 +77,6 @@ def train(args):
                          callbacks=callbacks, plugins=plugins)
 
     trainer.fit(model, datamodule=nudata)
-    trainer.test(datamodule=nudata)
 
 if __name__ == '__main__':
     args = configure()

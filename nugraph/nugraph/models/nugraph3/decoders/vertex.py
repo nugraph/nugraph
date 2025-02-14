@@ -47,6 +47,7 @@ class VertexDecoder(nn.Module):
         # add inference output to graph object
         data["evt"].v = x
         if isinstance(data, Batch):
+            # pylint: disable=protected-access
             data._slice_dict["evt"]["v"] = data["evt"].ptr
             inc = torch.zeros(data.num_graphs, device=data["evt"].x.device)
             data._inc_dict["evt"]["v"] = inc
