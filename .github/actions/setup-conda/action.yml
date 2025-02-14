@@ -1,0 +1,30 @@
+name: setup-conda
+
+runs:
+  using: "composite"
+  steps:
+
+  - name: setting up conda environment cache
+    uses: actions/cache@v3
+    with:
+      path: ${{ env.CONDA }}/envs
+      key:
+        conda-${{ runner.os }}--${{ runner.arch }}--${{
+        steps.get-date.outputs.today }}-${{
+        hashFiles('numl.yaml') }}-${{ env.CACHE_NUMBER
+        }}
+    env:
+      CACHE_NUMBER: 0
+    id: cache
+
+  - name: initializing conda environment
+    uses: conda-incubator/setup-miniconda@v3
+    with:
+      miniforge-version: latest
+      activate-environment: numl
+
+  - name: installing local packages
+    shell: bash
+    run: |
+      pip install --no-deps -e ./pynuml
+      pip install --no-deps -e ./nugraph

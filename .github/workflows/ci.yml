@@ -18,7 +18,7 @@ jobs:
     - name: checking out repository
       uses: actions/checkout@v4
     - name: building nugraph
-      uses: ./.github/actions/build-nugraph
+      uses: ./.github/actions/build-conda
 
   lint:
     runs-on: ubuntu-latest
@@ -27,7 +27,7 @@ jobs:
     - name: checking out repository
       uses: actions/checkout@v4
     - name: building nugraph
-      uses: ./.github/actions/build-nugraph
+      uses: ./.github/actions/setup-conda
     - name: analysing the code with pylint
       shell: bash
       run: pylint --fail-under=6 $(git ls-files '*.py')
@@ -39,7 +39,7 @@ jobs:
     - name: checking out repository
       uses: actions/checkout@v4
     - name: building nugraph
-      uses: ./.github/actions/build-nugraph
+      uses: ./.github/actions/setup-conda
     - name: running python unit tests
       shell: bash
       run: pytest
