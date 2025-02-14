@@ -26,8 +26,28 @@ jobs:
     steps:
     - name: checking out repository
       uses: actions/checkout@v4
-    - name: building nugraph
-      uses: ./.github/actions/setup-conda
+    - name: setting up conda environment cache
+      uses: actions/cache@v3
+      with:
+        path: ${{ env.CONDA }}/envs
+        key:
+          conda-${{ runner.os }}--${{ runner.arch }}--${{
+          steps.get-date.outputs.today }}-${{
+          hashFiles('numl.yaml') }}-${{ env.CACHE_NUMBER
+          }}
+      env:
+        CACHE_NUMBER: 0
+      id: cache
+    - name: initializing conda environment
+      uses: conda-incubator/setup-miniconda@v3
+      with:
+        miniforge-version: latest
+        activate-environment: numl
+    - name: installing local packages
+      shell: bash
+      run: |
+        pip install --no-deps -e ./pynuml
+        pip install --no-deps -e ./nugraph
     - name: analysing the code with pylint
       shell: bash
       run: pylint --fail-under=6 $(git ls-files '*.py')
@@ -38,8 +58,28 @@ jobs:
     steps:
     - name: checking out repository
       uses: actions/checkout@v4
-    - name: building nugraph
-      uses: ./.github/actions/setup-conda
+    - name: setting up conda environment cache
+      uses: actions/cache@v3
+      with:
+        path: ${{ env.CONDA }}/envs
+        key:
+          conda-${{ runner.os }}--${{ runner.arch }}--${{
+          steps.get-date.outputs.today }}-${{
+          hashFiles('numl.yaml') }}-${{ env.CACHE_NUMBER
+          }}
+      env:
+        CACHE_NUMBER: 0
+      id: cache
+    - name: initializing conda environment
+      uses: conda-incubator/setup-miniconda@v3
+      with:
+        miniforge-version: latest
+        activate-environment: numl
+    - name: installing local packages
+      shell: bash
+      run: |
+        pip install --no-deps -e ./pynuml
+        pip install --no-deps -e ./nugraph
     - name: running python unit tests
       shell: bash
       run: pytest
