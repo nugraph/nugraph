@@ -1,6 +1,7 @@
 name: numl
 channels:
   - conda-forge
+  - nvidia
   - rapidsai
 dependencies:
   - act
