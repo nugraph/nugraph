@@ -77,7 +77,6 @@ def train(args):
                          callbacks=callbacks, plugins=plugins)
 
     trainer.fit(model, datamodule=nudata)
-    trainer.test(datamodule=nudata)
 
 if __name__ == '__main__':
     args = configure()

@@ -1,5 +1,6 @@
 """NuGraph3 event decoder"""
 from typing import Any
+import tempfile
 import torch
 from torch import nn
 import torchmetrics as tm
@@ -7,7 +8,6 @@ from torch_geometric.data import Batch
 from pytorch_lightning.loggers import WandbLogger
 import wandb
 import plotly.express as px
-import tempfile
 from ....util import RecallLoss
 from ..types import Data
 
@@ -79,6 +79,7 @@ class EventDecoder(nn.Module):
         # add inference output to graph object
         data["evt"].e = x.softmax(dim=1)
         if isinstance(data, Batch):
+            # pylint: disable=protected-access
             data._slice_dict["evt"]["e"] = data["evt"].ptr
             inc = torch.zeros(data.num_graphs, device=data["evt"].x.device)
             data._inc_dict["evt"]["e"] = inc
@@ -104,7 +105,7 @@ class EventDecoder(nn.Module):
         return table
 
     def on_epoch_end(self, logger: WandbLogger, stage: str,
-                     epoch: int) -> None:
+                     epoch: int) -> None: # pylint: disable=unused-argument
         """
         NuGraph3 decoder end-of-epoch callback function
 

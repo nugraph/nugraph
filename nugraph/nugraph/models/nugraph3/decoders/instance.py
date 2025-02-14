@@ -1,18 +1,14 @@
 """NuGraph3 instance decoder"""
 from typing import Any
-import cupy as cp
 from cuml import DBSCAN
-from cuml.internals.memory_utils import using_output_type
-from cuml.common.device_selection import using_device_type
 import torch
 from torch import nn
 from torchmetrics.functional.clustering import adjusted_rand_score
 from torch_geometric.data import Batch
 from torch_geometric.utils import cumsum, unbatch
 from pytorch_lightning import LightningModule
-from pynuml.data import NuGraphData
 from ....util import ObjCondensationLoss
-from ..types import Data, N_IT, N_IP, E_H_IP
+from ..types import Data, N_IT, E_H_IT, N_IP, E_H_IP
 
 class InstanceDecoder(LightningModule):
     """
@@ -24,16 +20,12 @@ class InstanceDecoder(LightningModule):
     Args:
         hit_features: Number of hit node features
         instance_features: Number of instance features
-        s_b: Background suppression hyperparameter
     """
-    def __init__(self, hit_features: int, instance_features: int,
-                 s_b: float = 0.1, min_degree: int = 1):
+    def __init__(self, hit_features: int, instance_features: int):
         super().__init__()
 
-        self.min_degree = min_degree
-
         # loss function
-        self.loss = ObjCondensationLoss(s_b=s_b)
+        self.loss = ObjCondensationLoss()
 
         # temperature parameter
         self.temp = nn.Parameter(torch.tensor(0.))
@@ -66,8 +58,26 @@ class InstanceDecoder(LightningModule):
             data._inc_dict["hit"]["of"] = data._inc_dict["hit"]["x"]
             data._inc_dict["hit"]["ox"] = data._inc_dict["hit"]["x"]
 
+        # calculate loss
+        loss = self.loss(h.ox, h.of, data.y_i(), h.y_semantic,
+                         data[N_IT].num_nodes, data[E_H_IT].edge_index)
+        loss *= (-1 * self.temp).exp()
+        b, v = loss
+        loss = loss.sum() + self.temp
+
+        # calculate metrics
+        metrics = {}
+        if stage:
+            metrics[f"instance/loss-{stage}"] = loss
+            metrics[f"instance/bkg-loss-{stage}"] = b
+            metrics[f"instance/potential-loss-{stage}"] = v
+
         # add materialized instances
-        mask = (h.x_filter > 0.5) & (h.x_semantic.argmax(dim=1) != 6)
+        mask = torch.ones_like(h.of, dtype=torch.bool)
+        if hasattr(h, "x_filter"):
+            mask = mask & (h.x_filter > 0.5)
+        if hasattr(h, "x_semantic"):
+            mask = mask & (h.x_semantic.argmax(dim=1) != 6)
         if isinstance(data, Batch):
             x_ip, e_h_ip = [], []
             for ox, m in zip(unbatch(h.ox, h.batch), unbatch(mask, h.batch)):
@@ -81,56 +91,34 @@ class InstanceDecoder(LightningModule):
                 [torch.empty(x.size(0), dtype=torch.long, device=self.device).fill_(i)
                  for i, x in enumerate(x_ip)])
             data[N_IP].ptr = cumsum(torch.tensor([x.size(0) for x in x_ip], device=self.device))
-            data._slice_dict[N_IP] = {"x": data[N_IP].ptr}
-            data._inc_dict[N_IP] = {
+            data._slice_dict[N_IP] = {"x": data[N_IP].ptr} # pylint: disable=protected-access
+            data._inc_dict[N_IP] = { # pylint: disable=protected-access
                 "x": torch.zeros(data.num_graphs, dtype=torch.long, device=self.device)
             }
 
             # particle edges
             e_inc = torch.stack((h.ptr[:-1], data[N_IP].ptr[:-1]), dim=1).unsqueeze(2)
             data[E_H_IP].edge_index = torch.cat([e + inc for e, inc in zip(e_h_ip, e_inc)], dim=1)
-            data._slice_dict[E_H_IP] = {
+            data._slice_dict[E_H_IP] = { # pylint: disable=protected-access
                 "edge_index": cumsum(torch.tensor([e.size(1) for e in e_h_ip]))
             }
-            data._inc_dict[E_H_IP] = {"edge_index": e_inc}
+            data._inc_dict[E_H_IP] = {"edge_index": e_inc} # pylint: disable=protected-access
+
+            # calculate rand score per graph
+            rand = []
+            for l in data.to_data_list():
+                mask = l["hit"].y_semantic >= 0
+                rand.append(adjusted_rand_score(l.x_i()[mask], l.y_i()[mask]))
+            rand = torch.stack(rand).mean()
 
         else:
             data[N_IP].x, data[E_H_IP].edge_index = self.materialize(h.ox, mask)
-
-        # calculate loss
-        loss = (-1 * self.temp).exp() * self.loss(data, data.y_i()) + self.temp
-        b, v = loss
-        loss = loss.sum()
-
-        # calculate rand score per graph
-        if isinstance(data, Batch):
-            rand = torch.mean(torch.stack([adjusted_rand_score(l.x_i(), l.y_i())
-                                           for l in data.to_data_list()]))
-        else:
             rand = adjusted_rand_score(data.x_i(), data.y_i())
+
         if not -1. < rand < 1.:
             raise RuntimeError(f"Adjusted Rand Score metric value {rand} is outside allowed range!")
 
-        # calculate metrics
-        metrics = {}
         if stage:
-            metrics[f"instance/loss-{stage}"] = loss
-            metrics[f"instance/bkg-loss-{stage}"] = b
-            metrics[f"instance/potential-loss-{stage}"] = v
-
-            # number of instances
-            num_true = torch.tensor(
-                [t.size(0) for t in unbatch(data[N_IT].x, data[N_IT].batch,
-                                            batch_size=data.num_graphs)],
-                dtype=torch.float)
-            num_pred = torch.tensor(
-                [t.size(0) for t in unbatch(data[N_IP].x, data[N_IP].batch,
-                                            batch_size=data.num_graphs)],
-                dtype=torch.float)
-            metrics[f"instance/num-pred-{stage}"] = num_pred.mean()
-            metrics[f"instance/num-true-{stage}"] = num_true.mean()
-            metrics[f"instance/num-ratio-{stage}"] = (num_pred/num_true).mean()
-
             metrics[f"instance/adjusted-rand-{stage}"] = rand
 
         if stage == "train":
@@ -153,12 +141,10 @@ class InstanceDecoder(LightningModule):
             return x_ip, e_h_ip
 
         i = torch.empty(ox.size(0), dtype=torch.long, device=self.device).fill_(-1)
-        arr = ox[mask]
-        output_type = "cupy" if arr.is_cuda else "numpy"
-        arr = cp.from_dlpack(arr.detach()) if arr.is_cuda else arr.numpy()
-        with using_output_type(output_type):
-            arr = self.dbscan.fit_predict(arr)
-            i[mask] = torch.from_dlpack(arr).long()
+        arr = ox[mask].detach()
+        if not arr.is_cuda:
+            arr = arr.numpy()
+        i[mask] = torch.as_tensor(self.dbscan.fit_predict(arr), dtype=torch.long)
         x_ip = torch.empty(i.max()+1, 0, dtype=torch.float, device=self.device)
         mask = i > -1
         e_h_ip = torch.stack((torch.nonzero(mask).squeeze(1), i[mask])).long()

@@ -2,10 +2,10 @@
 import torch
 from torch import nn
 from torch.utils.checkpoint import checkpoint
-from torch_geometric.nn import MessagePassing, HeteroConv
+from torch_geometric.nn import MessagePassing
 from .types import T, TD, Data
 
-class NuGraphBlock(MessagePassing):
+class NuGraphBlock(MessagePassing): # pylint: disable=abstract-method
     """
     Standard NuGraph message-passing block
     
@@ -34,7 +34,7 @@ class NuGraphBlock(MessagePassing):
             nn.Linear(out_features, out_features),
             nn.Mish())
 
-    def forward(self, x: T, edge_index: T) -> T:
+    def forward(self, x: T, edge_index: T) -> T: # pylint: disable=arguments-differ
         """
         NuGraphBlock forward pass
         
@@ -44,7 +44,7 @@ class NuGraphBlock(MessagePassing):
         """
         return self.propagate(edge_index, x=x)
 
-    def message(self, x_i: T, x_j: T) -> T:
+    def message(self, x_i: T, x_j: T) -> T: # pylint: disable=arguments-differ
         """
         NuGraphBlock message function
 
@@ -59,7 +59,7 @@ class NuGraphBlock(MessagePassing):
         """
         return self.edge_net(torch.cat((x_i, x_j), dim=1).detach()) * x_j
 
-    def update(self, aggr_out: T, x: T) -> T:
+    def update(self, aggr_out: T, x: T) -> T: # pylint: disable=arguments-differ
         """
         NuGraphBlock update function
 
@@ -116,7 +116,7 @@ class NuGraphCore(nn.Module):
         # message-passing from nexus nodes to planar nodes
         self.nexus_to_plane = NuGraphBlock(nexus_features, hit_features,
                                            hit_features)
-        
+
     def checkpoint(self, net: nn.Module, *args) -> TD:
         """
         Checkpoint module, if enabled.
