@@ -202,4 +202,5 @@ class NuGraphDataModule(LightningDataModule):
                           help='Dataset shuffling scheme to use')
         data.add_argument('--balance-frac', type=float, default=0.1,
                           help='Fraction of dataset to use for workload balancing')
+        data.add_argument("--driver", type=str, help="HDF5 driver to use")
         return parser

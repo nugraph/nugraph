@@ -42,9 +42,9 @@ def train(args):
     torch.manual_seed(1)
 
     # Load dataset
-    nudata = Data(args.data_path, batch_size=args.batch_size, 
+    nudata = Data(args.data_path, batch_size=args.batch_size,
                   shuffle=args.shuffle, balance_frac=args.balance_frac,
-                  driver="core")
+                  driver=args.driver)
 
     model = Model.from_args(args, nudata)
 
