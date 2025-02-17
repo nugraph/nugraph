@@ -4,6 +4,7 @@ channels:
   - nvidia
   - rapidsai
 dependencies:
+  - anywidget
   # - cuda-version=11.8 # uncomment this line to manually select a 
   - cuml
   - h5py=*=*mpich*
