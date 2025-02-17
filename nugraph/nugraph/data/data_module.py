@@ -42,62 +42,62 @@ class NuGraphDataModule(LightningDataModule):
         self.shuffle = shuffle
         self.balance_frac = balance_frac
 
-        with h5py.File(filename, driver=driver) as f:
+        f = h5py.File(filename, driver=driver)
 
-            # load metadata
-            try:
-                # pylint: disable=no-member
-                self.planes = f['planes'].asstr()[()].tolist()
-                self.semantic_classes = f['semantic_classes'].asstr()[()].tolist()
-            except KeyError:
-                print(("Metadata not found in file! "
-                       "\"planes\" and \"semantic_classes\" are required."))
-                sys.exit()
+        # load metadata
+        try:
+            # pylint: disable=no-member
+            self.planes = f['planes'].asstr()[()].tolist()
+            self.semantic_classes = f['semantic_classes'].asstr()[()].tolist()
+        except KeyError:
+            print(("Metadata not found in file! "
+                   "\"planes\" and \"semantic_classes\" are required."))
+            sys.exit()
 
-            # get graph structure generation
-            # if that info is missing, it's first generation
-            try:
-                # pylint: disable=no-member
-                self.gen = f["gen"][()].item()
-            except KeyError:
-                self.gen = 1
+        # get graph structure generation
+        # if that info is missing, it's first generation
+        try:
+            # pylint: disable=no-member
+            self.gen = f["gen"][()].item()
+        except KeyError:
+            self.gen = 1
 
-            # load optional event labels
-            if 'event_classes' in f:
-                # pylint: disable=no-member
-                self.event_classes = f['event_classes'].asstr()[()].tolist()
+        # load optional event labels
+        if 'event_classes' in f:
+            # pylint: disable=no-member
+            self.event_classes = f['event_classes'].asstr()[()].tolist()
+        else:
+            self.event_classes = None
+
+        # load sample splits
+        try:
+            # pylint: disable=no-member
+            train_samples = f['samples/train'].asstr()[()]
+            val_samples = f['samples/validation'].asstr()[()]
+            test_samples = f['samples/test'].asstr()[()]
+        except KeyError:
+            print(("Sample splits not found in file! "
+                   "Call \"generate_samples\" to create them."))
+            sys.exit()
+
+        # load data sizes
+        try:
+            self.train_datasize = f['datasize/train'][()]
+        except KeyError:
+            print(("Data size array not found in file! "
+                   "Call \"generate_samples\" to create it."))
+            sys.exit()
+
+        # load feature normalisations
+        try:
+            if self.gen == 1:
+                norm = {p: torch.tensor(f[f'norm/{p}'][()]) for p in self.planes}
             else:
-                self.event_classes = None
-
-            # load sample splits
-            try:
-                # pylint: disable=no-member
-                train_samples = f['samples/train'].asstr()[()]
-                val_samples = f['samples/validation'].asstr()[()]
-                test_samples = f['samples/test'].asstr()[()]
-            except KeyError:
-                print(("Sample splits not found in file! "
-                       "Call \"generate_samples\" to create them."))
-                sys.exit()
-
-            # load data sizes
-            try:
-                self.train_datasize = f['datasize/train'][()]
-            except KeyError:
-                print(("Data size array not found in file! "
-                       "Call \"generate_samples\" to create it."))
-                sys.exit()
-
-            # load feature normalisations
-            try:
-                if self.gen == 1:
-                    norm = {p: torch.tensor(f[f'norm/{p}'][()]) for p in self.planes}
-                else:
-                    norm = torch.tensor(f["norm/hit"][()])
-            except KeyError:
-                print(("Feature normalisations not found in file! "
-                       "Call \"generate_norm\" to create them."))
-                sys.exit()
+                norm = torch.tensor(f["norm/hit"][()])
+        except KeyError:
+            print(("Feature normalisations not found in file! "
+                   "Call \"generate_norm\" to create them."))
+            sys.exit()
 
         transform = Compose((PositionFeatures(self.planes),
                              FeatureNorm(norm),
