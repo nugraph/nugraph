@@ -1,0 +1,28 @@
+Bootstrap: docker
+From: ubuntu:22.04
+
+%files
+    numl.yaml /opt/numl.yaml
+
+%post
+    apt-get -y update
+    apt-get -y upgrade
+    apt-get -y install wget
+    wget https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-$(uname)-$(uname -m).sh
+    bash Miniforge3-$(uname)-$(uname -m).sh -b -p /opt/miniforge3
+    rm Miniforge3-$(uname)-$(uname -m).sh
+    . /opt/miniforge3/etc/profile.d/conda.sh
+    conda activate
+    conda env create -f /opt/numl.yaml
+    rm /opt/numl.yaml
+
+%environment
+    . /opt/miniforge3/etc/profile.d/conda.sh
+    conda activate numl
+    export PYTHONPATH=/nugraph/pynuml:/nugraph/nugraph:$PYTHONPATH
+    export NUGRAPH_DIR=/nugraph
+    export NUGRAPH_DATA=/data
+    export NUGRAPH_LOG=/log
+
+%runscript
+    /nugraph/scripts/process.py $@
