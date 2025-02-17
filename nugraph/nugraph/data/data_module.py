@@ -51,7 +51,7 @@ class NuGraphDataModule(LightningDataModule):
                 self.semantic_classes = f['semantic_classes'].asstr()[()].tolist()
             except KeyError:
                 print(("Metadata not found in file! "
-                        "\"planes\" and \"semantic_classes\" are required."))
+                       "\"planes\" and \"semantic_classes\" are required."))
                 sys.exit()
 
             # get graph structure generation
@@ -77,7 +77,7 @@ class NuGraphDataModule(LightningDataModule):
                 test_samples = f['samples/test'].asstr()[()]
             except KeyError:
                 print(("Sample splits not found in file! "
-                        "Call \"generate_samples\" to create them."))
+                       "Call \"generate_samples\" to create them."))
                 sys.exit()
 
             # load data sizes
@@ -85,7 +85,7 @@ class NuGraphDataModule(LightningDataModule):
                 self.train_datasize = f['datasize/train'][()]
             except KeyError:
                 print(("Data size array not found in file! "
-                        "Call \"generate_samples\" to create it."))
+                       "Call \"generate_samples\" to create it."))
                 sys.exit()
 
             # load feature normalisations
@@ -96,7 +96,7 @@ class NuGraphDataModule(LightningDataModule):
                     norm = torch.tensor(f["norm/hit"][()])
             except KeyError:
                 print(("Feature normalisations not found in file! "
-                        "Call \"generate_norm\" to create them."))
+                       "Call \"generate_norm\" to create them."))
                 sys.exit()
 
         transform = Compose((PositionFeatures(self.planes),
