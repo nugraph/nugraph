@@ -16,7 +16,7 @@ class HitGraphProducer(ProcessorBase):
                  label_vertex: bool = False,
                  label_position: bool = False,
                  planes: list[str] = ['u','v','y'],
-                 node_feats: list[str] = ['integral','rms','tpc','wire','time'],
+                 node_feats: list[str] = ['integral','rms','tpc'],
                  lower_bound: int = 20,
                  store_detailed_truth: bool = False):
 
@@ -38,7 +38,7 @@ class HitGraphProducer(ProcessorBase):
     @property
     def columns(self) -> dict[str, list[str]]:
         groups = {
-            'hit_table': ['hit_id','integral','rms','tpc','plane','wire','time','view','proj','drift'],
+            'hit_table': [],
             'spacepoint_table': []
         }
         if self.semantic_labeller:
@@ -70,7 +70,13 @@ class HitGraphProducer(ProcessorBase):
         if self.event_labeller or self.label_vertex:
             event = evt['event_table'].squeeze()
 
+        # support different generations of event HDF5 format
         hits = evt['hit_table']
+        if "local_plane" in hits.columns:
+            plane_key, proj_key, drift_key = "local_plane", "local_wire", "local_time"
+        else:
+            plane_key, proj_key, drift_key = "view", "proj", "drift"
+
         spacepoints = evt['spacepoint_table'].reset_index(drop=True)
 
         # discard any events with pathologically large hit integrals
@@ -112,7 +118,7 @@ class HitGraphProducer(ProcessorBase):
         # note that we can't just do a pandas groupby here, because that will
         # skip over any planes with zero hits
         for i in range(len(self.planes)):
-            planehits = hits[hits.view==i]
+            planehits = hits[hits[plane_key]==i]
             nhits = planehits.filter_label.sum() if self.semantic_labeller else planehits.shape[0]
             if nhits < self.lower_bound:
                 return evt.name, None
@@ -150,14 +156,15 @@ class HitGraphProducer(ProcessorBase):
 
         hits = hits.reset_index(names="index_2d")
 
-        node_pos = ["proj", "drift"]
+        node_pos = [proj_key, drift_key]
 
         # node position
-        data["hit"].plane = torch.tensor(hits["view"].values, dtype=torch.long)
+        data["hit"].plane = torch.tensor(hits[plane_key].values, dtype=torch.long)
         data["hit"].pos = torch.tensor(hits[node_pos].values, dtype=torch.float)
 
         # node features
-        data["hit"].x = torch.tensor(hits[self.node_feats].values).float()
+        node_feats = self.node_feats + [plane_key, proj_key, drift_key]
+        data["hit"].x = torch.tensor(hits[node_feats].values).float()
 
         # node true position
         if self.label_position:
@@ -169,7 +176,7 @@ class HitGraphProducer(ProcessorBase):
         # 2D graph edges
         data["hit", "delaunay", "hit"].edge_index = self.transform(data["hit"]).edge_index
         edge_plane = []
-        for i, view_hits in hits.groupby("view"):
+        for i, view_hits in hits.groupby(plane_key):
             tmp = pyg.data.Data()
             tmp.index_2d = torch.tensor(view_hits.index_2d.values).long()
             tmp.pos = torch.tensor(view_hits[node_pos].values).float()
@@ -178,7 +185,7 @@ class HitGraphProducer(ProcessorBase):
 
         # 3D graph edges
         edge_nexus = []
-        for i, view_hits in hits.groupby("view"):
+        for i, view_hits in hits.groupby(plane_key):
             p = self.planes[i]
             edge = spacepoints.merge(hits[['hit_id','index_2d']].add_suffix(f'_{p}'),
                                      on=f'hit_id_{p}',
