@@ -1,10 +1,9 @@
 from typing import Any, Callable
-import numpy as np
-import pandas as pd
 
 import torch
 import torch_geometric as pyg
 
+from ..data import NuGraphData
 from .base import ProcessorBase
 
 class HitGraphProducer(ProcessorBase):
@@ -18,9 +17,7 @@ class HitGraphProducer(ProcessorBase):
                  label_position: bool = False,
                  optical: bool = False,
                  planes: list[str] = ['u','v','y'],
-                 node_pos: list[str] = ['local_wire','local_time'],
-                 pos_norm: list[float] = [0.3,0.055],
-                 node_feats: list[str] = ['integral','rms'],
+                 node_feats: list[str] = ['integral','rms','tpc'],
                  lower_bound: int = 20,
                  store_detailed_truth: bool = False):
 
@@ -30,8 +27,6 @@ class HitGraphProducer(ProcessorBase):
         self.label_position = label_position
         self.optical = optical
         self.planes = planes
-        self.node_pos = node_pos
-        self.pos_norm = torch.tensor(pos_norm).float()
         self.node_feats = node_feats
         self.lower_bound = lower_bound
         self.store_detailed_truth = store_detailed_truth
@@ -45,7 +40,7 @@ class HitGraphProducer(ProcessorBase):
     @property
     def columns(self) -> dict[str, list[str]]:
         groups = {
-            'hit_table': ['hit_id','local_plane','local_time','local_wire','integral','rms'],
+            'hit_table': [],
             'spacepoint_table': []
         }
         if self.semantic_labeller:
@@ -69,7 +64,7 @@ class HitGraphProducer(ProcessorBase):
 
     @property
     def metadata(self):
-        metadata = { 'planes': self.planes }
+        metadata = dict(planes=self.planes, gen=torch.tensor([2]))
         if self.semantic_labeller is not None:
             metadata['semantic_classes'] = self.semantic_labeller.labels[:-1]
         if self.event_labeller is not None:
@@ -81,7 +76,13 @@ class HitGraphProducer(ProcessorBase):
         if self.event_labeller or self.label_vertex:
             event = evt['event_table'].squeeze()
 
+        # support different generations of event HDF5 format
         hits = evt['hit_table']
+        if "local_plane" in hits.columns:
+            plane_key, proj_key, drift_key = "local_plane", "local_wire", "local_time"
+        else:
+            plane_key, proj_key, drift_key = "view", "proj", "drift"
+
         spacepoints = evt['spacepoint_table'].reset_index(drop=True)
 
         # discard any events with pathologically large hit integrals
@@ -123,7 +124,7 @@ class HitGraphProducer(ProcessorBase):
         # note that we can't just do a pandas groupby here, because that will
         # skip over any planes with zero hits
         for i in range(len(self.planes)):
-            planehits = hits[hits.local_plane==i]
+            planehits = hits[hits[plane_key]==i]
             nhits = planehits.filter_label.sum() if self.semantic_labeller else planehits.shape[0]
             if nhits < self.lower_bound:
                 return evt.name, None
@@ -145,7 +146,7 @@ class HitGraphProducer(ProcessorBase):
                 return evt.name, None
             del mask
 
-        data = pyg.data.HeteroData()
+        data = NuGraphData()
 
         # event metadata
         r, sr, e = evt.event_id
@@ -161,15 +162,15 @@ class HitGraphProducer(ProcessorBase):
 
         hits = hits.reset_index(names="index_2d")
 
-        # node position
-        hits[self.node_pos] *= self.pos_norm
-        data["hit"].pos = torch.tensor(hits[self.node_pos].values).float()
+        node_pos = [proj_key, drift_key]
 
-        # plane indices
-        data["hit"].plane = torch.tensor(hits["local_plane"].values, dtype=torch.long)
+        # node position
+        data["hit"].plane = torch.tensor(hits[plane_key].values, dtype=torch.long)
+        data["hit"].pos = torch.tensor(hits[node_pos].values, dtype=torch.float)
 
         # node features
-        data["hit"].x = torch.tensor(hits[self.node_feats].values).float()
+        node_feats = self.node_feats + [plane_key, proj_key, drift_key]
+        data["hit"].x = torch.tensor(hits[node_feats].values).float()
 
         # node true position
         if self.label_position:
@@ -181,16 +182,16 @@ class HitGraphProducer(ProcessorBase):
         # 2D graph edges
         data["hit", "delaunay", "hit"].edge_index = self.transform(data["hit"]).edge_index
         edge_plane = []
-        for i, plane_hits in hits.groupby("local_plane"):
+        for i, view_hits in hits.groupby(plane_key):
             tmp = pyg.data.Data()
-            tmp.index_2d = torch.tensor(plane_hits.index_2d.values).long()
-            tmp.pos = torch.tensor(plane_hits[self.node_pos].values).float()
+            tmp.index_2d = torch.tensor(view_hits.index_2d.values).long()
+            tmp.pos = torch.tensor(view_hits[node_pos].values).float()
             edge_plane.append(tmp.index_2d[self.transform(tmp).edge_index])
         data["hit", "delaunay-planar", "hit"].edge_index = torch.cat(edge_plane, dim=1)
 
         # 3D graph edges
         edge_nexus = []
-        for i, plane_hits in hits.groupby("local_plane"):
+        for i, view_hits in hits.groupby(plane_key):
             p = self.planes[i]
             edge = spacepoints.merge(hits[['hit_id','index_2d']].add_suffix(f'_{p}'),
                                      on=f'hit_id_{p}',
@@ -212,7 +213,19 @@ class HitGraphProducer(ProcessorBase):
         # truth information
         if self.semantic_labeller:
             data["hit"].y_semantic = torch.tensor(hits['semantic_label'].fillna(-1).values).long()
-            data["hit"].y_instance = torch.tensor(hits['instance_label'].fillna(-1).values).long()
+            y = torch.tensor(hits['instance_label'].fillna(-1).values).long()
+            mask = y != -1
+            y = y[mask]
+            instances = y.unique()
+            # remap instances
+            imax = instances.max() + 1 if instances.size(0) else 0
+            if instances.size(0) != imax:
+                remap = torch.full((imax,), -1, dtype=torch.long)
+                remap[instances] = torch.arange(instances.size(0))
+                y = remap[y]
+            data["particle-truth"].num_nodes = instances.size(0)
+            edges = torch.stack((mask.nonzero().squeeze(1), y), dim=0).long()
+            data["hit", "cluster-truth", "particle-truth"].edge_index = edges
             if self.store_detailed_truth:
                 data["hit"].g4_id = torch.tensor(hits['g4_id'].fillna(-1).values).long()
                 data["hit"].parent_id = torch.tensor(hits['parent_id'].fillna(-1).values).long()
@@ -251,6 +264,7 @@ class HitGraphProducer(ProcessorBase):
 
         # event label
         if self.event_labeller:
+            # pylint: disable=possibly-used-before-assignment
             data['evt'].y = torch.tensor(self.event_labeller(event)).long().reshape([1])
 
         # 3D vertex truth

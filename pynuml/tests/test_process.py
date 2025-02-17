@@ -1,31 +1,26 @@
 """Test pynuml graph processing and plotting"""
 import pynuml
-import nugraph as ng
+import nugraph as ng # pylint: disable=unused-import
 
-UBOONE_FILE = "$NUGRAPH_DATA/uboone-opendata/uboone-opendata-e5fac1ac.test.h5"
-
-def test_process_placeholder():
-    pass
-
-# def test_process_uboone():
-#     """Test graph processing with MicroBooNE open data release"""
-#     f = pynuml.io.File(UBOONE_FILE)
-#     processor = pynuml.process.HitGraphProducer(
-#         file=f,
-#         semantic_labeller=pynuml.labels.StandardLabels(),
-#         event_labeller=pynuml.labels.FlavorLabels(),
-#         label_vertex=True)
-#     plot = pynuml.plot.GraphPlot(
-#         planes=["u", "v", "y"],
-#         classes=pynuml.labels.StandardLabels().labels[:-1])
-#     f.read_data_all()
-#     evts = f.build_evt()
-#     for evt in evts:
-#         _, data = processor(evt)
-#         if not data:
-#             continue
-#         plot.plot(data, target='semantic', how='true', filter='show')
-#         plot.plot(data, target='instance', how='true', filter='true')
+def test_process_uboone():
+    """Test graph processing with MicroBooNE open data release"""
+    f = pynuml.io.File("$NUGRAPH_DIR/test/uboone-opendata.test.h5")
+    processor = pynuml.process.HitGraphProducer(
+        file=f,
+        semantic_labeller=pynuml.labels.StandardLabels(),
+        event_labeller=pynuml.labels.FlavorLabels(),
+        label_vertex=True)
+    plot = pynuml.plot.GraphPlot(
+        planes=["u", "v", "y"],
+        classes=pynuml.labels.StandardLabels().labels[:-1])
+    f.read_data_all(use_seq_cnt=False, evt_part=0)
+    evts = f.build_evt()
+    for evt in evts:
+        _, data = processor(evt)
+        if not data:
+            continue
+        plot.plot(data, target='semantic', how='true', filter='show')
+        plot.plot(data, target='instance', how='true', filter='true')
 
 # def test_process_dune_nutau():
 #     """Test graph processing with DUNE beam nutau dataset"""

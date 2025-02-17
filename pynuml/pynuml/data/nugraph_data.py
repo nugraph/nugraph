@@ -2,8 +2,7 @@
 import h5py
 import numpy as np
 import torch
-from torch_geometric.data import Batch, HeteroData
-from torch_geometric.utils import unbatch
+from torch_geometric.data import HeteroData
 
 N_IT = "particle-truth" # true instance node store
 N_IP = "particle" # predicted instance node store
@@ -108,4 +107,11 @@ class NuGraphData(HeteroData):
                     data[store][attr] = torch.as_tensor(group[dataset][()])
             else: # multi-dimension array
                 data[store][attr] = torch.as_tensor(group[dataset][:])
+
+        # handle empty node tensors
+        for node_type in data.node_types:
+            n = data[node_type]
+            if n.num_nodes is not None and not hasattr(n, "x"):
+                n.x = torch.empty([n.num_nodes, 0])
+
         return data

@@ -3,6 +3,7 @@ name: ci
 on:
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 env:
   NUGRAPH_DIR: ${{ github.workspace }}
@@ -11,22 +12,90 @@ env:
 
 jobs:
 
-  lint:
+  build:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -el {0}
     steps:
     - name: checking out repository
       uses: actions/checkout@v4
     - name: building nugraph
-      uses: ./.github/actions/build-nugraph
+      uses: ./.github/actions/build-conda
+
+  lint:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -el {0}
+    needs: build
+    steps:
+    - name: checking out repository
+      uses: actions/checkout@v4
+    - name: initializing conda environment
+      uses: conda-incubator/setup-miniconda@v3
+      with:
+        miniforge-version: latest
+        activate-environment: numl
+        auto-activate-base: false
+    - name: getting date
+      id: get-date
+      run: echo "today=$(/bin/date -u '+%Y%m%d')" >> $GITHUB_OUTPUT
+    - name: setting up conda environment cache
+      uses: actions/cache@v3
+      with:
+        path: ${{ env.CONDA }}/envs
+        key:
+          conda-${{ runner.os }}--${{ runner.arch }}--${{
+          steps.get-date.outputs.today }}-${{
+          hashFiles('numl.yaml') }}-${{ env.CACHE_NUMBER
+          }}
+      env:
+        CACHE_NUMBER: 0
+      id: cache
+    - name: installing local packages
+      run: |
+        conda list
+        pip install --no-deps -e ./pynuml
+        pip install --no-deps -e ./nugraph
     - name: analysing the code with pylint
       run: pylint --fail-under=6 $(git ls-files '*.py')
 
   test:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -el {0}
+    needs: build
     steps:
     - name: checking out repository
       uses: actions/checkout@v4
-    - name: building nugraph
-      uses: ./.github/actions/build-nugraph
+      with:
+        lfs: true
+    - name: initializing conda environment
+      uses: conda-incubator/setup-miniconda@v3
+      with:
+        miniforge-version: latest
+        activate-environment: numl
+        auto-activate-base: false
+    - name: getting date
+      id: get-date
+      run: echo "today=$(/bin/date -u '+%Y%m%d')" >> $GITHUB_OUTPUT
+    - name: setting up conda environment cache
+      uses: actions/cache@v3
+      with:
+        path: ${{ env.CONDA }}/envs
+        key:
+          conda-${{ runner.os }}--${{ runner.arch }}--${{
+          steps.get-date.outputs.today }}-${{
+          hashFiles('numl.yaml') }}-${{ env.CACHE_NUMBER
+          }}
+      env:
+        CACHE_NUMBER: 0
+      id: cache
+    - name: installing local packages
+      run: |
+        pip install --no-deps -e ./pynuml
+        pip install --no-deps -e ./nugraph
     - name: running python unit tests
       run: pytest
