@@ -25,7 +25,7 @@ class NuGraphDataModule(LightningDataModule):
                  batch_size: int = 64,
                  shuffle: str = 'random',
                  balance_frac: float = 0.1,
-                 prepare: bool = False):
+                 driver: str = None):
         super().__init__()
 
         # for this HDF5 dataloader, worker processes slow things down
@@ -34,7 +34,7 @@ class NuGraphDataModule(LightningDataModule):
 
         if data_path == "auto":
             data_path = DEFAULT_DATA
-        self.filename = os.path.expandvars(data_path)
+        filename = os.path.expandvars(data_path)
         self.batch_size = batch_size
         if shuffle != 'random' and shuffle != 'balance':
             print('shuffle argument must be "random" or "balance".')
@@ -42,71 +42,71 @@ class NuGraphDataModule(LightningDataModule):
         self.shuffle = shuffle
         self.balance_frac = balance_frac
 
-        with h5py.File(self.filename) as f:
+        f = h5py.File(filename, driver=driver)
 
-            # load metadata
-            try:
-                # pylint: disable=no-member
-                self.planes = f['planes'].asstr()[()].tolist()
-                self.semantic_classes = f['semantic_classes'].asstr()[()].tolist()
-            except KeyError:
-                print(("Metadata not found in file! "
-                       "\"planes\" and \"semantic_classes\" are required."))
-                sys.exit()
+        # load metadata
+        try:
+            # pylint: disable=no-member
+            self.planes = f['planes'].asstr()[()].tolist()
+            self.semantic_classes = f['semantic_classes'].asstr()[()].tolist()
+        except KeyError:
+            print(("Metadata not found in file! "
+                   "\"planes\" and \"semantic_classes\" are required."))
+            sys.exit()
 
-            # get graph structure generation
-            # if that info is missing, it's first generation
-            try:
-                # pylint: disable=no-member
-                self.gen = f["gen"][()].item()
-            except KeyError:
-                self.gen = 1
+        # get graph structure generation
+        # if that info is missing, it's first generation
+        try:
+            # pylint: disable=no-member
+            self.gen = f["gen"][()].item()
+        except KeyError:
+            self.gen = 1
 
-            # load optional event labels
-            if 'event_classes' in f:
-                # pylint: disable=no-member
-                self.event_classes = f['event_classes'].asstr()[()].tolist()
+        # load optional event labels
+        if 'event_classes' in f:
+            # pylint: disable=no-member
+            self.event_classes = f['event_classes'].asstr()[()].tolist()
+        else:
+            self.event_classes = None
+
+        # load sample splits
+        try:
+            # pylint: disable=no-member
+            train_samples = f['samples/train'].asstr()[()]
+            val_samples = f['samples/validation'].asstr()[()]
+            test_samples = f['samples/test'].asstr()[()]
+        except KeyError:
+            print(("Sample splits not found in file! "
+                   "Call \"generate_samples\" to create them."))
+            sys.exit()
+
+        # load data sizes
+        try:
+            self.train_datasize = f['datasize/train'][()]
+        except KeyError:
+            print(("Data size array not found in file! "
+                   "Call \"generate_samples\" to create it."))
+            sys.exit()
+
+        # load feature normalisations
+        try:
+            if self.gen == 1:
+                norm = {p: torch.tensor(f[f'norm/{p}'][()]) for p in self.planes}
             else:
-                self.event_classes = None
-
-            # load sample splits
-            try:
-                # pylint: disable=no-member
-                train_samples = f['samples/train'].asstr()[()]
-                val_samples = f['samples/validation'].asstr()[()]
-                test_samples = f['samples/test'].asstr()[()]
-            except KeyError:
-                print(("Sample splits not found in file! "
-                       "Call \"generate_samples\" to create them."))
-                sys.exit()
-
-            # load data sizes
-            try:
-                self.train_datasize = f['datasize/train'][()]
-            except KeyError:
-                print(("Data size array not found in file! "
-                       "Call \"generate_samples\" to create it."))
-                sys.exit()
-
-            # load feature normalisations
-            try:
-                if self.gen == 1:
-                    norm = {p: torch.tensor(f[f'norm/{p}'][()]) for p in self.planes}
-                else:
-                    norm = torch.tensor(f["norm/hit"][()])
-            except KeyError:
-                print(("Feature normalisations not found in file! "
-                       "Call \"generate_norm\" to create them."))
-                sys.exit()
+                norm = torch.tensor(f["norm/hit"][()])
+        except KeyError:
+            print(("Feature normalisations not found in file! "
+                   "Call \"generate_norm\" to create them."))
+            sys.exit()
 
         transform = Compose((PositionFeatures(self.planes),
                              FeatureNorm(norm),
                              HierarchicalEdges(self.planes),
                              EventLabels()))
 
-        self.train_dataset = NuGraphDataset(self.filename, train_samples, transform)
-        self.val_dataset = NuGraphDataset(self.filename, val_samples, transform)
-        self.test_dataset = NuGraphDataset(self.filename, test_samples, transform)
+        self.train_dataset = NuGraphDataset(f, train_samples, transform)
+        self.val_dataset = NuGraphDataset(f, val_samples, transform)
+        self.test_dataset = NuGraphDataset(f, test_samples, transform)
 
     @staticmethod
     def generate_samples(data_path: str):
@@ -215,4 +215,5 @@ class NuGraphDataModule(LightningDataModule):
                           help='Dataset shuffling scheme to use')
         data.add_argument('--balance-frac', type=float, default=0.1,
                           help='Fraction of dataset to use for workload balancing')
+        data.add_argument("--driver", type=str, help="HDF5 driver to use")
         return parser

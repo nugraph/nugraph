@@ -108,6 +108,7 @@ class NuGraphCore(nn.Module):
                                                  interaction_features,
                                                  interaction_features)
 
+
         # message-passing from interaction nodes to nexus nodes
         self.interaction_to_nexus = NuGraphBlock(interaction_features,
                                                  nexus_features,

@@ -11,6 +11,7 @@ from pytorch_lightning import LightningModule
 from .types import Data
 from .encoder import Encoder
 from .core import NuGraphCore
+from .optical import NuGraphOptical
 from .decoders import (SemanticDecoder, FilterDecoder, EventDecoder, VertexDecoder, InstanceDecoder,
                        SpacepointDecoder)
 
@@ -29,6 +30,9 @@ class NuGraph3(LightningModule):
         hit_features: Number of hit node features
         nexus_features: Number of nexus node features
         interaction_features: Number of interaction node features
+        ophit_features: Number of features in optical hit embedding
+        pmt_features: Number of features in PMT (flashsumpe) embedding
+        flash_features: Number of features in optical flash embedding
         instance_features: Number of instance features
         semantic_classes: Tuple of semantic classes
         event_classes: Tuple of event classes
@@ -39,14 +43,18 @@ class NuGraph3(LightningModule):
         vertex_head: Whether to enable vertex decoder
         instance_head: Whether to enable instance decoder
         spacepoint_head: Whether to enable spacepoint decoder
+        use_optical: Whether to perform message-passing in optical system
         use_checkpointing: Whether to use checkpointing
         lr: Learning rate
     """
     def __init__(self,
-                 in_features: int = 4,
+                 in_features: int = 5,
                  hit_features: int = 128,
                  nexus_features: int = 32,
                  interaction_features: int = 32,
+                 ophit_features: int = 128,
+                 pmt_features: int = 64,
+                 flash_features: int = 32,
                  instance_features: int = 32,
                  semantic_classes: tuple[str] = ('MIP','HIP','shower','michel','diffuse'),
                  event_classes: tuple[str] = ('numu','nue','nc'),
@@ -57,6 +65,7 @@ class NuGraph3(LightningModule):
                  vertex_head: bool = False,
                  instance_head: bool = False,
                  spacepoint_head: bool = False,
+                 use_optical: bool = False,
                  use_checkpointing: bool = False,
                  lr: float = 0.001):
         super().__init__()
@@ -73,13 +82,21 @@ class NuGraph3(LightningModule):
         self.num_iters = num_iters
         self.lr = lr
 
-        self.encoder = Encoder(in_features, hit_features,
-                               nexus_features, interaction_features)
+        self.encoder = Encoder(in_features, hit_features, nexus_features,
+                               interaction_features, ophit_features,
+                               pmt_features, flash_features)
 
-        self.core_net = NuGraphCore(hit_features,
-                                    nexus_features,
-                                    interaction_features,
-                                    use_checkpointing)
+        self.core_net = NuGraphCore(hit_features=hit_features,
+                                    nexus_features=nexus_features,
+                                    interaction_features=interaction_features,
+                                    use_checkpointing=use_checkpointing)
+
+        if use_optical:
+            self.optical_net = NuGraphOptical(interaction_features=interaction_features,
+                                              ophit_features=ophit_features,
+                                              pmt_features=pmt_features,
+                                              flash_features=flash_features,
+                                              use_checkpointing=use_checkpointing)
 
         self.decoders = []
 
@@ -110,7 +127,7 @@ class NuGraph3(LightningModule):
         if not self.decoders:
             raise RuntimeError('At least one decoder head must be enabled!')
 
-    def forward(self, data: Data,
+    def forward(self, data: Data, # pylint: disable=arguments-differ
                 stage: str = None):
         """
         NuGraph3 forward function
@@ -126,6 +143,8 @@ class NuGraph3(LightningModule):
         self.encoder(data)
         for _ in range(self.num_iters):
             self.core_net(data)
+            if hasattr(self, "optical_net"):
+                self.optical_net(data)
         total_loss = 0.
         total_metrics = {}
         for decoder in self.decoders:
@@ -135,7 +154,7 @@ class NuGraph3(LightningModule):
 
         return total_loss, total_metrics
 
-    def training_step(self,
+    def training_step(self, # pylint: disable=arguments-differ
                       batch: Data,
                       batch_idx: int) -> float:
         loss, metrics = self(batch, 'train')
@@ -203,6 +222,12 @@ class NuGraph3(LightningModule):
                            help='Hidden dimensionality of interaction layer')
         model.add_argument('--instance-feats', type=int, default=32,
                            help='Hidden dimensionality of object condensation')
+        model.add_argument('--ophit-features', type=int, default=128,
+                           help='Number of optical hit features')
+        model.add_argument('--pmt-features', type=int, default=64,
+                            help='Number of PMT features')
+        model.add_argument('--flash-features', type=int, default=32,
+                           help='Number of optical flashes features')
         model.add_argument('--event', action='store_true',
                            help='Enable event classification head')
         model.add_argument('--semantic', action='store_true',
@@ -238,6 +263,9 @@ class NuGraph3(LightningModule):
             hit_features=args.hit_feats,
             nexus_features=args.nexus_feats,
             interaction_features=args.interaction_feats,
+            ophit_features=args.ophit_features,
+            pmt_features=args.pmt_features,
+            flash_features=args.flash_features,
             instance_features=args.instance_feats,
             semantic_classes=nudata.semantic_classes,
             event_classes=nudata.event_classes,
