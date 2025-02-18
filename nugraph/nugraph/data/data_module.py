@@ -105,7 +105,6 @@ class NuGraphDataModule(LightningDataModule):
             FeatureNorm(norm),
             HierarchicalEdges(self.planes),
             EventLabels(),
-            PlaneFeature(),
         ]
         if transform:
             transforms.append(transform)
