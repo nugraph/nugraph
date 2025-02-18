@@ -100,12 +100,17 @@ class NuGraphDataModule(LightningDataModule):
                        "Call \"generate_norm\" to create them."))
                 sys.exit()
 
-        transform = Compose((PositionFeatures(self.planes),
-                             FeatureNorm(norm),
-                             HierarchicalEdges(self.planes),
-                             EventLabels(),
-                             PlaneFeature(),
-                             transform))
+        transforms = [
+            PositionFeatures(self.planes),
+            FeatureNorm(norm),
+            HierarchicalEdges(self.planes),
+            EventLabels(),
+            PlaneFeature(),
+        ]
+        if transform:
+            transforms.append(transform)
+
+        transform = Compose(transforms)
 
         self.train_dataset = NuGraphDataset(self.filename, train_samples, transform)
         self.val_dataset = NuGraphDataset(self.filename, val_samples, transform)
