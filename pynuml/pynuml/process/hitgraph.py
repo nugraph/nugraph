@@ -168,7 +168,7 @@ class HitGraphProducer(ProcessorBase):
 
         # node true position
         if self.label_position:
-            data["hit"].c = torch.tensor(hits[["x_position", "y_position", "z_position"]].values).float()
+            data["hit"].y_position = torch.tensor(hits[["x_position", "y_position", "z_position"]].values).float()
 
         # hit indices
         data["hit"].id = torch.tensor(hits['hit_id'].values).long()

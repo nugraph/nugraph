@@ -6,6 +6,8 @@ import plotly.express as px
 from plotly.graph_objects import FigureWidget
 import warnings
 
+C_3D = ("x", "y", "z")
+
 class GraphPlot:
     def __init__(self,
                  planes: list[str],
@@ -28,14 +30,16 @@ class GraphPlot:
         def to_categorical(arr):
             return pd.Categorical.from_codes(codes=arr+1, dtype=self._labels)
         if isinstance(data, Batch):
-            raise Exception('to_dataframe does not support batches!')
+            raise RuntimeError('to_dataframe does not support batches!')
 
         hit = data["hit"].to_dict()
         df = pd.DataFrame(hit["id"], columns=["id"])
         df["plane"] = [self._planes[i] for i in hit["plane"]]
         df[["proj", "drift"]] = hit["pos"]
-        if "c" in hit:
-            df[["x", "y", "z"]] = hit["c"]
+        if "y_position" in hit:
+            df[[f"y_position_{c}" for c in C_3D]] = hit["y_position"]
+        if "x_position" in hit:
+            df[[f"x_position_{c}" for c in C_3D]] = hit["x_position"]
         df["y_filter"] = hit["y_semantic"] != -1
         df['y_semantic'] = to_categorical(hit['y_semantic'])
         df['y_instance'] = data.y_i().numpy().astype(str)
@@ -75,7 +79,7 @@ class GraphPlot:
              target: str = 'hits',
              how: str = 'none',
              filter: str = 'show',
-             xyz: bool = False,
+             xyz: str = None,
              width: int = None,
              height: int = None,
              title: bool = True) -> FigureWidget:
@@ -188,9 +192,12 @@ class GraphPlot:
             raise Exception('"filter" must be one of "none", "show", "true" or "pred".')
 
         if xyz:
-            opts["x"] = "x"
-            opts["y"] = "y"
-            opts["z"] = "z"
+            if xyz == "true":
+                opts.update({c: f"y_position_{c}" for c in C_3D})
+            elif xyz == "pred":
+                opts.update({c: f"x_position_{c}" for c in C_3D})
+            else:
+                raise RuntimeError("\"xyz\" must be either \"true\" or \"pred\".")
         elif how == "pca":
             opts["x"] = "c1"
             opts["y"] = "c2"

@@ -39,17 +39,17 @@ class SpacepointDecoder(LightningModule):
         """
 
         # add predicted coordinates to output graph
-        data["hit"].c_pred = self.net(data["hit"].x)
+        data["hit"].x_position = self.net(data["hit"].x) # rename to x_position / y_position
         if isinstance(data, Batch):
             # pylint: disable=protected-access
-            data._slice_dict["hit"]["c_pred"] = data["hit"].ptr
+            data._slice_dict["hit"]["x_position"] = data["hit"].ptr
             inc = torch.zeros(data.num_graphs, device=self.device)
-            data._inc_dict["hit"]["c_pred"] = inc
+            data._inc_dict["hit"]["x_position"] = inc
 
         # calculate loss
         mask = data["hit"].y_semantic != -1
-        x = data["hit"].c_pred[mask]
-        y = data["hit"].c[mask]
+        x = data["hit"].x_position[mask]
+        y = data["hit"].y_position[mask]
         loss = (-1 * self.temp).exp() * self.loss(x, y) + self.temp
 
 
