@@ -52,8 +52,6 @@ class SpacepointDecoder(LightningModule):
         y = data["hit"].y_position[mask]
         loss = (-1 * self.temp).exp() * self.loss(x, y) + self.temp
 
-
-
         # calculate metrics
         metrics = {}
         if stage:

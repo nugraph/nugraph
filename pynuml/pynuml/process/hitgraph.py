@@ -89,14 +89,14 @@ class HitGraphProducer(ProcessorBase):
         if self.semantic_labeller:
             edeps = evt['edep_table']
             energy_col = 'energy' if 'energy' in edeps.columns else 'energy_fraction' # for backwards compatibility
-        
+
             # get ID of max particle
             g4_id = edeps[[energy_col, 'g4_id', 'hit_id']]
             g4_id = g4_id.sort_values(by=[energy_col],
                                       ascending=False,
                                       kind='mergesort').drop_duplicates('hit_id')
             hits = g4_id.merge(hits, on='hit_id', how='right')
-            
+
             # charge-weighted average of 3D position
             if self.label_position:
                 edeps = edeps[["hit_id", "energy", "x_position", "y_position", "z_position"]]
