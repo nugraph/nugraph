@@ -179,6 +179,9 @@ class GraphPlot:
         elif filter == 'show':
             # show hits predicted to be background in grey
             if target == 'semantic' and how == 'pred':
+                if "x_filter" not in df.columns:
+                    raise RuntimeError(("how=\"pred\" and filter=\"show\" passed, "
+                                        "but filter prediction is not set."))
                 df.loc[df.x_filter < self.filter_threshold, "x_semantic"] = 'background'
         elif filter == 'true':
             # remove true background hits
