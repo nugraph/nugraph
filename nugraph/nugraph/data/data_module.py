@@ -9,7 +9,7 @@ import tqdm
 
 import torch
 from torch_geometric.loader import DataLoader
-from torch_geometric.transforms import Compose
+from torch_geometric.transforms import BaseTransform, Compose
 from pytorch_lightning import LightningDataModule
 
 from ..data import NuGraphDataset, BalanceSampler
@@ -22,6 +22,7 @@ class NuGraphDataModule(LightningDataModule):
     """PyTorch Lightning data module for neutrino graph data."""
     def __init__(self,
                  data_path: str = "auto",
+                 transform: BaseTransform = None,
                  batch_size: int = 64,
                  shuffle: str = 'random',
                  balance_frac: float = 0.1,
@@ -102,7 +103,9 @@ class NuGraphDataModule(LightningDataModule):
         transform = Compose((PositionFeatures(self.planes),
                              FeatureNorm(norm),
                              HierarchicalEdges(self.planes),
-                             EventLabels()))
+                             EventLabels(),
+                             PlaneFeature(),
+                             transform))
 
         self.train_dataset = NuGraphDataset(self.filename, train_samples, transform)
         self.val_dataset = NuGraphDataset(self.filename, val_samples, transform)

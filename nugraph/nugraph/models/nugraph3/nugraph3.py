@@ -9,6 +9,7 @@ from torch.optim.lr_scheduler import OneCycleLR
 from pytorch_lightning import LightningModule
 
 from .types import Data
+from .transform import Transform
 from .encoder import Encoder
 from .core import NuGraphCore
 from .decoders import (SemanticDecoder, FilterDecoder, EventDecoder, VertexDecoder, InstanceDecoder,
@@ -181,6 +182,11 @@ class NuGraph3(LightningModule):
                 max_lr=self.lr,
                 total_steps=self.trainer.estimated_stepping_batches)
         return [optimizer], {'scheduler': onecycle, 'interval': 'step'}
+
+    @staticmethod
+    def transform() -> Transform:
+        """Return data transform for NuGraph3 model"""
+        return Transform()
 
     @staticmethod
     def add_model_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:

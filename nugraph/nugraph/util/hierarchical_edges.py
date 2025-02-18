@@ -73,9 +73,4 @@ class HierarchicalEdges(BaseTransform):
         hi = torch.zeros(data["sp"].num_nodes, dtype=torch.long)
         data["sp", "in", "evt"].edge_index = torch.stack((lo, hi), dim=0)
 
-        # take this out once spacepoint decoder is mature
-        if "c" in data["hit"].keys():
-            data["hit"].y_position = data["hit"].c
-            del data["hit"].c
-
         return data
