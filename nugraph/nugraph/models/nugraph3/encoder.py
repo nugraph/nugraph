@@ -1,9 +1,9 @@
 """NuGraph3 encoder"""
 import torch
-from torch import nn
 from .types import Data
+from ...util import InputNorm
 
-class Encoder(nn.Module):
+class Encoder(torch.nn.Module):
     """
     NuGraph3 encoder
     
@@ -19,7 +19,9 @@ class Encoder(nn.Module):
                  nexus_features: int,
                  interaction_features: int):
         super().__init__()
-        self.planar_net = nn.Linear(in_features, planar_features)
+        self.planar_net = torch.nn.Sequential(
+            InputNorm(in_features),
+            torch.nn.Linear(in_features, planar_features))
         self.nexus_features = nexus_features
         self.interaction_features = interaction_features
 
