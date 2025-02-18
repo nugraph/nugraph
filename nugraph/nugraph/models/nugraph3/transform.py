@@ -13,7 +13,9 @@ class Transform(BaseTransform):
            data: NuGraph data object to transform
         """
 
+        # rename true hit position (remove once spacepoint decoder is mature)
         if "c" in data["hit"].keys():
             data["hit"].y_position = data["hit"].c
             del data["hit"].c
+
         return data
