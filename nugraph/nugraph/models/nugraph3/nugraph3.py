@@ -31,6 +31,7 @@ class NuGraph3(LightningModule):
         nexus_features: Number of nexus node features
         interaction_features: Number of interaction node features
         instance_features: Number of instance features
+        planes: Tuple of detector plane names
         semantic_classes: Tuple of semantic classes
         event_classes: Tuple of event classes
         num_iters: Number of message-passing iterations
@@ -49,6 +50,7 @@ class NuGraph3(LightningModule):
                  nexus_features: int = 32,
                  interaction_features: int = 32,
                  instance_features: int = 32,
+                 planes: tuple[str] = ("u","v","y"),
                  semantic_classes: tuple[str] = ('MIP','HIP','shower','michel','diffuse'),
                  event_classes: tuple[str] = ('numu','nue','nc'),
                  num_iters: int = 5,
@@ -105,14 +107,13 @@ class NuGraph3(LightningModule):
             self.decoders.append(self.instance_decoder)
 
         if spacepoint_head:
-            self.spacepoint_decoder = SpacepointDecoder(hit_features)
+            self.spacepoint_decoder = SpacepointDecoder(hit_features, len(planes))
             self.decoders.append(self.spacepoint_decoder)
 
         if not self.decoders:
             raise RuntimeError('At least one decoder head must be enabled!')
 
-    def forward(self, data: Data,
-                stage: str = None):
+    def forward(self, data: Data, stage: str = None): # pylint: disable=arguments-differ
         """
         NuGraph3 forward function
 
@@ -245,6 +246,7 @@ class NuGraph3(LightningModule):
             nexus_features=args.nexus_feats,
             interaction_features=args.interaction_feats,
             instance_features=args.instance_feats,
+            planes=nudata.planes,
             semantic_classes=nudata.semantic_classes,
             event_classes=nudata.event_classes,
             num_iters=args.num_iters,
