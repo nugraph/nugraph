@@ -49,7 +49,7 @@ class NuGraph3(LightningModule):
                  hit_features: int = 128,
                  nexus_features: int = 32,
                  interaction_features: int = 32,
-                 instance_features: int = 32,
+                 instance_features: int = 8,
                  planes: tuple[str] = ("u","v","y"),
                  semantic_classes: tuple[str] = ('MIP','HIP','shower','michel','diffuse'),
                  event_classes: tuple[str] = ('numu','nue','nc'),
@@ -208,7 +208,7 @@ class NuGraph3(LightningModule):
                            help='Hidden dimensionality of nexus convolutions')
         model.add_argument('--interaction-feats', type=int, default=32,
                            help='Hidden dimensionality of interaction layer')
-        model.add_argument('--instance-feats', type=int, default=32,
+        model.add_argument('--instance-feats', type=int, default=8,
                            help='Hidden dimensionality of object condensation')
         model.add_argument('--event', action='store_true',
                            help='Enable event classification head')
