@@ -40,13 +40,13 @@ class Transform(BaseTransform):
 
                 # transform planar edges
                 edge_index = data["hit", "delaunay-planar", "hit"].edge_index
-                edge_index = subgraph(idx, edge_index, relabel_nodes=True)
+                edge_index, _ = subgraph(idx, edge_index, relabel_nodes=True)
                 data[pname, "plane", pname].edge_index = edge_index
 
                 # transform nexus edges
                 edge_index = data["hit", "nexus", "sp"].edge_index
                 n_sp = data["sp"].num_nodes
-                edge_index = bipartite_subgraph(
+                edge_index, _ = bipartite_subgraph(
                     (idx, torch.arange(n_sp)), edge_index,
                     size=(h.num_nodes, n_sp), relabel_nodes=True)
                 data[pname, "nexus", "sp"].edge_index = edge_index
