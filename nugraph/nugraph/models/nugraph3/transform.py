@@ -3,9 +3,18 @@ from torch_geometric.transforms import BaseTransform
 from pynuml.data import NuGraphData
 
 class Transform(BaseTransform):
-    """NuGraph3 data transform"""
+    """
+    NuGraph3 data transform
+    
+    Args:
+        planes: Tuple of detector plane names
+    """
+    def __init__(self, planes: tuple[str]):
+        super().__init__()
+        self.planes = planes
 
     def __call__(self, data: NuGraphData) -> NuGraphData:
+
         """
         Apply transform for compatibility with NuGraph3 model
 

@@ -43,7 +43,7 @@ def train(args):
 
     # Load dataset
     nudata = Data(args.data_path, batch_size=args.batch_size,
-                  transform=Model.transform(), shuffle=args.shuffle,
+                  model=Model, shuffle=args.shuffle,
                   balance_frac=args.balance_frac)
 
     model = Model.from_args(args, nudata)

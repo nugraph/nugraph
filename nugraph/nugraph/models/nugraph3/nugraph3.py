@@ -185,9 +185,14 @@ class NuGraph3(LightningModule):
         return [optimizer], {'scheduler': onecycle, 'interval': 'step'}
 
     @staticmethod
-    def transform() -> Transform:
-        """Return data transform for NuGraph3 model"""
-        return Transform()
+    def transform(planes: tuple[str]) -> Transform:
+        """
+        Return data transform for NuGraph3 model
+        
+        Args:
+            planes: tuple of detector plane names
+        """
+        return Transform(planes)
 
     @staticmethod
     def add_model_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:

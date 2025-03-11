@@ -14,6 +14,7 @@ from .encoder import Encoder
 from .plane import PlaneNet
 from .nexus import NexusNet
 from .decoders import SemanticDecoder, FilterDecoder
+from .transform import Transform
 
 from ...data import H5DataModule
 
@@ -234,6 +235,16 @@ class NuGraph2(LightningModule):
             self.max_mem_gpu = max(self.max_mem_gpu, gpu_mem)
             self.log(f'memory_gpu/{stage}', self.max_mem_gpu,
                      batch_size=batch.num_graphs, reduce_fx=torch.max)
+
+    @staticmethod
+    def transform(planes: tuple[str]) -> Transform:
+        """
+        Return data transform for NuGraph2 model
+        
+        Args:
+            planes: tuple of detector plane names
+        """
+        return Transform(planes)
 
     @staticmethod
     def add_model_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
