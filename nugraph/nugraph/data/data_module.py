@@ -88,15 +88,7 @@ class NuGraphDataModule(LightningDataModule):
                        "Call \"generate_samples\" to create it."))
                 sys.exit()
 
-        transforms = [
-            PositionFeatures(self.planes),
-            HierarchicalEdges(self.planes),
-            EventLabels(),
-        ]
-        if model:
-            transforms.append(model.transform(self.planes))
-
-        transform = Compose(transforms)
+        transform = model.transform(self.planes) if model else None
 
         self.train_dataset = NuGraphDataset(self.filename, train_samples, transform)
         self.val_dataset = NuGraphDataset(self.filename, val_samples, transform)
