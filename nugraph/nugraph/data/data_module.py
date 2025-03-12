@@ -9,11 +9,9 @@ import tqdm
 
 import torch
 from torch_geometric.loader import DataLoader
-from torch_geometric.transforms import Compose
 from pytorch_lightning import LightningDataModule
 
 from ..data import NuGraphDataset, BalanceSampler
-from ..util import PositionFeatures, HierarchicalEdges, EventLabels
 
 DEFAULT_DATA = ("$NUGRAPH_DATA/uboone-opendata/"
                 "uboone-opendata-19be46d89d0f22f5a78641d724c1fedd.gnn.h5")
