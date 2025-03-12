@@ -49,12 +49,22 @@ class NexusDown(MessagePassing): # pylint: disable=abstract-method
         return self.node_net(torch.cat((x, aggr_out), dim=-1))
 
 class NexusNet(torch.nn.Module):
-    '''Module to project to nexus space and mix detector planes'''
+    """
+    Module to project to nexus space and mix detector planes
+
+    Args:
+        planar_features: Number of planar features
+        nexus_features: Number of nexus features
+        num_classes: Number of semantic classes
+        planes: Tuple of plane names
+        aggr: Message aggregation method
+        checkpoint: Whether to use checkpointing
+    """
     def __init__(self, # pylint: disable=too-many-arguments,too-many-positional-arguments
                  planar_features: int,
                  nexus_features: int,
                  num_classes: int,
-                 planes: list[str],
+                 planes: tuple[str],
                  aggr: str = 'mean',
                  checkpoint: bool = True):
         super().__init__()
