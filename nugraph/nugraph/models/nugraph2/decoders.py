@@ -1,19 +1,22 @@
+"""NuGraph2 decoders"""
 from typing import Any, Callable
-
 from abc import ABC
+import tempfile
 
 from torch import Tensor, tensor, cat
 import torch.nn as nn
-from torch_geometric.nn.aggr import SoftmaxAggregation, LSTMAggregation
 
 import torchmetrics as tm
+from pytorch_lightning.loggers import Logger, TensorBoardLogger, WandbLogger
 
 import matplotlib.pyplot as plt
 import seaborn as sn
-import math
+import plotly.express as px
+
+import wandb
 
 from .linear import ClassLinear
-from ...util import RecallLoss, LogCoshLoss
+from ...util import RecallLoss
 
 class DecoderBase(nn.Module, ABC):
     '''Base class for all NuGraph decoders'''
@@ -54,8 +57,13 @@ class DecoderBase(nn.Module, ABC):
             cm.update(x, y)
         return loss, metrics
 
-    def draw_confusion_matrix(self, cm: tm.ConfusionMatrix) -> plt.Figure:
-        '''Produce confusion matrix at end of epoch'''
+    def draw_matrix_tensorboard(self, cm: tm.ConfusionMatrix) -> plt.Figure:
+        """
+        Draw confusion matrix for tensorboard logging
+        
+        Args:
+            cm: Confusion matrix
+        """
         confusion = cm.compute().cpu()
         fig = plt.figure(figsize=[8,6])
         sn.heatmap(confusion,
@@ -68,17 +76,53 @@ class DecoderBase(nn.Module, ABC):
         plt.ylabel('True label')
         return fig
 
-    def on_epoch_end(self,
-                     logger: 'pl.loggers.TensorBoardLogger',
-                     stage: str,
-                     epoch: int) -> None:
-        if not logger: return
-        for name, cm in self.confusion.items():
-            logger.experiment.add_figure(
-                f'{name}/{stage}',
-                self.draw_confusion_matrix(cm),
-                global_step=epoch)
-            cm.reset()
+    def draw_matrix_wandb(self, cm: tm.ConfusionMatrix, label: str) -> wandb.Table:
+        """
+        Draw confusion matrix for wandb logging
+        
+        Args:
+            cm: Confusion matrix
+            label: Confusion matrix label
+        """
+        confusion = cm.compute().cpu()
+        table = wandb.Table(columns=["plotly_figure"])
+        fig = px.imshow(
+            confusion, zmax=1, text_auto=True,
+            labels={"x": "Predicted", "y": "True", "color": label},
+            x=self.classes, y=self.classes)
+        with tempfile.NamedTemporaryFile() as f:
+            fig.write_html(f.name, auto_play=False)
+            table.add_data(wandb.Html(f.name))
+        return table
+
+
+    def on_epoch_end(self, logger: Logger, stage: str, epoch: int) -> None:
+        """
+        End-of-epoch decoder callback for logging confusion matrices
+
+        Args:
+            logger: Logger instance
+            stage: Name of current stage
+            epoch: Epoch number
+        """
+        if isinstance(logger, TensorBoardLogger):
+            for name, cm in self.confusion.items():
+                logger.experiment.add_figure(
+                    f'{name}/{stage}',
+                    self.draw_matrix_tensorboard(cm),
+                    global_step=epoch)
+                cm.reset()
+
+        if isinstance(logger, WandbLogger):
+            cm_recall, cm_precision = self.confusion.values()
+
+            table = self.draw_matrix_wandb(cm_recall, "Recall")
+            wandb.log({f"semantic/recall-matrix-{stage}": table})
+            cm_recall.reset()
+
+            table = self.draw_matrix_wandb(cm_precision, "Precision")
+            wandb.log({f"semantic/precision-matrix-{stage}": table})
+            cm_precision.reset()
 
 class SemanticDecoder(DecoderBase):
     """NuGraph semantic decoder module.

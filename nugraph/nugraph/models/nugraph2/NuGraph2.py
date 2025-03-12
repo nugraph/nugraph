@@ -7,6 +7,7 @@ from torch import Tensor, cat, empty
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import OneCycleLR
 from pytorch_lightning import LightningModule
+from pytorch_lightning.loggers import TensorBoardLogger
 from torch_geometric.data import Batch, HeteroData
 from torch_geometric.utils import unbatch
 
@@ -140,21 +141,22 @@ class NuGraph2(LightningModule):
                 data.set_value_dict(key, value)
 
     def on_train_start(self):
-        hpmetrics = { 'max_lr': self.hparams.lr }
-        self.logger.log_hyperparams(self.hparams, metrics=hpmetrics)
-        self.max_mem_cpu = 0.
-        self.max_mem_gpu = 0.
+        if isinstance(self.logger, TensorBoardLogger):
+            hpmetrics = { 'max_lr': self.hparams.lr }
+            self.logger.log_hyperparams(self.hparams, metrics=hpmetrics)
+            self.max_mem_cpu = 0.
+            self.max_mem_gpu = 0.
 
-        scalars = {
-            'loss': {'loss': [ 'Multiline', [ 'loss/train', 'loss/val' ]]},
-            'acc': {}
-        }
-        for c in self.semantic_classes:
-            scalars['acc'][c] = [ 'Multiline', [
-                f'semantic_accuracy_class_train/{c}',
-                f'semantic_accuracy_class_val/{c}'
-            ]]
-        self.logger.experiment.add_custom_scalars(scalars)
+            scalars = {
+                'loss': {'loss': [ 'Multiline', [ 'loss/train', 'loss/val' ]]},
+                'acc': {}
+            }
+            for c in self.semantic_classes:
+                scalars['acc'][c] = [ 'Multiline', [
+                    f'semantic_accuracy_class_train/{c}',
+                    f'semantic_accuracy_class_val/{c}'
+                ]]
+            self.logger.experiment.add_custom_scalars(scalars)
 
     def training_step(self,
                       batch,
@@ -218,23 +220,24 @@ class NuGraph2(LightningModule):
         return [optimizer], {'scheduler': onecycle, 'interval': 'step'}
 
     def log_memory(self, batch: Batch, stage: str) -> None:
-        # log CPU memory
-        if not hasattr(self, 'max_mem_cpu'):
-            self.max_mem_cpu = 0.
-        cpu_mem = psutil.Process().memory_info().rss / float(1073741824)
-        self.max_mem_cpu = max(self.max_mem_cpu, cpu_mem)
-        self.log(f'memory_cpu/{stage}', self.max_mem_cpu,
-                 batch_size=batch.num_graphs, reduce_fx=torch.max)
+        if isinstance(self.logger, TensorBoardLogger):
+            # log CPU memory
+            if not hasattr(self, 'max_mem_cpu'):
+                self.max_mem_cpu = 0.
+            cpu_mem = psutil.Process().memory_info().rss / float(1073741824)
+            self.max_mem_cpu = max(self.max_mem_cpu, cpu_mem)
+            self.log(f'memory_cpu/{stage}', self.max_mem_cpu,
+                    batch_size=batch.num_graphs, reduce_fx=torch.max)
 
-        # log GPU memory
-        if not hasattr(self, 'max_mem_gpu'):
-            self.max_mem_gpu = 0.
-        if self.device != torch.device('cpu'):
-            gpu_mem = torch.cuda.memory_reserved(self.device)
-            gpu_mem = float(gpu_mem) / float(1073741824)
-            self.max_mem_gpu = max(self.max_mem_gpu, gpu_mem)
-            self.log(f'memory_gpu/{stage}', self.max_mem_gpu,
-                     batch_size=batch.num_graphs, reduce_fx=torch.max)
+            # log GPU memory
+            if not hasattr(self, 'max_mem_gpu'):
+                self.max_mem_gpu = 0.
+            if self.device != torch.device('cpu'):
+                gpu_mem = torch.cuda.memory_reserved(self.device)
+                gpu_mem = float(gpu_mem) / float(1073741824)
+                self.max_mem_gpu = max(self.max_mem_gpu, gpu_mem)
+                self.log(f'memory_gpu/{stage}', self.max_mem_gpu,
+                        batch_size=batch.num_graphs, reduce_fx=torch.max)
 
     @staticmethod
     def transform(planes: tuple[str]) -> Transform:
