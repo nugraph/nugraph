@@ -140,24 +140,6 @@ class NuGraph2(LightningModule):
             for key, value in x.items():
                 data.set_value_dict(key, value)
 
-    def on_train_start(self):
-        if isinstance(self.logger, TensorBoardLogger):
-            hpmetrics = { 'max_lr': self.hparams.lr }
-            self.logger.log_hyperparams(self.hparams, metrics=hpmetrics)
-            self.max_mem_cpu = 0.
-            self.max_mem_gpu = 0.
-
-            scalars = {
-                'loss': {'loss': [ 'Multiline', [ 'loss/train', 'loss/val' ]]},
-                'acc': {}
-            }
-            for c in self.semantic_classes:
-                scalars['acc'][c] = [ 'Multiline', [
-                    f'semantic_accuracy_class_train/{c}',
-                    f'semantic_accuracy_class_val/{c}'
-                ]]
-            self.logger.experiment.add_custom_scalars(scalars)
-
     def training_step(self,
                       batch,
                       batch_idx: int) -> float:
