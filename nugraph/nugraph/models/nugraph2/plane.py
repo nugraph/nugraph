@@ -66,7 +66,7 @@ class PlaneNet(nn.Module):
 
     def ckpt(self, fn: Callable, *args) -> Any:
         if self.checkpoint and self.training:
-            return checkpoint(fn, *args)
+            return checkpoint(fn, *args, use_reentrant=False)
         else:
             return fn(*args)
 
