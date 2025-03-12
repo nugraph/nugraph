@@ -20,9 +20,9 @@ class ClassLinear(torch.nn.Module):
 
         self.num_classes = num_classes
 
-        self.net = nn.ModuleList()
+        self.net = torch.nn.ModuleList()
         for _ in range(num_classes):
-            self.net.append(nn.Linear(in_features, out_features))
+            self.net.append(torch.nn.Linear(in_features, out_features))
 
     def forward(self, x: T) -> T:
         """
