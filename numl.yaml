@@ -5,7 +5,6 @@ channels:
   - rapidsai
 dependencies:
   - anywidget
-  # - cuda-version=11.8 # uncomment this line to manually select a 
   - cuml
   - h5py=*=*mpich*
   - matplotlib
@@ -19,9 +18,9 @@ dependencies:
   - pytables
   - pytest
   - python-kaleido
-  - pytorch_geometric
   - pytorch=2.5
   - pytorch-lightning
+  - pytorch_geometric
   - pytorch_scatter
   - PyYAML
   - scikit-learn
