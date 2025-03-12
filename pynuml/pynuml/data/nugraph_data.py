@@ -31,14 +31,6 @@ class NuGraphData(HeteroData):
         x_i[i] = j
         return x_i
 
-    def __inc__(self, key: str, value: torch.Tensor, *args, **kwargs) -> int:
-        """Increment tensor values"""
-        if key == "x_instance":
-            return self[N_IP].num_nodes
-        if key == "y_instance":
-            return self[N_IT].num_nodes
-        return super().__inc__(key, value, *args, **kwargs)
-
     def save(self, file: h5py.File, name: str) -> None:
         """Save NuGraph data object to HDF5 file
 
