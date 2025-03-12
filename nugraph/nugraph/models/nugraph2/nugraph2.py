@@ -169,7 +169,7 @@ class NuGraph2(LightningModule): # pylint: disable=too-many-instance-attributes
         self.step(batch)
         total_loss = 0.
         for decoder in self.decoders:
-            loss, metrics = decoder.loss(batch, 'val', True)
+            loss, metrics = decoder.loss(batch, 'val')
             total_loss += loss
             self.log_dict(metrics, batch_size=batch.num_graphs)
         self.log('loss/val', total_loss, batch_size=batch.num_graphs)
@@ -183,7 +183,7 @@ class NuGraph2(LightningModule): # pylint: disable=too-many-instance-attributes
         self.step(batch)
         total_loss = 0.
         for decoder in self.decoders:
-            loss, metrics = decoder.loss(batch, 'test', True)
+            loss, metrics = decoder.loss(batch, 'test')
             total_loss += loss
             self.log_dict(metrics, batch_size=batch.num_graphs)
         self.log('loss/test', total_loss, batch_size=batch.num_graphs)
