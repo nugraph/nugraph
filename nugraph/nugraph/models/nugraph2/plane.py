@@ -12,7 +12,7 @@ class MessagePassing2D(MessagePassing): # pylint: disable=abstract-method
 
     Args:
         in_features: Number of input features
-        planar_featues: Number of planar features
+        planar_features: Number of planar features
         num_classes: Number of semantic classes
         aggr: Message aggregation method
     """
