@@ -3,6 +3,7 @@ channels:
   - conda-forge
   - nvidia
   - rapidsai
+  - nodefaults
 dependencies:
   - anywidget
   - cuml
