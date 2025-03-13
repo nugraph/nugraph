@@ -9,11 +9,9 @@ import tqdm
 
 import torch
 from torch_geometric.loader import DataLoader
-from torch_geometric.transforms import Compose
 from pytorch_lightning import LightningDataModule
 
 from ..data import NuGraphDataset, BalanceSampler
-from ..util import PositionFeatures, FeatureNormMetric, FeatureNorm, HierarchicalEdges, EventLabels
 
 DEFAULT_DATA = ("$NUGRAPH_DATA/uboone-opendata/"
                 "uboone-opendata-19be46d89d0f22f5a78641d724c1fedd.gnn.h5")
@@ -22,10 +20,10 @@ class NuGraphDataModule(LightningDataModule):
     """PyTorch Lightning data module for neutrino graph data."""
     def __init__(self,
                  data_path: str = "auto",
+                 model: type[torch.nn.Module] = None,
                  batch_size: int = 64,
                  shuffle: str = 'random',
-                 balance_frac: float = 0.1,
-                 prepare: bool = False):
+                 balance_frac: float = 0.1):
         super().__init__()
 
         # for this HDF5 dataloader, worker processes slow things down
@@ -36,7 +34,7 @@ class NuGraphDataModule(LightningDataModule):
             data_path = DEFAULT_DATA
         self.filename = os.path.expandvars(data_path)
         self.batch_size = batch_size
-        if shuffle != 'random' and shuffle != 'balance':
+        if shuffle not in ("random", "balance"):
             print('shuffle argument must be "random" or "balance".')
             sys.exit()
         self.shuffle = shuffle
@@ -88,21 +86,7 @@ class NuGraphDataModule(LightningDataModule):
                        "Call \"generate_samples\" to create it."))
                 sys.exit()
 
-            # load feature normalisations
-            try:
-                if self.gen == 1:
-                    norm = {p: torch.tensor(f[f'norm/{p}'][()]) for p in self.planes}
-                else:
-                    norm = torch.tensor(f["norm/hit"][()])
-            except KeyError:
-                print(("Feature normalisations not found in file! "
-                       "Call \"generate_norm\" to create them."))
-                sys.exit()
-
-        transform = Compose((PositionFeatures(self.planes),
-                             FeatureNorm(norm),
-                             HierarchicalEdges(self.planes),
-                             EventLabels()))
+        transform = model.transform(self.planes) if model else None
 
         self.train_dataset = NuGraphDataset(self.filename, train_samples, transform)
         self.val_dataset = NuGraphDataset(self.filename, val_samples, transform)
@@ -149,39 +133,13 @@ class NuGraphDataModule(LightningDataModule):
         del dataset
         with h5py.File(data_path, "r+") as f:
             f.create_dataset('datasize/train', data=dsize)
-            
-    @staticmethod
-    def generate_norm(data_path: str, batch_size: int):
-        with h5py.File(data_path, 'r+') as f:
-            # load plane metadata
-            try:
-                planes = f['planes'].asstr()[()].tolist()
-            except:
-                print('Metadata not found in file! "planes" is required.')
-                sys.exit()
-
-            loader = DataLoader(NuGraphDataset(data_path,
-                                          list(f['dataset'].keys()),
-                                          PositionFeatures(planes)),
-                                batch_size=batch_size)
-
-            print('  generating feature norm...')
-            metrics = None
-            for batch in tqdm.tqdm(loader):
-                if not metrics:
-                    metrics = FeatureNormMetric(batch["hit"].x.shape[-1])
-                metrics.update(batch["hit"].x)
-            key = 'norm/hit'
-            if key in f:
-                del f[key]
-            f[key] = metrics.compute()
 
     def train_dataloader(self) -> DataLoader:
         if self.shuffle == 'balance':
             shuffle = False
             sampler = BalanceSampler.BalanceSampler(
                         datasize=self.train_datasize,
-                        batch_size=self.batch_size, 
+                        batch_size=self.batch_size,
                         balance_frac=self.balance_frac)
         else:
             shuffle = True
@@ -189,7 +147,7 @@ class NuGraphDataModule(LightningDataModule):
 
         return DataLoader(self.train_dataset,
                           batch_size=self.batch_size,
-                          sampler=sampler, drop_last=True, 
+                          sampler=sampler, drop_last=True,
                           shuffle=shuffle, pin_memory=True)
 
     def val_dataloader(self) -> DataLoader:

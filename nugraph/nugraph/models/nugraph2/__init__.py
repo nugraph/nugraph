@@ -1,2 +1,2 @@
-# __init__.py
-from .NuGraph2 import NuGraph2
+"""nugraph/models/nugraph2 init"""
+from .nugraph2 import NuGraph2

@@ -1,12 +1,11 @@
 """NuGraph3 spacepoint decoder"""
 from typing import Any
 import torch
-from torch import nn
 from torch_geometric.data import Batch
 from pytorch_lightning import LightningModule
 from pytorch_lightning.loggers import WandbLogger
+from pynuml.data import NuGraphData
 from ....util import LogCoshLoss
-from ..types import Data
 
 class SpacepointDecoder(LightningModule):
     """
@@ -16,20 +15,22 @@ class SpacepointDecoder(LightningModule):
 
     Args:
         hit_features: Number of planar hit node features
+        num_planes: Number of detector planes
     """
-    def __init__(self, hit_features: int):
+    def __init__(self, hit_features: int, num_planes: int):
         super().__init__()
 
         # loss function
         self.loss = LogCoshLoss()
 
         # temperature parameter
-        self.temp = nn.Parameter(torch.tensor(5.))
+        self.temp = torch.nn.Parameter(torch.tensor(6.))
 
         # network
-        self.net = nn.Linear(hit_features, 3)
+        self.net = torch.nn.ModuleList(
+            [torch.nn.Linear(hit_features, 3) for _ in range(num_planes)])
 
-    def forward(self, data: Data, stage: str = None) -> dict[str, Any]: # pylint: disable=arguments-differ
+    def forward(self, data: NuGraphData, stage: str = None) -> dict[str, Any]: # pylint: disable=arguments-differ
         """
         NuGraph3 spacepoint decoder forward pass
 
@@ -39,20 +40,22 @@ class SpacepointDecoder(LightningModule):
         """
 
         # add predicted coordinates to output graph
-        data["hit"].c_pred = self.net(data["hit"].x)
+        h = data["hit"]
+        h.x_position = torch.empty((h.num_nodes, 3), device=self.device, dtype=torch.float)
+        for i, net in enumerate(self.net):
+            mask = h.plane == i
+            h.x_position[mask] = net(h.x[mask])
         if isinstance(data, Batch):
             # pylint: disable=protected-access
-            data._slice_dict["hit"]["c_pred"] = data["hit"].ptr
+            data._slice_dict["hit"]["x_position"] = h.ptr
             inc = torch.zeros(data.num_graphs, device=self.device)
-            data._inc_dict["hit"]["c_pred"] = inc
+            data._inc_dict["hit"]["x_position"] = inc
 
         # calculate loss
-        mask = data["hit"].y_semantic != -1
-        x = data["hit"].c_pred[mask]
-        y = data["hit"].c[mask]
+        mask = h.y_semantic != -1
+        x = h.x_position[mask]
+        y = h.y_position[mask]
         loss = (-1 * self.temp).exp() * self.loss(x, y) + self.temp
-
-
 
         # calculate metrics
         metrics = {}
