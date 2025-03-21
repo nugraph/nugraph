@@ -6,11 +6,10 @@ from torch import nn
 from torchmetrics.functional.clustering import adjusted_rand_score
 from torch_geometric.data import Batch
 from torch_geometric.utils import cumsum, unbatch
-from pytorch_lightning import LightningModule
 from ....util import ObjCondensationLoss
 from ..types import Data, N_IT, E_H_IT, N_IP, E_H_IP
 
-class InstanceDecoder(LightningModule):
+class InstanceDecoder(nn.Module):
     """
     NuGraph3 instance decoder module
 
@@ -47,6 +46,7 @@ class InstanceDecoder(LightningModule):
         """
 
         h = data["hit"]
+        device = h.x.device
 
         # run network and add output to graph object
         h.of = self.beta_net(h.x).squeeze(dim=-1).sigmoid()
@@ -88,12 +88,11 @@ class InstanceDecoder(LightningModule):
             # particle nodes
             data[N_IP].x = torch.cat(x_ip, dim=0)
             data[N_IP].batch = torch.cat(
-                [torch.empty(x.size(0), dtype=torch.long, device=self.device).fill_(i)
-                 for i, x in enumerate(x_ip)])
-            data[N_IP].ptr = cumsum(torch.tensor([x.size(0) for x in x_ip], device=self.device))
+                [torch.full((0,), i, dtype=torch.long, device=device) for i, x in enumerate(x_ip)])
+            data[N_IP].ptr = cumsum(torch.tensor([x.size(0) for x in x_ip], device=device))
             data._slice_dict[N_IP] = {"x": data[N_IP].ptr} # pylint: disable=protected-access
             data._inc_dict[N_IP] = { # pylint: disable=protected-access
-                "x": torch.zeros(data.num_graphs, dtype=torch.long, device=self.device)
+                "x": torch.zeros(data.num_graphs, dtype=torch.long, device=device)
             }
 
             # particle edges
@@ -136,16 +135,16 @@ class InstanceDecoder(LightningModule):
 
         # if there are no signal hits to cluster, skip dbscan and return empty tensors
         if not mask.sum():
-            x_ip = torch.empty(0, 0, dtype=torch.float, device=self.device)
-            e_h_ip = torch.empty(2, 0, dtype=torch.long, device=self.device)
+            x_ip = torch.empty(0, 0, dtype=torch.float, device=ox.device)
+            e_h_ip = torch.empty(2, 0, dtype=torch.long, device=ox.device)
             return x_ip, e_h_ip
 
-        i = torch.empty(ox.size(0), dtype=torch.long, device=self.device).fill_(-1)
+        i = torch.empty(ox.size(0), dtype=torch.long, device=ox.device).fill_(-1)
         arr = ox[mask].detach()
         if not arr.is_cuda:
             arr = arr.numpy()
         i[mask] = torch.as_tensor(self.dbscan.fit_predict(arr), dtype=torch.long)
-        x_ip = torch.empty(i.max()+1, 0, dtype=torch.float, device=self.device)
+        x_ip = torch.empty(i.max()+1, 0, dtype=torch.float, device=ox.device)
         mask = i > -1
         e_h_ip = torch.stack((torch.nonzero(mask).squeeze(1), i[mask])).long()
         return x_ip, e_h_ip

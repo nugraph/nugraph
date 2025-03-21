@@ -145,6 +145,10 @@ class NuGraph3(LightningModule):
         self.log_dict(metrics, batch_size=batch.num_graphs)
         return loss
 
+    def on_train_epoch_end(self) -> None:
+        # stop updating running average for feature norm
+        self.encoder.input_norm.update = False
+
     def validation_step(self,
                         batch,
                         batch_idx: int) -> None:

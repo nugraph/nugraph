@@ -2,12 +2,11 @@
 from typing import Any
 import torch
 from torch_geometric.data import Batch
-from pytorch_lightning import LightningModule
 from pytorch_lightning.loggers import WandbLogger
 from pynuml.data import NuGraphData
 from ....util import LogCoshLoss
 
-class SpacepointDecoder(LightningModule):
+class SpacepointDecoder(torch.nn.Module):
     """
     NuGraph3 spacepoint decoder module
 
@@ -41,14 +40,16 @@ class SpacepointDecoder(LightningModule):
 
         # add predicted coordinates to output graph
         h = data["hit"]
-        h.x_position = torch.empty((h.num_nodes, 3), device=self.device, dtype=torch.float)
+        device = h.x.device
+
+        h.x_position = torch.empty((h.num_nodes, 3), device=device, dtype=torch.float)
         for i, net in enumerate(self.net):
             mask = h.plane == i
             h.x_position[mask] = net(h.x[mask])
         if isinstance(data, Batch):
             # pylint: disable=protected-access
             data._slice_dict["hit"]["x_position"] = h.ptr
-            inc = torch.zeros(data.num_graphs, device=self.device)
+            inc = torch.zeros(data.num_graphs, device=device)
             data._inc_dict["hit"]["x_position"] = inc
 
         # calculate loss

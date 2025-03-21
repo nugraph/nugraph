@@ -1,10 +1,9 @@
 """Input feature normalization module"""
 import torch
-from pytorch_lightning import LightningModule
 
 P = torch.nn.Parameter
 
-class InputNorm(LightningModule):
+class InputNorm(torch.nn.Module):
     """
     PyTorch module to normalize input features
 
@@ -16,12 +15,12 @@ class InputNorm(LightningModule):
 
         # hold onto the running averages for the mean and variance
         self.norm = torch.nn.ParameterDict({
-            "mean": P(torch.zeros(num_features, device=self.device),
-                      requires_grad=False),
-            "var": P(torch.zeros(num_features, device=self.device),
-                     requires_grad=False),
-            "count": P(torch.zeros(1, device=self.device, dtype=torch.long),
-                       requires_grad=False)})
+            "mean": P(torch.zeros(num_features), requires_grad=False),
+            "var": P(torch.zeros(num_features), requires_grad=False),
+            "count": P(torch.zeros(1, dtype=torch.long), requires_grad=False)})
+
+        # whether to continue updating running averages
+        self.update = True
 
     def forward(self, x: torch.Tensor) -> torch.Tensor: # pylint: disable=arguments-differ
         """
@@ -31,8 +30,8 @@ class InputNorm(LightningModule):
             x: Tensor to normalize
         """
 
-        # update running average during first epoch
-        if self.training and not self.current_epoch:
+        # update running average
+        if self.update and self.training:
 
             n1, m1, v1 = self.norm["count"], self.norm["mean"], self.norm["var"]
             n2 = x.shape[0]
