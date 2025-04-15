@@ -1,6 +1,6 @@
 '''Standardised ML input processing for particle physics'''
 
-__version__ = '25.4.dev0'
+__version__ = '25.4.0'
 
 from . import io
 from . import labels
