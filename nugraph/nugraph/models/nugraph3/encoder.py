@@ -17,12 +17,22 @@ class Encoder(torch.nn.Module):
                  in_features: int,
                  planar_features: int,
                  nexus_features: int,
-                 interaction_features: int):
+                 interaction_features: int,
+                 ophit_features: int = None,
+                 pmt_features: int = None,
+                 flash_features: int = None,
+                 use_optical: bool = False):
         super().__init__()
         self.input_norm = InputNorm(in_features)
         self.planar_net = torch.nn.Linear(in_features, planar_features)
         self.nexus_features = nexus_features
         self.interaction_features = interaction_features
+
+        # hardcode optical features pending redesign
+        if use_optical:
+            self.ophit_net = nn.Linear(8, ophit_features)
+            self.pmt_net = nn.Linear(4, pmt_features)
+            self.flash_net = nn.Linear(10, flash_features)
 
     def forward(self, data: NuGraphData) -> None:
         """
@@ -33,9 +43,15 @@ class Encoder(torch.nn.Module):
         """
         data["hit"].x = self.input_norm(data["hit"].x)
         data["hit"].x = self.planar_net(data["hit"].x)
+        #do we want to add back the space point position?
         data["sp"].x = torch.zeros(data["sp"].num_nodes,
                                    self.nexus_features,
                                    device=data["hit"].x.device)
         data["evt"].x = torch.zeros(data["evt"].num_nodes,
                                     self.interaction_features,
                                     device=data["hit"].x.device)
+
+        if hasattr(self, "ophit_net"):
+            data["ophits"].x = self.ophit_net(data["ophits"].x)
+            data["opflashsumpe"].x = self.pmt_net(data["opflashsumpe"].x)
+            data["opflash"].x = self.flash_net(data["opflash"].x)
