@@ -10,6 +10,7 @@ dependencies:
   - h5py=*=*mpich*
   - matplotlib
   - mpi4py
+  - myst-parser
   - numba
   - numpy
   - particle
