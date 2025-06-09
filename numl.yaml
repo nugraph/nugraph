@@ -27,6 +27,7 @@ dependencies:
   - PyYAML
   - scikit-learn
   - seaborn
+  - sphinx_rtd_theme
   - tensorboard
   - torchmetrics
   - uproot
