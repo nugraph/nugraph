@@ -97,4 +97,4 @@ class HierarchicalEdges(BaseTransform):
                 lo, hi = data["opflashsumpe", "in", "evt"].edge_index
                 data["evt", "in", "opflashsumpe"].edge_index = torch.stack((hi, lo), dim=0)
 
-    return data
+        return data
