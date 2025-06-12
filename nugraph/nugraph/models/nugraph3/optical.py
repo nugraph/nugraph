@@ -7,7 +7,7 @@ from .types import TD
 class NuGraphOptical(torch.nn.Module):
         """
     NuGraph optical message-passing engine
-    
+
     This module incorporates optical information into NuGraph
 
     Args:
@@ -41,7 +41,7 @@ class NuGraphOptical(torch.nn.Module):
         def checkpoint(self, net: torch.nn.Module, *args) -> TD:
             """
             Checkpoint module, if enabled.
-        
+
             Args:
             net: Network module
             args: Arguments to network module
