@@ -117,6 +117,10 @@ class NuGraphCore(nn.Module):
         self.nexus_to_plane = NuGraphBlock(nexus_features, hit_features,
                                            hit_features)
 
+        # message-passing between nexus nodes and PMT nodes (opflashsumpe)
+        self.nexus_to_pmt = NuGraphBlock(nexus_features, pmt_features, pmt_features)
+        self.pmt_to_nexus = NuGraphBlock(pmt_features, nexus_features, nexus_features)
+
     def checkpoint(self, net: nn.Module, *args) -> TD:
         """
         Checkpoint module, if enabled.
@@ -162,3 +166,15 @@ class NuGraphCore(nn.Module):
         data["hit"].x = self.checkpoint(
             self.nexus_to_plane, (data["sp"].x, data["hit"].x),
             data["hit", "nexus", "sp"].edge_index[(1,0), :])
+
+        # for connections between opflashsumpe and nexus
+        if ("opflashsumpe" in data.node_types and ("sp", "connection", "opflashsumpe") in data.edge_types):
+            # message-passing from space points to PMTs
+            data["opflashsumpe"].x = self.checkpoint(
+                self.nexus_to_pmt, (data["sp"].x, data["opflashsumpe"].x),
+                data["sp", "connection", "opflashsumpe"].edge_index[(1,0), :])
+
+            # message-passing from PMTs to space points
+            data["sp"].x = self.checkpoint(
+                self.pmt_to_nexus, (data["opflashsumpe"].x, data["sp"].x),
+                data["opflashsumpe", "connection", "sp"].edge_index[(1,0), :])
