@@ -146,16 +146,17 @@ class NuGraphDataModule(LightningDataModule):
             sampler = None
 
         return DataLoader(self.train_dataset,
+                          num_workers=5,
                           batch_size=self.batch_size,
                           sampler=sampler, drop_last=True,
                           shuffle=shuffle, pin_memory=True)
 
     def val_dataloader(self) -> DataLoader:
-        return DataLoader(self.val_dataset,
+        return DataLoader(self.val_dataset, num_workers=5,
                           batch_size=self.batch_size)
 
     def test_dataloader(self) -> DataLoader:
-        return DataLoader(self.test_dataset,
+        return DataLoader(self.test_dataset, num_workers=5,
                           batch_size=self.batch_size)
 
     @staticmethod
