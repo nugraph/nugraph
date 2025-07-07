@@ -36,6 +36,3 @@ class Encoder(torch.nn.Module):
         data["sp"].x = torch.zeros(data["sp"].num_nodes,
                                    self.nexus_features,
                                    device=data["hit"].x.device)
-        data["evt"].x = torch.zeros(data["evt"].num_nodes,
-                                    self.interaction_features,
-                                    device=data["hit"].x.device)

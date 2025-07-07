@@ -103,16 +103,6 @@ class NuGraphCore(nn.Module):
         self.plane_to_nexus = NuGraphBlock(hit_features, nexus_features,
                                            nexus_features)
 
-        # message-passing from nexus nodes to interaction nodes
-        self.nexus_to_interaction = NuGraphBlock(nexus_features,
-                                                 interaction_features,
-                                                 interaction_features)
-
-        # message-passing from interaction nodes to nexus nodes
-        self.interaction_to_nexus = NuGraphBlock(interaction_features,
-                                                 nexus_features,
-                                                 nexus_features)
-
         # message-passing from nexus nodes to planar nodes
         self.nexus_to_plane = NuGraphBlock(nexus_features, hit_features,
                                            hit_features)
@@ -147,16 +137,6 @@ class NuGraphCore(nn.Module):
         data["sp"].x = self.checkpoint(
             self.plane_to_nexus, (data["hit"].x, data["sp"].x),
             data["hit", "nexus", "sp"].edge_index)
-
-        # message-passing from nexus to interaction
-        data["evt"].x = self.checkpoint(
-            self.nexus_to_interaction, (data["sp"].x, data["evt"].x),
-            data["sp", "in", "evt"].edge_index)
-
-        # message-passing from interaction to nexus
-        data["sp"].x = self.checkpoint(
-            self.interaction_to_nexus, (data["evt"].x, data["sp"].x),
-            data["sp", "in", "evt"].edge_index[(1,0), :])
 
         # message-passing from nexus to hits
         data["hit"].x = self.checkpoint(
