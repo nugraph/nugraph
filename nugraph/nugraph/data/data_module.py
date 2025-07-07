@@ -22,6 +22,7 @@ class NuGraphDataModule(LightningDataModule):
                  data_path: str = "auto",
                  model: type[torch.nn.Module] = None,
                  batch_size: int = 64,
+                 num_workers: int = 5,
                  shuffle: str = 'random',
                  balance_frac: float = 0.1):
         super().__init__()
@@ -34,6 +35,7 @@ class NuGraphDataModule(LightningDataModule):
             data_path = DEFAULT_DATA
         self.filename = os.path.expandvars(data_path)
         self.batch_size = batch_size
+        self.num_workers = num_workers
         if shuffle not in ("random", "balance"):
             print('shuffle argument must be "random" or "balance".')
             sys.exit()
@@ -146,17 +148,17 @@ class NuGraphDataModule(LightningDataModule):
             sampler = None
 
         return DataLoader(self.train_dataset,
-                          num_workers=5,
                           batch_size=self.batch_size,
+                          num_workers=self.num_workers,
                           sampler=sampler, drop_last=True,
                           shuffle=shuffle, pin_memory=True)
 
     def val_dataloader(self) -> DataLoader:
-        return DataLoader(self.val_dataset, num_workers=5,
+        return DataLoader(self.val_dataset, num_workers=self.num_workers,
                           batch_size=self.batch_size)
 
     def test_dataloader(self) -> DataLoader:
-        return DataLoader(self.test_dataset, num_workers=5,
+        return DataLoader(self.test_dataset, num_workers=self.num_workers,
                           batch_size=self.batch_size)
 
     @staticmethod
@@ -166,6 +168,8 @@ class NuGraphDataModule(LightningDataModule):
                           help='Location of input data file')
         data.add_argument('--batch-size', type=int, default=64,
                           help='Size of each batch of graphs')
+        data.add_argument('--num-workers', type=int, default=5,
+                          help='Number of data loader worker processes')
         data.add_argument('--limit_train_batches', type=int, default=None,
                           help='Max number of training batches to be used')
         data.add_argument('--limit_val_batches', type=int, default=None,
