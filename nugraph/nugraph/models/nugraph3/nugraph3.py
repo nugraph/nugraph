@@ -15,7 +15,7 @@ from .core import NuGraphCore
 from .decoders import (SemanticDecoder, FilterDecoder, EventDecoder, VertexDecoder, InstanceDecoder,
                        SpacepointDecoder)
 
-from ...data import H5DataModule
+from ...data import NuGraphDataModule
 
 if torch.cuda.is_available():
     from rmm.allocators.torch import rmm_torch_allocator
@@ -26,14 +26,16 @@ class NuGraph3(LightningModule):
     NuGraph3 model architecture.
 
     Args:
+        data: Path to input data file
+        model: Which model architecture to train with
+        batch_size: Batch size
+        shuffle: Strategy to use for data shuffling
+        balance_frac: Fraction of dataset to use for balance sampling
         in_features: Number of input node features
         hit_features: Number of hit node features
         nexus_features: Number of nexus node features
         interaction_features: Number of interaction node features
         instance_features: Number of instance features
-        planes: Tuple of detector plane names
-        semantic_classes: Tuple of semantic classes
-        event_classes: Tuple of event classes
         num_iters: Number of message-passing iterations
         event_head: Whether to enable event decoder
         semantic_head: Whether to enable semantic decoder
@@ -45,14 +47,15 @@ class NuGraph3(LightningModule):
         lr: Learning rate
     """
     def __init__(self,
+                 data: str,
+                 batch_size: int = 32,
+                 shuffle: str = "random",
+                 balance_frac: float = 0.1,
                  in_features: int = 4,
                  hit_features: int = 128,
                  nexus_features: int = 32,
                  interaction_features: int = 32,
                  instance_features: int = 8,
-                 planes: tuple[str] = ("u","v","y"),
-                 semantic_classes: tuple[str] = ('MIP','HIP','shower','michel','diffuse'),
-                 event_classes: tuple[str] = ('numu','nue','nc'),
                  num_iters: int = 5,
                  event_head: bool = False,
                  semantic_head: bool = True,
@@ -68,11 +71,13 @@ class NuGraph3(LightningModule):
 
         self.save_hyperparameters()
 
+        self.nudata = NuGraphDataModule(
+            data_path=data, model=NuGraph3, batch_size=batch_size,
+            shuffle=shuffle, balance_frac=balance_frac)
+
         self.nexus_features = nexus_features
         self.interaction_features = interaction_features
 
-        self.semantic_classes = semantic_classes
-        self.event_classes = event_classes
         self.num_iters = num_iters
         self.lr = lr
 
@@ -87,11 +92,13 @@ class NuGraph3(LightningModule):
         self.decoders = []
 
         if event_head:
-            self.event_decoder = EventDecoder(interaction_features, event_classes)
+            self.event_decoder = EventDecoder(
+                interaction_features, self.nudata.event_classes)
             self.decoders.append(self.event_decoder)
 
         if semantic_head:
-            self.semantic_decoder = SemanticDecoder(hit_features, semantic_classes)
+            self.semantic_decoder = SemanticDecoder(
+                hit_features, self.nudata.semantic_classes)
             self.decoders.append(self.semantic_decoder)
 
         if filter_head:
@@ -107,7 +114,7 @@ class NuGraph3(LightningModule):
             self.decoders.append(self.instance_decoder)
 
         if spacepoint_head:
-            self.spacepoint_decoder = SpacepointDecoder(hit_features, len(planes))
+            self.spacepoint_decoder = SpacepointDecoder(hit_features, len(self.nudata.planes))
             self.decoders.append(self.spacepoint_decoder)
 
         if not self.decoders:
@@ -207,6 +214,18 @@ class NuGraph3(LightningModule):
             parser: Argument parser to append argument group to
         """
         model = parser.add_argument_group('model', 'NuGraph3 model configuration')
+        model.add_argument('--data-path', type=str, default="auto",
+                           help='Location of input data file')
+        model.add_argument('--batch-size', type=int, default=64,
+                           help='Size of each batch of graphs')
+        model.add_argument('--limit_train_batches', type=int, default=None,
+                           help='Max number of training batches to be used')
+        model.add_argument('--limit_val_batches', type=int, default=None,
+                           help='Max number of validation batches to be used')
+        model.add_argument('--shuffle', type=str, default='balance',
+                           help='Dataset shuffling scheme to use')
+        model.add_argument('--balance-frac', type=float, default=0.1,
+                           help='Fraction of dataset to use for workload balancing')
         model.add_argument('--num-iters', type=int, default=5,
                            help='Number of message-passing iterations')
         model.add_argument('--in-feats', type=int, default=5,
@@ -241,23 +260,23 @@ class NuGraph3(LightningModule):
         return parser
 
     @classmethod
-    def from_args(cls, args: argparse.Namespace, nudata: H5DataModule) -> 'NuGraph3':
+    def from_args(cls, args: argparse.Namespace) -> 'NuGraph3':
         """
         Construct model from arguments
 
         Args:
             args: Namespace containing parsed arguments
-            nudata: Data module
         """
         return cls(
+            data=args.data_path,
+            batch_size=args.batch_size,
+            shuffle=args.shuffle,
+            balance_frac=args.balance_frac,
             in_features=args.in_feats,
             hit_features=args.hit_feats,
             nexus_features=args.nexus_feats,
             interaction_features=args.interaction_feats,
             instance_features=args.instance_feats,
-            planes=nudata.planes,
-            semantic_classes=nudata.semantic_classes,
-            event_classes=nudata.event_classes,
             num_iters=args.num_iters,
             event_head=args.event,
             semantic_head=args.semantic,

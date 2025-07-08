@@ -23,6 +23,8 @@ def configure():
     parser = argparse.ArgumentParser()
     parser.add_argument('--device', type=int, default=None,
                         help="Index of GPU device to train with")
+    parser.add_argument("--logdir", type=str, default=None,
+                        help="Directory to write training logs to")
     parser.add_argument('--name', type=str, default=None,
                         help='Training instance name, for logging purposes')
     parser.add_argument('--version', type=str, default=None,
@@ -33,7 +35,7 @@ def configure():
                         help="write wandb logs offline")
     parser.add_argument('--profiler', type=str, default=None,
                         help='Enable requested profiler')
-    parser = Data.add_data_args(parser)
+    # parser = Data.add_data_args(parser)
     parser = Model.add_model_args(parser)
     return parser.parse_args()
 
@@ -42,13 +44,11 @@ def train(args):
     torch.manual_seed(1)
 
     # Load dataset
-    nudata = Data(args.data_path, batch_size=args.batch_size,
-                  model=Model, shuffle=args.shuffle,
-                  balance_frac=args.balance_frac)
+    # nudata = Data(args.data_path, batch_size=args.batch_size,
+    #               model=Model, shuffle=args.shuffle,
+    #               balance_frac=args.balance_frac)
 
-    model = Model.from_args(args, nudata)
-
-    logdir = pathlib.Path(os.environ["NUGRAPH_LOG"])/args.name
+    logdir = pathlib.Path(args.logdir)/args.name
     logdir.mkdir(parents=True, exist_ok=True)
     log_model = False if args.offline else "all"
     logger = pl.loggers.WandbLogger(save_dir=logdir, project=args.project,
@@ -67,7 +67,7 @@ def train(args):
         SLURMEnvironment(requeue_signal=signal.SIGUSR1),
     ]
 
-    model = Model.from_args(args, nudata)
+    model = Model.from_args(args)
 
     accelerator, devices = ng.util.configure_device(args.device)
     trainer = pl.Trainer(accelerator=accelerator, devices=devices,
@@ -77,7 +77,7 @@ def train(args):
                          logger=logger, profiler=args.profiler,
                          callbacks=callbacks, plugins=plugins)
 
-    trainer.fit(model, datamodule=nudata)
+    trainer.fit(model, datamodule=model.nudata)
 
 if __name__ == '__main__':
     args = configure()
