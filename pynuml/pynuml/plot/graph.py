@@ -35,7 +35,8 @@ class GraphPlot:
         hit = data["hit"].to_dict()
         df = pd.DataFrame(hit["id"], columns=["id"])
         df["plane"] = [self._planes[i] for i in hit["plane"]]
-        df[["proj", "drift"]] = hit["pos"]
+        df["proj"] = hit["proj"]
+        df["drift"] = hit["drift"]
         if "y_position" in hit:
             df[[f"y_position_{c}" for c in C_3D]] = hit["y_position"]
         if "x_position" in hit:
@@ -67,10 +68,9 @@ class GraphPlot:
             df["logbeta"] = beta.log10()
 
         # add event metadata
-        md = data['metadata']
-        df['run'] = md.run.item()
-        df['subrun'] = md.subrun.item()
-        df['event'] = md.event.item()
+        df['run'] = data.run.item()
+        df['subrun'] = data.subrun.item()
+        df['event'] = data.event.item()
 
         return df
 
