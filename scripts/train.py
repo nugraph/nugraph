@@ -32,6 +32,8 @@ def configure():
                         help='Training version name, for logging purposes')
     parser.add_argument("--project", type=str, default="nugraph3",
                         help="wandb project to log to")
+    parser.add_argument("--resume", type=str,
+                        help="model checkpoint file to resume training with")
     parser.add_argument("--offline", action="store_true",
                         help="write wandb logs offline")
     parser.add_argument('--profiler', type=str, default=None,
@@ -49,7 +51,10 @@ def train(args):
                   model=Model, shuffle=args.shuffle,
                   balance_frac=args.balance_frac)
 
-    model = Model.from_args(args, nudata)
+    if args.resume:
+        model = Model.load_from_checkpoint(args.resume)
+    else:
+        model = Model.from_args(args, nudata)
 
     # Configure logger
     if args.logger == "wandb":
@@ -88,7 +93,7 @@ def train(args):
                          logger=logger, profiler=args.profiler,
                          callbacks=callbacks, plugins=plugins)
 
-    trainer.fit(model, datamodule=nudata)
+    trainer.fit(model, datamodule=nudata, ckpt_path=args.resume)
 
 if __name__ == '__main__':
     args = configure()
