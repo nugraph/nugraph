@@ -72,6 +72,11 @@ class InstanceDecoder(nn.Module):
             metrics[f"instance/bkg-loss-{stage}"] = b
             metrics[f"instance/potential-loss-{stage}"] = v
 
+        # skip materializing instances during training stage
+        if stage == "train":
+            metrics["temperature/instance"] = self.temp
+            return loss, metrics
+
         # add materialized instances
         mask = torch.ones_like(h.of, dtype=torch.bool)
         if hasattr(h, "x_filter"):
@@ -119,9 +124,6 @@ class InstanceDecoder(nn.Module):
 
         if stage:
             metrics[f"instance/adjusted-rand-{stage}"] = rand
-
-        if stage == "train":
-            metrics["temperature/instance"] = self.temp
 
         return loss, metrics
 
