@@ -1,23 +1,16 @@
 """NuGraph2 decoders"""
 from typing import Any, Callable
 from abc import ABC
-import tempfile
 
 import torch
 
 import torchmetrics as tm
-from pytorch_lightning.loggers import Logger, TensorBoardLogger, WandbLogger
-
-import matplotlib.pyplot as plt
-import seaborn as sn
-import plotly.express as px
-
-import wandb
+from pytorch_lightning.loggers import Logger
 
 from pynuml.data import NuGraphData
 
 from .linear import ClassLinear
-from ...util import RecallLoss
+from ...util import ConfusionMatrixLogger, RecallLoss
 
 T = torch.Tensor
 TD = dict[str, T]
@@ -35,7 +28,8 @@ class DecoderBase(torch.nn.Module, ABC):
         temperature: Initial loss temperature
     """
     def __init__(self, name: str, planes: tuple[str], classes: tuple[str], # pylint: disable=too-many-arguments, too-many-positional-arguments
-                 loss_func: Callable, weight: float, temperature: float = 0.):
+                 loss_func: Callable, weight: float, temperature: float,
+                 metric_args: dict[str, Any]):
         super().__init__()
         self.name = name
         self.planes = planes
@@ -43,7 +37,15 @@ class DecoderBase(torch.nn.Module, ABC):
         self.loss_func = loss_func
         self.weight = weight
         self.temp = torch.nn.Parameter(torch.tensor(temperature))
-        self.confusion = torch.nn.ModuleDict()
+        self.cm = torch.nn.ModuleDict()
+        self.cm_logger = ConfusionMatrixLogger(classes)
+
+        self.recall = tm.Recall(**metric_args)
+        self.precision = tm.Precision(**metric_args)
+        self.cm[f"{name}/recall_matrix"] = tm.ConfusionMatrix(
+            normalize='true', **metric_args)
+        self.cm[f"{name}/precision_matrix"] = tm.ConfusionMatrix(
+            normalize='pred', **metric_args)
 
     def arrange(self, data: NuGraphData) -> tuple[T, T]:
         """
@@ -63,7 +65,10 @@ class DecoderBase(torch.nn.Module, ABC):
             y: Tensor of true labels
             stage: Name of stage
         """
-        raise NotImplementedError
+        return {
+            f"{self.name}/recall-{stage}": self.recall(x, y),
+            f"{self.name}/precision-{stage}": self.precision(x, y)
+        }
 
     def loss(self, data: NuGraphData, stage: str) -> tuple[T, dict]:
         """
@@ -81,75 +86,21 @@ class DecoderBase(torch.nn.Module, ABC):
         if stage == 'train':
             metrics[f'temperature/{self.name}'] = self.temp
         if stage in ("val", "test"):
-            for cm in self.confusion.values():
+            for cm in self.cm.values():
                 cm.update(x, y)
         return loss, metrics
 
-    def draw_matrix_tensorboard(self, cm: tm.ConfusionMatrix) -> plt.Figure:
-        """
-        Draw confusion matrix for tensorboard logging
-        
-        Args:
-            cm: Confusion matrix
-        """
-        confusion = cm.compute().cpu()
-        fig = plt.figure(figsize=[8,6])
-        sn.heatmap(confusion,
-                   xticklabels=self.classes,
-                   yticklabels=self.classes,
-                   vmin=0, vmax=1,
-                   annot=True)
-        plt.ylim(0, len(self.classes))
-        plt.xlabel('Assigned label')
-        plt.ylabel('True label')
-        return fig
-
-    def draw_matrix_wandb(self, cm: tm.ConfusionMatrix, label: str) -> wandb.Table:
-        """
-        Draw confusion matrix for wandb logging
-        
-        Args:
-            cm: Confusion matrix
-            label: Confusion matrix label
-        """
-        confusion = cm.compute().cpu()
-        table = wandb.Table(columns=["plotly_figure"])
-        fig = px.imshow(
-            confusion, zmax=1, text_auto=True,
-            labels={"x": "Predicted", "y": "True", "color": label},
-            x=self.classes, y=self.classes)
-        with tempfile.NamedTemporaryFile() as f:
-            fig.write_html(f.name, auto_play=False)
-            table.add_data(wandb.Html(f.name))
-        return table
-
-    def on_epoch_end(self, logger: Logger, stage: str, epoch: int) -> None:
+    def on_epoch_end(self, logger: Logger | list[Logger], stage: str, epoch: int) -> None:
         """
         End-of-epoch decoder callback for logging confusion matrices
 
         Args:
-            logger: Logger instance
+            logger: PyTorch Lightning logger object(s)
             stage: Name of current stage
             epoch: Epoch number
         """
-        if isinstance(logger, TensorBoardLogger):
-            for name, cm in self.confusion.items():
-                logger.experiment.add_figure(
-                    f'{name}/{stage}',
-                    self.draw_matrix_tensorboard(cm),
-                    global_step=epoch)
-                cm.reset()
-
-        if isinstance(logger, WandbLogger):
-            cm_recall, cm_precision = self.confusion.values()
-
-            table = self.draw_matrix_wandb(cm_recall, "Recall")
-            wandb.log({f"semantic/recall-matrix-{stage}": table})
-            cm_recall.reset()
-
-            table = self.draw_matrix_wandb(cm_precision, "Precision")
-            wandb.log({f"semantic/precision-matrix-{stage}": table})
-            cm_precision.reset()
+        for name, cm in self.cm.items():
+            self.cm_logger.log(f"{name}-{stage}", cm, logger, epoch)
 
 class SemanticDecoder(DecoderBase):
     """
@@ -165,8 +116,6 @@ class SemanticDecoder(DecoderBase):
     """
     def __init__(self, node_features: int, planes: tuple[str],
                  semantic_classes: tuple[str]):
-        super().__init__('semantic', planes, semantic_classes,
-                         RecallLoss(), weight=2.)
 
         # torchmetrics arguments
         metric_args = {
@@ -175,12 +124,8 @@ class SemanticDecoder(DecoderBase):
             'ignore_index': -1
         }
 
-        self.recall = tm.Recall(**metric_args)
-        self.precision = tm.Precision(**metric_args)
-        self.confusion['recall_semantic_matrix'] = tm.ConfusionMatrix(
-            normalize='true', **metric_args)
-        self.confusion['precision_semantic_matrix'] = tm.ConfusionMatrix(
-            normalize='pred', **metric_args)
+        super().__init__('semantic', planes, semantic_classes,
+                         RecallLoss(), 2., 0., metric_args)
 
         self.net = torch.nn.ModuleDict()
         for p in planes:
@@ -201,12 +146,6 @@ class SemanticDecoder(DecoderBase):
         y = torch.cat([data[p].y_semantic for p in self.planes], dim=0)
         return x, y
 
-    def metrics(self, x: T, y: T, stage: str) -> dict[str, Any]:
-        return {
-            f'recall_semantic/{stage}': self.recall(x, y),
-            f'precision_semantic/{stage}': self.precision(x, y)
-        }
-
 class FilterDecoder(DecoderBase):
     """
     NuGraph filter decoder module.
@@ -221,20 +160,14 @@ class FilterDecoder(DecoderBase):
     """
     def __init__(self, node_features: int, planes: tuple[str],
                  semantic_classes: tuple[str]):
-        super().__init__("filter", planes, ("noise", "signal"),
-                         torch.nn.BCELoss(), weight=2.)
 
         # torchmetrics arguments
         metric_args = {
             'task': 'binary'
         }
 
-        self.recall = tm.Recall(**metric_args)
-        self.precision = tm.Precision(**metric_args)
-        self.confusion['recall_filter_matrix'] = tm.ConfusionMatrix(
-            normalize='true', **metric_args)
-        self.confusion['precision_filter_matrix'] = tm.ConfusionMatrix(
-            normalize='pred', **metric_args)
+        super().__init__("filter", planes, ("noise", "signal"),
+                         torch.nn.BCELoss(), 2., 0., metric_args)
 
         num_features = len(semantic_classes) * node_features
         self.net = torch.nn.ModuleDict()
@@ -260,9 +193,3 @@ class FilterDecoder(DecoderBase):
         x = torch.cat([data[p].x_filter for p in self.planes], dim=0)
         y = torch.cat([(data[p].y_semantic!=-1).float() for p in self.planes], dim=0)
         return x, y
-
-    def metrics(self, x: T, y: T, stage: str) -> dict[str, Any]:
-        return {
-            f'recall_filter/{stage}': self.recall(x, y),
-            f'precision_filter/{stage}': self.precision(x, y)
-        }
