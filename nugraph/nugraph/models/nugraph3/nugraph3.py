@@ -76,10 +76,11 @@ class NuGraph3(LightningModule):
         self.num_iters = num_iters
         self.lr = lr
 
-        self.encoder = Encoder(in_features, hit_features,
+        self.encoder = Encoder(in_features, hit_features, instance_features,
                                nexus_features, interaction_features)
 
         self.core_net = NuGraphCore(hit_features,
+                                    instance_features,
                                     nexus_features,
                                     interaction_features,
                                     use_checkpointing)

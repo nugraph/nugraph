@@ -29,10 +29,6 @@ class InstanceDecoder(nn.Module):
         # temperature parameter
         self.temp = nn.Parameter(torch.tensor(0.))
 
-        # network
-        self.beta_net = nn.Linear(hit_features, 1)
-        self.coord_net = nn.Linear(hit_features, instance_features)
-
         self.dbscan = DBSCAN()
 
     # pylint: disable=arguments-differ
@@ -47,10 +43,10 @@ class InstanceDecoder(nn.Module):
 
         h = data["hit"]
         device = h.x.device
-
+        h.of=h.of.squeeze(-1)
         # run network and add output to graph object
-        h.of = self.beta_net(h.x).squeeze(dim=-1).sigmoid()
-        h.ox = self.coord_net(h.x)
+        #h.of = self.beta_net(h.x).squeeze(dim=-1).sigmoid()
+        #h.ox = self.coord_net(h.x)
         if isinstance(data, Batch):
             # pylint: disable=protected-access
             data._slice_dict["hit"]["of"] = h.ptr
@@ -59,6 +55,9 @@ class InstanceDecoder(nn.Module):
             data._inc_dict["hit"]["ox"] = data._inc_dict["hit"]["x"]
 
         # calculate loss
+        #loss = self.loss(h.ox, h.of, data.y_i(), h.y_semantic,
+        #                data[N_IT].num_nodes, data[E_H_IT].edge_index)
+
         loss = self.loss(h.ox, h.of, data.y_i(), h.y_semantic,
                          data[N_IT].num_nodes, data[E_H_IT].edge_index)
         loss *= (-1 * self.temp).exp()
@@ -79,6 +78,7 @@ class InstanceDecoder(nn.Module):
 
         # add materialized instances
         mask = torch.ones_like(h.of, dtype=torch.bool)
+        #mask = torch.ones(h.num_nodes, dtype=torch.bool, device=h.of.device)
         if hasattr(h, "x_filter"):
             mask = mask & (h.x_filter > 0.5)
         if hasattr(h, "x_semantic"):
