@@ -88,6 +88,7 @@ class NuGraphCore(nn.Module):
     """
     def __init__(self,
                  hit_features: int,
+                 instance_features: int,
                  nexus_features: int,
                  interaction_features: int,
                  use_checkpointing: bool = True):
@@ -106,6 +107,12 @@ class NuGraphCore(nn.Module):
         # message-passing from nexus nodes to planar nodes
         self.nexus_to_plane = NuGraphBlock(nexus_features, hit_features,
                                            hit_features)
+        
+        self.beta_net = NuGraphBlock(1, 1, 1)
+        self.coord_net = NuGraphBlock(instance_features, instance_features, instance_features)
+
+        self.sem_to_beta = NuGraphBlock(hit_features, 1, 1)
+        self.sem_to_coord = NuGraphBlock(hit_features, instance_features, instance_features)
 
     def checkpoint(self, net: nn.Module, *args) -> TD:
         """
@@ -127,18 +134,28 @@ class NuGraphCore(nn.Module):
         Args:
             data: Graph data object
         """
+        x = data["hit"].x       # semantic
+        of = data["hit"].of     # beta
+        ox = data["hit"].ox     # coord
+        edge_planar = data["hit", "delaunay-planar", "hit"].edge_index
+        edge_nexus = data["hit", "nexus", "sp"].edge_index
 
-        # message-passing in hits
-        data["hit"].x = self.checkpoint(
-            self.plane_net, data["hit"].x,
-            data["hit", "delaunay-planar", "hit"].edge_index)
+        # Planar semantic message passing
+        x = self.checkpoint(self.plane_net, x, edge_planar)
 
-        # message-passing from hits to nexus
-        data["sp"].x = self.checkpoint(
-            self.plane_to_nexus, (data["hit"].x, data["sp"].x),
-            data["hit", "nexus", "sp"].edge_index)
+        # x to sp, then sp to x
+        data["sp"].x = self.checkpoint(self.plane_to_nexus, (x, data["sp"].x), edge_nexus)
+        x = self.checkpoint(self.nexus_to_plane, (data["sp"].x, x), edge_nexus[(1, 0), :])
+        
+        # OC message passing (beta and coord)
+        of = self.checkpoint(self.beta_net, of, edge_planar)
+        ox = self.checkpoint(self.coord_net, ox, edge_planar)
 
-        # message-passing from nexus to hits
-        data["hit"].x = self.checkpoint(
-            self.nexus_to_plane, (data["sp"].x, data["hit"].x),
-            data["hit", "nexus", "sp"].edge_index[(1,0), :])
+        # Cross: semantic to OC
+        of = self.checkpoint(self.sem_to_beta, (x, of), edge_planar)
+        ox = self.checkpoint(self.sem_to_coord, (x, ox), edge_planar)
+
+        # Update data object ~ Bug
+        data["hit"].x = x
+        data["hit"].of = torch.sigmoid(of)
+        data["hit"].ox = ox
