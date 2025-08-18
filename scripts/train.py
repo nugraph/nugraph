@@ -23,12 +23,17 @@ def configure():
     parser = argparse.ArgumentParser()
     parser.add_argument('--device', type=int, default=None,
                         help="Index of GPU device to train with")
+    parser.add_argument('--logger', type=str, default="wandb",
+                        choices=("wandb", "tensorboard"),
+                        help="Which logging method to use")
     parser.add_argument('--name', type=str, default=None,
                         help='Training instance name, for logging purposes')
     parser.add_argument('--version', type=str, default=None,
                         help='Training version name, for logging purposes')
     parser.add_argument("--project", type=str, default="nugraph3",
                         help="wandb project to log to")
+    parser.add_argument("--resume", type=str,
+                        help="model checkpoint file to resume training with")
     parser.add_argument("--offline", action="store_true",
                         help="write wandb logs offline")
     parser.add_argument('--profiler', type=str, default=None,
@@ -46,14 +51,25 @@ def train(args):
                   model=Model, shuffle=args.shuffle,
                   balance_frac=args.balance_frac)
 
-    model = Model.from_args(args, nudata)
+    if args.resume:
+        model = Model.load_from_checkpoint(args.resume)
+    else:
+        model = Model.from_args(args, nudata)
 
-    logdir = pathlib.Path(os.environ["NUGRAPH_LOG"])/args.name
-    logdir.mkdir(parents=True, exist_ok=True)
-    log_model = False if args.offline else "all"
-    logger = pl.loggers.WandbLogger(save_dir=logdir, project=args.project,
-                                    name=args.name, version=args.version,
-                                    log_model=log_model, offline=args.offline)
+    # Configure logger
+    if args.logger == "wandb":
+        logdir = pathlib.Path(os.environ["NUGRAPH_LOG"])/args.name
+        logdir.mkdir(parents=True, exist_ok=True)
+        log_model = False if args.offline else "all"
+        logger = pl.loggers.WandbLogger(save_dir=logdir, project=args.project,
+                                        name=args.name, version=args.version,
+                                        log_model=log_model, offline=args.offline)
+    elif args.logger == "tensorboard":
+        logdir = os.environ["NUGRAPH_LOG"]
+        logger = pl.loggers.TensorBoardLogger(save_dir=logdir, name=args.name,
+                                              version=args.version, default_hp_metric=False)
+    else:
+        raise RuntimeError(f"Logger option \"{args.logger}\" not recognized!")
 
     # configure callbacks
     callbacks = []
@@ -77,7 +93,7 @@ def train(args):
                          logger=logger, profiler=args.profiler,
                          callbacks=callbacks, plugins=plugins)
 
-    trainer.fit(model, datamodule=nudata)
+    trainer.fit(model, datamodule=nudata, ckpt_path=args.resume)
 
 if __name__ == '__main__':
     args = configure()

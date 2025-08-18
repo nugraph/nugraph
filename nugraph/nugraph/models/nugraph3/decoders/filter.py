@@ -5,9 +5,7 @@ import torch
 from torch import nn
 import torchmetrics as tm
 from torch_geometric.data import Batch
-from pytorch_lightning.loggers import WandbLogger
-import wandb
-import plotly.express as px
+from pytorch_lightning.loggers import Logger
 from ..types import Data
 
 class FilterDecoder(nn.Module):
@@ -34,6 +32,7 @@ class FilterDecoder(nn.Module):
         metric_args = {"task": "binary"}
         self.recall = tm.Recall(**metric_args)
         self.precision = tm.Precision(**metric_args)
+        self.cm_logger = ConfusionMatrixLogger(("noise", "signal"))
         self.cm_recall = tm.ConfusionMatrix(normalize="true", **metric_args)
         self.cm_precision = tm.ConfusionMatrix(normalize="pred", **metric_args)
 
@@ -77,41 +76,17 @@ class FilterDecoder(nn.Module):
 
         return loss, metrics
 
-    def draw_matrix(self, cm: tm.ConfusionMatrix, label: str) -> wandb.Table:
-        """
-        Draw confusion matrix
-
-        Args:
-            cm: Confusion matrix object
-        """
-        confusion = cm.compute().cpu()
-        table = wandb.Table(columns=["plotly_figure"])
-        fig = px.imshow(
-            confusion, zmax=1, text_auto=True,
-            labels=dict(x="Predicted", y="True", color=label),
-            x=("noise", "signal"), y=("noise", "signal"))
-        with tempfile.NamedTemporaryFile() as f:
-            fig.write_html(f.name, auto_play=False)
-            table.add_data(wandb.Html(f.name))
-        return table
-
-    def on_epoch_end(self, logger: WandbLogger, stage: str,
+    def on_epoch_end(self, logger: Logger | list[Logger], stage: str,
                      epoch: int) -> None: # pylint: disable=unused-argument
         """
         NuGraph3 decoder end-of-epoch callback function
 
         Args:
-            logger: Wandb logger object
+            logger: PyTorch Lightning logger object(s)
             stage: Training stage
             epoch: Training epoch index
         """
-        if not logger:
-            return
-
-        table = self.draw_matrix(self.cm_recall, "Recall")
-        wandb.log({f"filter/recall-matrix-{stage}": table})
-        self.cm_recall.reset()
-
-        table = self.draw_matrix(self.cm_precision, "Precision")
-        wandb.log({f"filter/precision-matrix-{stage}": table})
-        self.cm_precision.reset()
+        self.cm_logger.log(f"filter/recall-matrix-{stage}",
+                           self.cm_recall, logger, epoch)
+        self.cm_logger.log(f"filter/precision-matrix-{stage}",
+                           self.cm_precision, logger, epoch)
