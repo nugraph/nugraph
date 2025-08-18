@@ -79,7 +79,9 @@ class HitGraphProducer(ProcessorBase):
 
         # support different generations of event HDF5 format
         hits = evt['hit_table']
-        if "local_plane" in hits.columns:
+        if "global_plane" in hits.columns:
+            plane_key, proj_key, drift_key = "global_plane", "global_wire", "global_time"
+        elif "local_plane" in hits.columns:
             plane_key, proj_key, drift_key = "local_plane", "local_wire", "local_time"
         else:
             plane_key, proj_key, drift_key = "view", "proj", "drift"
@@ -156,7 +158,7 @@ class HitGraphProducer(ProcessorBase):
         data['metadata'].event = e
 
         # spacepoint nodes
-        if "position_x" in spacepoints.keys():
+        if "position_x" in spacepoints.keys() and len(spacepoints)>0:
             data["sp"].pos = torch.tensor(spacepoints[[f"position_{c}" for c in ("x", "y", "z")]].values).float()
         else:
             data['sp'].num_nodes = spacepoints.shape[0]
@@ -239,20 +241,30 @@ class HitGraphProducer(ProcessorBase):
             sum_pe = evt["opflashsumpe_table"]
             opflash = evt["opflash_table"]
 
+            # skip events with no flash
+            if opflash.shape[0]==0:
+                return evt.name, None
+            # discard any events with less than 3 spacepoints
+            #if len(spacepoints)<3:
+            #    return evt.name, None
+
             # node position
             data["ophits"].pos = torch.tensor(ophits[["wire_pos_0", "wire_pos_1", "wire_pos_2"]].values).float()
             data["opflash"].pos = torch.tensor(opflash[["wire_pos_0", "wire_pos_1", "wire_pos_2"]].values).float()
 
-            # this could be avoided if we stored the information upfront in the h5 file
-            opdet_pos_y = torch.tensor([55.267144, 55.962509, 27.555318, -0.850317, -28.561692, -56.620694, -56.447756, 55.442895, 55.789304, -0.675445,
-                                        0.017374, -56.275066, -56.274171, 55.616099, 55.616099, -0.50224, -1.021855, -56.100966, -56.100966, 54.750076,
-                                        54.749983, -0.675445, -0.84865, -56.96699, -56.274171, 55.096391, 55.269595, 27.556793, -0.502415, -28.734833,
-                                        -56.274171, -56.620838])
-            opdet_pos_z = torch.tensor([951.85, 911.05, 989.65, 865.45, 990.25, 951.85, 911.95, 751.75, 710.95, 796.15,
-                                        664.15, 752.05, 711.25, 540.85, 500.05, 585.25, 452.95, 540.55, 500.35, 328.15,
-                                        287.95, 373.75, 242.05, 328.45, 287.65, 128.35,  87.85,  51.25, 173.65,  50.35,
-                                        128.05,  87.85])
-            data["opflashsumpe"].pos = torch.stack([opdet_pos_y[sum_pe["pmt_channel"].values], opdet_pos_z[sum_pe["pmt_channel"].values]], dim=1)
+            if "pos_y" in sum_pe.columns:
+                data["opflashsumpe"].pos = torch.tensor(sum_pe[["pos_y", "pos_z"]].values).float()
+            else:
+                #hardcoded positions for MicroBooNE's opdets
+                opdet_pos_y = torch.tensor([55.267144, 55.962509, 27.555318, -0.850317, -28.561692, -56.620694, -56.447756, 55.442895, 55.789304, -0.675445,
+                                            0.017374, -56.275066, -56.274171, 55.616099, 55.616099, -0.50224, -1.021855, -56.100966, -56.100966, 54.750076,
+                                            54.749983, -0.675445, -0.84865, -56.96699, -56.274171, 55.096391, 55.269595, 27.556793, -0.502415, -28.734833,
+                                            -56.274171, -56.620838])
+                opdet_pos_z = torch.tensor([951.85, 911.05, 989.65, 865.45, 990.25, 951.85, 911.95, 751.75, 710.95, 796.15,
+                                            664.15, 752.05, 711.25, 540.85, 500.05, 585.25, 452.95, 540.55, 500.35, 328.15,
+                                            287.95, 373.75, 242.05, 328.45, 287.65, 128.35,  87.85,  51.25, 173.65,  50.35,
+                                            128.05,  87.85])
+                data["opflashsumpe"].pos = torch.stack([opdet_pos_y[sum_pe["pmt_channel"].values], opdet_pos_z[sum_pe["pmt_channel"].values]], dim=1)
 
             # node features (not including the positions)
             data["ophits"].x = torch.cat([data["ophits"].pos,torch.tensor(ophits[["amplitude", "area",  "pe", "peaktime", "width"]].values).float()],dim=1)

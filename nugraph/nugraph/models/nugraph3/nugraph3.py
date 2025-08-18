@@ -91,6 +91,8 @@ class NuGraph3(LightningModule):
         self.core_net = NuGraphCore(hit_features,
                                     nexus_features,
                                     interaction_features,
+                                    pmt_features,
+                                    use_optical,
                                     use_checkpointing)
 
         if use_optical:
@@ -255,6 +257,8 @@ class NuGraph3(LightningModule):
                            help='Enable vertex regression head')
         model.add_argument("--spacepoint", action="store_true",
                            help="Enable spacepoint prediction head")
+        model.add_argument('--optical', action='store_true',
+                           help='Enable optical hierarchy')
         model.add_argument('--no-checkpointing', action='store_false',
                            dest="use_checkpointing",
                            help='Disable checkpointing during training')
@@ -292,5 +296,6 @@ class NuGraph3(LightningModule):
             vertex_head=args.vertex,
             instance_head=args.instance,
             spacepoint_head=args.spacepoint,
+            use_optical=args.optical,
             use_checkpointing=args.use_checkpointing,
             lr=args.learning_rate)

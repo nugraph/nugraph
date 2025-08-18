@@ -90,6 +90,8 @@ class NuGraphCore(nn.Module):
                  hit_features: int,
                  nexus_features: int,
                  interaction_features: int,
+                 pmt_features: int,
+                 use_optical: bool,
                  use_checkpointing: bool = True):
         super().__init__()
 
@@ -168,7 +170,7 @@ class NuGraphCore(nn.Module):
             data["hit", "nexus", "sp"].edge_index[(1,0), :])
 
         # for connections between opflashsumpe and nexus
-        if ("opflashsumpe" in data.node_types and ("sp", "connection", "opflashsumpe") in data.edge_types):
+        if use_optical:
             # message-passing from space points to PMTs
             data["opflashsumpe"].x = self.checkpoint(
                 self.nexus_to_pmt, (data["sp"].x, data["opflashsumpe"].x),
