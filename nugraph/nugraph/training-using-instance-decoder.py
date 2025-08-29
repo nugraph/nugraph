@@ -125,7 +125,7 @@ class MichelRegularizer:
                 #if michel_instances_found < 3:
                     #print(f"   Instance {instance_id}: {len(instance_hits)} hits, avg Michel prob: {avg_michel_prob.item():.3f}")
             
-                if avg_michel_prob > 0.15:  # Michel electron threshold
+                if avg_michel_prob > 0.25:  # Michel electron threshold
                     michel_instances_found += 1
                 
                     # Sum energy for complete Michel electron instance
