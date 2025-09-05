@@ -96,6 +96,7 @@ class NuGraphCore(nn.Module):
         super().__init__()
 
         self.use_checkpointing = use_checkpointing
+        self.use_optical = use_optical
 
         # internal planar message-passing
         self.plane_net = NuGraphBlock(hit_features, hit_features,
@@ -170,7 +171,7 @@ class NuGraphCore(nn.Module):
             data["hit", "nexus", "sp"].edge_index[(1,0), :])
 
         # for connections between opflashsumpe and nexus
-        if use_optical:
+        if self.use_optical:
             # message-passing from space points to PMTs
             data["opflashsumpe"].x = self.checkpoint(
                 self.nexus_to_pmt, (data["sp"].x, data["opflashsumpe"].x),

@@ -41,6 +41,7 @@ class Encoder(torch.nn.Module):
         Args:
             data: Graph data object
         """
+        #print('encoder x=',data["hit"].x)
         data["hit"].x = self.input_norm(data["hit"].x)
         data["hit"].x = self.planar_net(data["hit"].x)
         #do we want to add back the space point position?

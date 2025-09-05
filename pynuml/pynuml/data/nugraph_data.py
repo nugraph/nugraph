@@ -107,5 +107,6 @@ class NuGraphData(HeteroData):
             n = data[node_type]
             if n.num_nodes is not None and not hasattr(n, "x"):
                 n.x = torch.empty([n.num_nodes, 0])
+        #print('loader=',data)
 
         return data

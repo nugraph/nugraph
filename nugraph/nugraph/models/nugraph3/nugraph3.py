@@ -143,7 +143,10 @@ class NuGraph3(LightningModule):
             data: Graph data object
             stage: String tag defining the step type
         """
+        #print(data)
+        #print('encode')
         self.encoder(data)
+        #print('done encoding')
         for _ in range(self.num_iters):
             self.core_net(data)
             if hasattr(self, "optical_net"):

@@ -30,6 +30,7 @@ class InputNorm(torch.nn.Module):
             x: Tensor to normalize
         """
 
+        #print('self.update=',self.update,' self.training',self.training)
         # update running average
         if self.update and self.training:
 
@@ -48,5 +49,7 @@ class InputNorm(torch.nn.Module):
             self.norm["mean"] = P(mean, requires_grad=False)
             self.norm["var"] = P(var, requires_grad=False)
 
+        #print('x=',x)
+        #print('mean=',self.norm["mean"][None, :])
         # return normalized tensor
         return (x - self.norm["mean"][None, :]) / (self.norm["var"][None, :] + 1e-5).sqrt()
