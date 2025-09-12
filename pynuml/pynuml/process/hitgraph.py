@@ -244,9 +244,6 @@ class HitGraphProducer(ProcessorBase):
             # skip events with no flash
             if opflash.shape[0]==0:
                 return evt.name, None
-            # discard any events with less than 3 spacepoints
-            #if len(spacepoints)<3:
-            #    return evt.name, None
 
             # node position
             data["ophits"].pos = torch.tensor(ophits[["wire_pos_0", "wire_pos_1", "wire_pos_2"]].values).float()
