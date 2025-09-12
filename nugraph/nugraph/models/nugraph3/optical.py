@@ -19,6 +19,7 @@ class NuGraphOptical(torch.nn.Module):
         """
         def __init__(self, # pylint: disable=too-many-arguments,too-many-positional-arguments
                      interaction_features: int,
+                     nexus_features: int,
                      ophit_features: int,
                      pmt_features: int,
                      flash_features: int,
@@ -37,6 +38,10 @@ class NuGraphOptical(torch.nn.Module):
                                                          flash_features, flash_features)
                 self.flash_to_pmt = NuGraphBlock(flash_features, pmt_features, pmt_features)
                 self.pmt_to_ophit = NuGraphBlock(pmt_features, ophit_features, ophit_features)
+
+                # message-passing between nexus nodes and PMT nodes (opflashsumpe)
+                self.nexus_to_pmt = NuGraphBlock(nexus_features, pmt_features, pmt_features)
+                self.pmt_to_nexus = NuGraphBlock(pmt_features, nexus_features, nexus_features)
 
         def checkpoint(self, net: torch.nn.Module, *args) -> TD:
                 """
@@ -63,6 +68,11 @@ class NuGraphOptical(torch.nn.Module):
                         self.ophit_to_pmt, (data["ophits"].x, data["opflashsumpe"].x),
                         data["ophits", "sumpe", "opflashsumpe"].edge_index)
 
+                # message-passing from space points to PMTs
+                data["opflashsumpe"].x = self.checkpoint(
+                        self.nexus_to_pmt, (data["sp"].x, data["opflashsumpe"].x),
+                        data["sp", "connection", "opflashsumpe"].edge_index)
+
                 # message-passing from pmt to flash
                 data["opflash"].x = self.checkpoint(
                         self.pmt_to_flash, (data["opflashsumpe"].x, data["opflash"].x),
@@ -82,6 +92,11 @@ class NuGraphOptical(torch.nn.Module):
                 data["opflashsumpe"].x = self.checkpoint(
                         self.flash_to_pmt, (data["opflash"].x, data["opflashsumpe"].x),
                         data["opflashsumpe", "flash", "opflash"].edge_index[(1,0), :])
+
+                # message-passing from PMTs to space points
+                data["sp"].x = self.checkpoint(
+                        self.pmt_to_nexus, (data["opflashsumpe"].x, data["sp"].x),
+                        data["sp", "connection", "opflashsumpe"].edge_index[(1,0), :])
 
                 # message-passing from pmt to ophit
                 data["ophits"].x = self.checkpoint(

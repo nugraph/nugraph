@@ -91,12 +91,10 @@ class NuGraphCore(nn.Module):
                  nexus_features: int,
                  interaction_features: int,
                  pmt_features: int,
-                 use_optical: bool,
                  use_checkpointing: bool = True):
         super().__init__()
 
         self.use_checkpointing = use_checkpointing
-        self.use_optical = use_optical
 
         # internal planar message-passing
         self.plane_net = NuGraphBlock(hit_features, hit_features,
@@ -119,10 +117,6 @@ class NuGraphCore(nn.Module):
         # message-passing from nexus nodes to planar nodes
         self.nexus_to_plane = NuGraphBlock(nexus_features, hit_features,
                                            hit_features)
-
-        # message-passing between nexus nodes and PMT nodes (opflashsumpe)
-        self.nexus_to_pmt = NuGraphBlock(nexus_features, pmt_features, pmt_features)
-        self.pmt_to_nexus = NuGraphBlock(pmt_features, nexus_features, nexus_features)
 
     def checkpoint(self, net: nn.Module, *args) -> TD:
         """
@@ -169,17 +163,3 @@ class NuGraphCore(nn.Module):
         data["hit"].x = self.checkpoint(
             self.nexus_to_plane, (data["sp"].x, data["hit"].x),
             data["hit", "nexus", "sp"].edge_index[(1,0), :])
-
-        # for connections between opflashsumpe and nexus
-        if self.use_optical:
-            # message-passing from space points to PMTs
-            data["opflashsumpe"].x = self.checkpoint(
-                self.nexus_to_pmt, (data["sp"].x, data["opflashsumpe"].x),
-                data["sp", "connection", "opflashsumpe"].edge_index)
-
-        #    #NuGraph optical should be called from here, I think
-
-            # message-passing from PMTs to space points
-            data["sp"].x = self.checkpoint(
-                self.pmt_to_nexus, (data["opflashsumpe"].x, data["sp"].x),
-                data["sp", "connection", "opflashsumpe"].edge_index[(1,0), :])
