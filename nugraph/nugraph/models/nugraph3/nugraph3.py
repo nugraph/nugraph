@@ -92,7 +92,6 @@ class NuGraph3(LightningModule):
         self.core_net = NuGraphCore(hit_features,
                                     nexus_features,
                                     interaction_features,
-                                    pmt_features,
                                     use_checkpointing)
 
         if use_optical:
