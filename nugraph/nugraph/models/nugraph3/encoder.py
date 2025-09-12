@@ -18,10 +18,10 @@ class Encoder(torch.nn.Module):
                  planar_features: int,
                  nexus_features: int,
                  interaction_features: int,
-                 ophit_features: int = None,
-                 pmt_features: int = None,
-                 flash_features: int = None,
-                 use_optical: bool = False):
+                 ophit_features: int,
+                 pmt_features: int,
+                 flash_features: int,
+                 use_optical: bool):
         super().__init__()
         self.input_norm = InputNorm(in_features)
         self.planar_net = torch.nn.Linear(in_features, planar_features)
@@ -30,9 +30,9 @@ class Encoder(torch.nn.Module):
 
         # hardcode optical features pending redesign
         if use_optical:
-            self.ophit_net = nn.Linear(8, ophit_features)
-            self.pmt_net = nn.Linear(4, pmt_features)
-            self.flash_net = nn.Linear(10, flash_features)
+            self.ophit_net = torch.nn.Linear(8, ophit_features)
+            self.pmt_net = torch.nn.Linear(4, pmt_features)
+            self.flash_net = torch.nn.Linear(10, flash_features)
 
     def forward(self, data: NuGraphData) -> None:
         """

@@ -175,9 +175,11 @@ class NuGraphCore(nn.Module):
             # message-passing from space points to PMTs
             data["opflashsumpe"].x = self.checkpoint(
                 self.nexus_to_pmt, (data["sp"].x, data["opflashsumpe"].x),
-                data["sp", "connection", "opflashsumpe"].edge_index[(1,0), :])
+                data["sp", "connection", "opflashsumpe"].edge_index)
+
+        #    #NuGraph optical should be called from here, I think
 
             # message-passing from PMTs to space points
             data["sp"].x = self.checkpoint(
                 self.pmt_to_nexus, (data["opflashsumpe"].x, data["sp"].x),
-                data["opflashsumpe", "connection", "sp"].edge_index[(1,0), :])
+                data["sp", "connection", "opflashsumpe"].edge_index[(1,0), :])

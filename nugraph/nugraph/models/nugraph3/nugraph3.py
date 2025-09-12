@@ -86,7 +86,8 @@ class NuGraph3(LightningModule):
         self.lr = lr
 
         self.encoder = Encoder(in_features, hit_features,
-                               nexus_features, interaction_features)
+                               nexus_features, interaction_features,
+                               ophit_features, pmt_features, flash_features, use_optical)
 
         self.core_net = NuGraphCore(hit_features,
                                     nexus_features,
@@ -143,10 +144,7 @@ class NuGraph3(LightningModule):
             data: Graph data object
             stage: String tag defining the step type
         """
-        #print(data)
-        #print('encode')
         self.encoder(data)
-        #print('done encoding')
         for _ in range(self.num_iters):
             self.core_net(data)
             if hasattr(self, "optical_net"):

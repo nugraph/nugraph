@@ -275,6 +275,9 @@ class HitGraphProducer(ProcessorBase):
 
             # 1st hierarchical layer
             edge1 = torch.tensor(ophits[["hit_id","sumpe_id"]].values.transpose())
+            mask = edge1[1,:]>=0
+            mask = torch.nonzero(mask)
+            edge1 = torch.squeeze(edge1[:,mask])
             data["ophits", "sumpe", "opflashsumpe"].edge_index = edge1.long()
 
             # 2nd hierarchical layer
