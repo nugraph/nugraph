@@ -83,8 +83,6 @@ def train(args):
         SLURMEnvironment(requeue_signal=signal.SIGUSR1),
     ]
 
-    model = Model.from_args(args, nudata)
-
     accelerator, devices = ng.util.configure_device(args.device)
     trainer = pl.Trainer(accelerator=accelerator, devices=devices,
                          max_epochs=args.epochs,
