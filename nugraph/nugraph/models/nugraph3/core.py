@@ -90,7 +90,6 @@ class NuGraphCore(nn.Module):
                  hit_features: int,
                  nexus_features: int,
                  interaction_features: int,
-                 pmt_features: int,
                  use_checkpointing: bool = True):
         super().__init__()
 
