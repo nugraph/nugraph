@@ -250,7 +250,7 @@ class HitGraphProducer(ProcessorBase):
             data["flash"].pos = torch.tensor(opflash[["wire_pos_0", "wire_pos_1", "wire_pos_2"]].values).float()
 
             if "pos_y" in sum_pe.columns:
-                data["opflashsumpe"].pos = torch.tensor(sum_pe[["pos_y", "pos_z"]].values).float()
+                data["pmt"].pos = torch.tensor(sum_pe[["pos_y", "pos_z"]].values).float()
             else:
                 #hardcoded positions for MicroBooNE's opdets
                 opdet_pos_y = torch.tensor([55.267144, 55.962509, 27.555318, -0.850317, -28.561692, -56.620694, -56.447756, 55.442895, 55.789304, -0.675445,
