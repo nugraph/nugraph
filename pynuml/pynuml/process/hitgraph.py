@@ -284,7 +284,7 @@ class HitGraphProducer(ProcessorBase):
 
             # 3rd hierarchical layer
             edge3 = torch.tensor([opflash["flash_id"].values[0], 0])
-            data["opflash", "in", "evt"].edge_index = edge3
+            data["flash", "in", "evt"].edge_index = edge3
 
             # layer between spacepoint and opflash level in optical data
 
