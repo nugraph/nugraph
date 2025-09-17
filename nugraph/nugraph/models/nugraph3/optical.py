@@ -64,41 +64,41 @@ class NuGraphOptical(torch.nn.Module):
                 """
 
                 # message-passing from ophit to pmt
-                data["opflashsumpe"].x = self.checkpoint(
-                        self.ophit_to_pmt, (data["ophits"].x, data["opflashsumpe"].x),
-                        data["ophits", "sumpe", "opflashsumpe"].edge_index)
+                data["pmt"].x = self.checkpoint(
+                        self.ophit_to_pmt, (data["ophit"].x, data["pmt"].x),
+                        data["ophit", "in", "pmt"].edge_index)
 
                 # message-passing from space points to PMTs
-                data["opflashsumpe"].x = self.checkpoint(
-                        self.nexus_to_pmt, (data["sp"].x, data["opflashsumpe"].x),
-                        data["sp", "connection", "opflashsumpe"].edge_index)
+                data["pmt"].x = self.checkpoint(
+                        self.nexus_to_pmt, (data["sp"].x, data["pmt"].x),
+                        data["sp", "knn", "pmt"].edge_index)
 
                 # message-passing from pmt to flash
-                data["opflash"].x = self.checkpoint(
-                        self.pmt_to_flash, (data["opflashsumpe"].x, data["opflash"].x),
-                        data["opflashsumpe", "flash", "opflash"].edge_index)
+                data["flash"].x = self.checkpoint(
+                        self.pmt_to_flash, (data["pmt"].x, data["flash"].x),
+                        data["pmt", "in", "flash"].edge_index)
 
                 # message-passing from flash to interaction
                 data["evt"].x = self.checkpoint(
-                        self.flash_to_interaction, (data["opflash"].x, data["evt"].x),
-                        data["opflash", "in", "evt"].edge_index)
+                        self.flash_to_interaction, (data["flash"].x, data["evt"].x),
+                        data["flash", "in", "evt"].edge_index)
 
                 # message-passing from interaction to flash
-                data["opflash"].x = self.checkpoint(
-                        self.interaction_to_flash, (data["evt"].x, data["opflash"].x),
-                        data["opflash", "in", "evt"].edge_index[(1,0), :])
+                data["flash"].x = self.checkpoint(
+                        self.interaction_to_flash, (data["evt"].x, data["flash"].x),
+                        data["flash", "in", "evt"].edge_index[(1,0), :])
 
                 # message-passing from flash to pmt
-                data["opflashsumpe"].x = self.checkpoint(
-                        self.flash_to_pmt, (data["opflash"].x, data["opflashsumpe"].x),
-                        data["opflashsumpe", "flash", "opflash"].edge_index[(1,0), :])
+                data["pmt"].x = self.checkpoint(
+                        self.flash_to_pmt, (data["flash"].x, data["pmt"].x),
+                        data["pmt", "in", "flash"].edge_index[(1,0), :])
 
                 # message-passing from PMTs to space points
                 data["sp"].x = self.checkpoint(
-                        self.pmt_to_nexus, (data["opflashsumpe"].x, data["sp"].x),
-                        data["sp", "connection", "opflashsumpe"].edge_index[(1,0), :])
+                        self.pmt_to_nexus, (data["pmt"].x, data["sp"].x),
+                        data["sp", "knn", "pmt"].edge_index[(1,0), :])
 
                 # message-passing from pmt to ophit
-                data["ophits"].x = self.checkpoint(
-                        self.pmt_to_ophit, (data["opflashsumpe"].x, data["ophits"].x),
-                        data["ophits", "sumpe", "opflashsumpe"].edge_index[(1,0), :])
+                data["ophit"].x = self.checkpoint(
+                        self.pmt_to_ophit, (data["pmt"].x, data["ophit"].x),
+                        data["ophit", "in", "pmt"].edge_index[(1,0), :])
