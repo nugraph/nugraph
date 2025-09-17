@@ -246,8 +246,8 @@ class HitGraphProducer(ProcessorBase):
                 return evt.name, None
 
             # node position
-            data["ophits"].pos = torch.tensor(ophits[["wire_pos_0", "wire_pos_1", "wire_pos_2"]].values).float()
-            data["opflash"].pos = torch.tensor(opflash[["wire_pos_0", "wire_pos_1", "wire_pos_2"]].values).float()
+            data["ophit"].pos = torch.tensor(ophits[["wire_pos_0", "wire_pos_1", "wire_pos_2"]].values).float()
+            data["flash"].pos = torch.tensor(opflash[["wire_pos_0", "wire_pos_1", "wire_pos_2"]].values).float()
 
             if "pos_y" in sum_pe.columns:
                 data["opflashsumpe"].pos = torch.tensor(sum_pe[["pos_y", "pos_z"]].values).float()
