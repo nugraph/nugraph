@@ -298,7 +298,7 @@ class HitGraphProducer(ProcessorBase):
             opflashsumpe_indices = nearest_indices.flatten()
 
             edges = torch.stack([spacepoints_indices, opflashsumpe_indices], dim=0)
-            data["sp", "connection", "opflashsumpe"].edge_index = edges.long()
+            data["sp", "knn", "pmt"].edge_index = edges.long()
 
         # event label
         if self.event_labeller:
