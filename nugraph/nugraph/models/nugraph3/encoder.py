@@ -52,6 +52,6 @@ class Encoder(torch.nn.Module):
                                     device=data["hit"].x.device)
 
         if hasattr(self, "ophit_net"):
-            data["ophits"].x = self.ophit_net(data["ophits"].x)
-            data["opflashsumpe"].x = self.pmt_net(data["opflashsumpe"].x)
-            data["opflash"].x = self.flash_net(data["opflash"].x)
+            data["ophit"].x = self.ophit_net(data["ophit"].x)
+            data["pmt"].x = self.pmt_net(data["pmt"].x)
+            data["flash"].x = self.flash_net(data["flash"].x)
