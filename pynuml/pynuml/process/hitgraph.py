@@ -280,7 +280,7 @@ class HitGraphProducer(ProcessorBase):
 
             # 2nd hierarchical layer
             edge2 = torch.tensor(sum_pe[["sumpe_id", "flash_id"]].values.transpose())
-            data["opflashsumpe", "flash", "opflash"].edge_index = edge2.long()
+            data["pmt", "in", "flash"].edge_index = edge2.long()
 
             # 3rd hierarchical layer
             edge3 = torch.tensor([opflash["flash_id"].values[0], 0])
