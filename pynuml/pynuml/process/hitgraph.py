@@ -264,9 +264,10 @@ class HitGraphProducer(ProcessorBase):
                 data["opflashsumpe"].pos = torch.stack([opdet_pos_y[sum_pe["pmt_channel"].values], opdet_pos_z[sum_pe["pmt_channel"].values]], dim=1)
 
             # node features (not including the positions)
-            data["ophits"].x = torch.cat([data["ophits"].pos,torch.tensor(ophits[["amplitude", "area",  "pe", "peaktime", "width"]].values).float()],dim=1)
-            data["opflash"].x = torch.cat([data["opflash"].pos,torch.tensor(opflash[["time", "time_width", "totalpe", "y_center", "y_width", "z_center", "z_width"]].values).float()],dim=1)
-            data["opflashsumpe"].x = torch.cat([data["opflashsumpe"].pos,torch.tensor(sum_pe[["pmt_channel", "sumpe"]].values).float()],dim=1)
+            data["ophit"].x = torch.cat([data["ophit"].pos,
+            torch.tensor(ophits[["amplitude", "area",  "pe", "peaktime", "width"]].values).float()],dim=1)
+            data["flash"].x = torch.cat([data["flash"].pos,torch.tensor(opflash[["time", "time_width", "totalpe", "y_center", "y_width", "z_center", "z_width"]].values).float()],dim=1)
+            data["pmt"].x = torch.cat([data["pmt"].pos,torch.tensor(sum_pe[["pmt_channel", "sumpe"]].values).float()],dim=1)
 
             # there are no 'horizontal' edges within the PMT hierarchy?
 
