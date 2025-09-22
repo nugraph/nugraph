@@ -229,7 +229,7 @@ class NuGraph3(LightningModule):
         model = parser.add_argument_group('model', 'NuGraph3 model configuration')
         model.add_argument('--num-iters', type=int, default=5,
                            help='Number of message-passing iterations')
-        model.add_argument('--in-feats', type=int, default=5,
+        model.add_argument('--in-feats', type=int,
                            help='Number of input node features')
         model.add_argument('--hit-feats', type=int, default=128,
                            help='Hidden dimensionality of hit convolutions')
@@ -277,8 +277,15 @@ class NuGraph3(LightningModule):
             args: Namespace containing parsed arguments
             nudata: Data module
         """
+
+        if args.in_feats is not None:
+            print(("Warning: the --in-feats argument has been deprecated, as the number of "
+                   "input features is now automatically detected from the dataset. Please "
+                   "update your workflow, as this argument will be removed in a future "
+                   "release."))
+
         return cls(
-            in_features=args.in_feats,
+            in_features=nudata.num_hit_features,
             hit_features=args.hit_feats,
             nexus_features=args.nexus_feats,
             interaction_features=args.interaction_feats,
