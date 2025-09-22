@@ -161,6 +161,11 @@ class NuGraphDataModule(LightningDataModule):
         return DataLoader(self.test_dataset, num_workers=self.num_workers,
                           batch_size=self.batch_size)
 
+    @property
+    def num_hit_features(self) -> int:
+        """Property describing number of hit features"""
+        return self.train_dataset[0]["hit"].x.size(1)
+
     @staticmethod
     def add_data_args(parser: ArgumentParser) -> ArgumentParser:
         data = parser.add_argument_group('data', 'Data module configuration')
