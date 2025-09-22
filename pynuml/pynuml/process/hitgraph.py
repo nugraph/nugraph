@@ -308,11 +308,6 @@ class HitGraphProducer(ProcessorBase):
                 h.parent_id = torch.tensor(hits['parent_id'].fillna(-1).values).long()
                 h.pdg = torch.tensor(hits['type'].fillna(-1).values).long()
 
-        # apply labellers
-        if self.labellers:
-            for l in self.labellers:
-                l(evt, data)
-
         # optical system
         if self.optical:
 
