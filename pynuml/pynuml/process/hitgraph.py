@@ -261,36 +261,32 @@ class HitGraphProducer(ProcessorBase):
                                             664.15, 752.05, 711.25, 540.85, 500.05, 585.25, 452.95, 540.55, 500.35, 328.15,
                                             287.95, 373.75, 242.05, 328.45, 287.65, 128.35,  87.85,  51.25, 173.65,  50.35,
                                             128.05,  87.85])
-                data["opflashsumpe"].pos = torch.stack([opdet_pos_y[sum_pe["pmt_channel"].values], opdet_pos_z[sum_pe["pmt_channel"].values]], dim=1)
+                data["pmt"].pos = torch.stack([opdet_pos_y[sum_pe["pmt_channel"].values], opdet_pos_z[sum_pe["pmt_channel"].values]], dim=1)
 
-            # node features (not including the positions)
+            # optical node features (not including the positions)
             data["ophit"].x = torch.cat([data["ophit"].pos,
             torch.tensor(ophits[["amplitude", "area",  "pe", "peaktime", "width"]].values).float()],dim=1)
             data["flash"].x = torch.cat([data["flash"].pos,torch.tensor(opflash[["time", "time_width", "totalpe", "y_center", "y_width", "z_center", "z_width"]].values).float()],dim=1)
             data["pmt"].x = torch.cat([data["pmt"].pos,torch.tensor(sum_pe[["pmt_channel", "sumpe"]].values).float()],dim=1)
 
-            # there are no 'horizontal' edges within the PMT hierarchy?
-
-            # 1st hierarchical layer
+            # ophit to pmt edges
             edge1 = torch.tensor(ophits[["hit_id","sumpe_id"]].values.transpose())
             mask = edge1[1,:]>=0
             mask = torch.nonzero(mask)
             edge1 = torch.squeeze(edge1[:,mask])
             data["ophit", "in", "pmt"].edge_index = edge1.long()
 
-            # 2nd hierarchical layer
+            # pmt to flash edges
             edge2 = torch.tensor(sum_pe[["sumpe_id", "flash_id"]].values.transpose())
             data["pmt", "in", "flash"].edge_index = edge2.long()
 
-            # 3rd hierarchical layer
+            # flash to event edges
             edge3 = torch.tensor([opflash["flash_id"].values[0], 0])
             data["flash", "in", "evt"].edge_index = edge3
 
-            # layer between spacepoint and opflash level in optical data
-
+            # nexus to pmt edges
             spacepoints_nodes = torch.tensor(spacepoints[["position_y", "position_z"]].values)
-
-            distances = torch.cdist( spacepoints_nodes, data["opflashsumpe"].pos, p=2)
+            distances = torch.cdist( spacepoints_nodes, data["pmt"].pos, p=2)
             nnear = 2
             _, nearest_indices = torch.topk(distances, nnear, largest=False, dim=1)
 
