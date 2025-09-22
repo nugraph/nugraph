@@ -110,7 +110,8 @@ class HitGraphProducer(ProcessorBase):
         # energy deposition dataframe
         if self.semantic_labeller:
             edeps = evt["edep_table"]
-            edeps = edeps.rename(columns={"energy_fraction": "energy"})
+            if "energy_fraction" in edeps.columns and "energy" not in edeps.columns:
+                edeps = edeps.rename(columns={"energy_fraction": "energy"})
 
         # true particle dataframe
         if self.semantic_labeller:
@@ -232,10 +233,6 @@ class HitGraphProducer(ProcessorBase):
         h.pos = torch.stack((h.proj, h.drift), dim=1)
         data["hit", "delaunay", "hit"].edge_index = self.transform(h).edge_index
 
-        # event metadata
-        md = data["metadata"]
-        md.run, md.subrun, md.event = evt.event_id
-
         # spacepoint nodes
         if "position_x" in spacepoints.keys() and len(spacepoints)>0:
             for c in ("x", "y", "z"):
@@ -243,8 +240,6 @@ class HitGraphProducer(ProcessorBase):
                 data["sp"][key] = torch.tensor(spacepoints[key].values, dtype=torch.float)
         else:
             data["sp"].num_nodes = spacepoints.shape[0]
-
-        hits = hits.reset_index(names="index_2d")
 
         # node true position
         if self.label_position:
@@ -255,7 +250,7 @@ class HitGraphProducer(ProcessorBase):
         h.id = torch.tensor(hits["hit_id"].values).long()
 
         # 2D graph edges
-        h.pos = torch.stack((hit.proj, hit.drift), dim=0)
+        h.pos = torch.stack((h.proj, h.drift), dim=0)
         data["hit", "delaunay", "hit"].edge_index = self.transform(data["hit"]).edge_index
         del h.pos
 
