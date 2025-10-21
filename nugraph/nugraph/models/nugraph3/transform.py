@@ -14,7 +14,7 @@ class Transform(BaseTransform):
         super().__init__()
         self.planes = planes
 
-    def __call__(self, data: NuGraphData) -> NuGraphData:
+    def forward(self, data: NuGraphData) -> NuGraphData:
 
         """
         Apply transform for compatibility with NuGraph3 model
