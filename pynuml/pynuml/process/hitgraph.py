@@ -125,7 +125,13 @@ class HitGraphProducer(ProcessorBase):
 
         # get labels for each particle
         if self.semantic_labeller:
-            particles = self.semantic_labeller(evt['particle_table'])
+
+            try:
+                particles = self.semantic_labeller(evt['particle_table'])
+            except:
+                print("exception occurred during particle labelling for event", name)
+                return evt.name, None
+
             try:
                 hits = hits.merge(particles, on='g4_id', how='left')
             except:
