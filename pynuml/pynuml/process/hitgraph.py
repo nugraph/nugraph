@@ -45,7 +45,8 @@ class HitGraphProducer(ProcessorBase):
             groups['particle_table'] = ['g4_id','parent_id','type','momentum','start_process','end_process']
             groups['edep_table'] = []
         if self.event_labeller:
-            groups['event_table'] = ['is_cc', 'nu_pdg']
+            #groups['event_table'] = ['is_cc', 'nu_pdg']
+            groups['particle_table'] = ['g4_id','parent_id', 'type','momentum','start_process','end_process','start_position','end_position']
         if self.label_vertex:
             keys = ['nu_vtx_corr','nu_vtx_wire_pos','nu_vtx_wire_time']
             if 'event_table' in groups:
@@ -68,7 +69,8 @@ class HitGraphProducer(ProcessorBase):
     def __call__(self, evt: 'pynuml.io.Event') -> tuple[str, Any]:
 
         if self.event_labeller or self.label_vertex:
-            event = evt['event_table'].squeeze()
+            #event = evt['event_table'].squeeze()
+            event = evt['particle_table'].squeeze()
 
         # support different generations of event HDF5 format
         hits = evt['hit_table']
@@ -125,13 +127,7 @@ class HitGraphProducer(ProcessorBase):
 
         # get labels for each particle
         if self.semantic_labeller:
-
-            try:
-                particles = self.semantic_labeller(evt['particle_table'])
-            except:
-                print("exception occurred during particle labelling for event", name)
-                return evt.name, None
-
+            particles = self.semantic_labeller(evt['particle_table'])
             try:
                 hits = hits.merge(particles, on='g4_id', how='left')
             except:

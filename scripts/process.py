@@ -23,8 +23,9 @@ def process(args):
     processor = pynuml.process.HitGraphProducer(
             file=f,
             semantic_labeller=pynuml.labels.StandardLabels(),
-            event_labeller=pynuml.labels.FlavorLabels(),
-            label_vertex=args.label_vertex,
+            #event_labeller=pynuml.labels.FlavorLabels(),
+            event_labeller=pynuml.labels.StoppingMuon(),
+            #label_vertex=args.label_vertex,
             label_position=args.label_position)
 
     # create output file stream

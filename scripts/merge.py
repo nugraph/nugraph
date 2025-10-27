@@ -5,6 +5,11 @@ import glob
 import tqdm
 import h5py
 
+import sys
+import os
+sys.path.append(f"{os.environ['HOME']}/nugraph/pynuml")
+sys.path.append(f"{os.environ['HOME']}/nugraph/nugraph")
+
 from nugraph.data import H5DataModule
 
 def configure():
