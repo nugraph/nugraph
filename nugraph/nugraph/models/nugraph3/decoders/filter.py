@@ -7,6 +7,7 @@ import torchmetrics as tm
 from torch_geometric.data import Batch
 from pytorch_lightning.loggers import Logger
 from ..types import Data
+from nugraph.util import ConfusionMatrixLogger
 
 class FilterDecoder(nn.Module):
     """

@@ -7,6 +7,7 @@ import sys
 import h5py
 import tqdm
 
+from nugraph.util import PositionFeatures
 import torch
 from torch_geometric.loader import DataLoader
 from pytorch_lightning import LightningDataModule

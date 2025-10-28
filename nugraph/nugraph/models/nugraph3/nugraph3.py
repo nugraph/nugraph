@@ -45,18 +45,18 @@ class NuGraph3(LightningModule):
         lr: Learning rate
     """
     def __init__(self,
-                 in_features: int = 4,
+                 in_features: int = 8, #def 4
                  hit_features: int = 128,
                  nexus_features: int = 32,
                  interaction_features: int = 32,
-                 instance_features: int = 8,
+                 instance_features: int = 8, #def 8
                  planes: tuple[str] = ("u","v","y"),
                  semantic_classes: tuple[str] = ('MIP','HIP','shower','michel','diffuse'),
                  event_classes: tuple[str] = ('numu','nue','nc'),
                  num_iters: int = 5,
                  event_head: bool = False,
                  semantic_head: bool = True,
-                 filter_head: bool = True,
+                 filter_head: bool = True, #Default True
                  vertex_head: bool = False,
                  instance_head: bool = False,
                  spacepoint_head: bool = False,

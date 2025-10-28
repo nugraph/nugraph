@@ -125,30 +125,53 @@ class InstanceDecoder(nn.Module):
 
         return loss, metrics
 
-    def materialize(self, ox: torch.Tensor, mask: torch.Tensor) -> tuple[torch.Tensor]:
-        """Materialize instance embedding
+    # def materialize(self, ox: torch.Tensor, mask: torch.Tensor) -> tuple[torch.Tensor]:
+    #     """Materialize instance embedding
         
-        Args:
-            ox: object condensation embedding tensor
-            mask: bool mask tensor for background hit removal
-        """
+    #     Args:
+    #         ox: object condensation embedding tensor
+    #         mask: bool mask tensor for background hit removal
+    #     """
 
-        # if there are no signal hits to cluster, skip dbscan and return empty tensors
+    #     # if there are no signal hits to cluster, skip dbscan and return empty tensors
+    #     if not mask.sum():
+    #         x_ip = torch.empty(0, 0, dtype=torch.float, device=ox.device)
+    #         e_h_ip = torch.empty(2, 0, dtype=torch.long, device=ox.device)
+    #         return x_ip, e_h_ip
+
+    #     i = torch.empty(ox.size(0), dtype=torch.long, device=ox.device).fill_(-1)
+    #     arr = ox[mask].detach()
+    #     if not arr.is_cuda:
+    #         arr = arr.numpy()
+    #     i[mask] = torch.as_tensor(self.dbscan.fit_predict(arr), dtype=torch.long)
+    #     x_ip = torch.empty(i.max()+1, 0, dtype=torch.float, device=ox.device)
+    #     mask = i > -1
+    #     e_h_ip = torch.stack((torch.nonzero(mask).squeeze(1), i[mask])).long()
+    #     return x_ip, e_h_ip
+
+    def materialize(self, ox: torch.Tensor, mask: torch.Tensor) -> tuple[torch.Tensor]:
+        """Materialize instance embedding"""
         if not mask.sum():
             x_ip = torch.empty(0, 0, dtype=torch.float, device=ox.device)
             e_h_ip = torch.empty(2, 0, dtype=torch.long, device=ox.device)
             return x_ip, e_h_ip
-
+    
         i = torch.empty(ox.size(0), dtype=torch.long, device=ox.device).fill_(-1)
         arr = ox[mask].detach()
+    
         if not arr.is_cuda:
-            arr = arr.numpy()
-        i[mask] = torch.as_tensor(self.dbscan.fit_predict(arr), dtype=torch.long)
-        x_ip = torch.empty(i.max()+1, 0, dtype=torch.float, device=ox.device)
+            arr = arr.cpu().numpy()  # CPU → numpy for cuML CPU
+        # else: GPU tensor → cuML works directly
+    
+        labels = self.dbscan.fit_predict(arr)
+        labels = torch.as_tensor(labels, dtype=torch.long, device=ox.device)  # <-- FIX
+        i[mask] = labels
+    
+        x_ip = torch.empty(i.max() + 1, 0, dtype=torch.float, device=ox.device)
         mask = i > -1
         e_h_ip = torch.stack((torch.nonzero(mask).squeeze(1), i[mask])).long()
         return x_ip, e_h_ip
-
+   
     def on_epoch_end(self, logger: "WandbLogger", stage: str, epoch: int) -> None:
         """
         NuGraph3 decoder end-of-epoch callback function
