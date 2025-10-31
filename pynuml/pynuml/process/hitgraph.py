@@ -45,7 +45,11 @@ class HitGraphProducer(ProcessorBase):
             groups['particle_table'] = ['g4_id','parent_id','type','momentum','start_process','end_process']
             groups['edep_table'] = []
         if self.event_labeller:
-            groups['event_table'] = ['is_cc', 'nu_pdg']
+            for group, column in self.event_labeller.columns:
+                if group not in groups:
+                    groups[group] = []
+                if column not in groups[group]:
+                    groups[group].append(column)
         if self.label_vertex:
             keys = ['nu_vtx_corr','nu_vtx_wire_pos','nu_vtx_wire_time']
             if 'event_table' in groups:
@@ -67,7 +71,7 @@ class HitGraphProducer(ProcessorBase):
 
     def __call__(self, evt: 'pynuml.io.Event') -> tuple[str, Any]:
 
-        if self.event_labeller or self.label_vertex:
+        if "event_table" in evt:
             event = evt['event_table'].squeeze()
 
         # support different generations of event HDF5 format

@@ -3,10 +3,10 @@ import pandas as pd
 class FlavorLabels:
     def __init__(self):
         self._labels = (
-            'cc_nue',
-            'cc_numu',
-            'cc_nutau',
-            'nc')
+            "cc_nue",
+            "cc_numu",
+            "cc_nutau",
+            "nc")
 
     @property
     def labels(self):
@@ -37,6 +37,12 @@ class FlavorLabels:
     @property
     def nc(self):
         return self.index('nc')
+
+    @property
+    def columns(self) -> dict[str, list[str]]:
+        return {
+            "event_table": ["is_cc", "nu_pdg"],
+        }
 
     def __call__(self, event: pd.Series):
         if not event.is_cc:

@@ -26,6 +26,12 @@ class PDKLabels:
     def pdk(self):
         return self.index('pdk')
 
+    @property
+    def columns(self) -> dict[str, list[str]]:
+        return {
+            "event_table": ["nu_pdg"],
+        }
+
     def __call__(self, event: pd.Series):
         if 12 <= abs(event.nu_pdg) <= 16:
             return self.nu
