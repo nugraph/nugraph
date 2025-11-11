@@ -12,6 +12,7 @@ from .types import Data
 from .transform import Transform
 from .encoder import Encoder
 from .core import NuGraphCore
+from .optical import NuGraphOptical
 from .decoders import (SemanticDecoder, FilterDecoder, EventDecoder, VertexDecoder, InstanceDecoder,
                        SpacepointDecoder)
 
@@ -31,6 +32,9 @@ class NuGraph3(LightningModule):
         nexus_features: Number of nexus node features
         interaction_features: Number of interaction node features
         instance_features: Number of instance features
+        ophit_features: Number of features in optical hit embedding
+        pmt_features: Number of features in PMT (flashsumpe) embedding
+        flash_features: Number of features in optical flash embedding
         planes: Tuple of detector plane names
         semantic_classes: Tuple of semantic classes
         event_classes: Tuple of event classes
@@ -41,6 +45,7 @@ class NuGraph3(LightningModule):
         vertex_head: Whether to enable vertex decoder
         instance_head: Whether to enable instance decoder
         spacepoint_head: Whether to enable spacepoint decoder
+        use_optical: Whether to perform message-passing in optical system
         use_checkpointing: Whether to use checkpointing
         lr: Learning rate
     """
@@ -50,6 +55,9 @@ class NuGraph3(LightningModule):
                  nexus_features: int = 32,
                  interaction_features: int = 32,
                  instance_features: int = 8,
+                 ophit_features: int = 128,
+                 pmt_features: int = 64,
+                 flash_features: int = 32,
                  planes: tuple[str] = ("u","v","y"),
                  semantic_classes: tuple[str] = ('MIP','HIP','shower','michel','diffuse'),
                  event_classes: tuple[str] = ('numu','nue','nc'),
@@ -60,6 +68,7 @@ class NuGraph3(LightningModule):
                  vertex_head: bool = False,
                  instance_head: bool = False,
                  spacepoint_head: bool = False,
+                 use_optical: bool = False,
                  use_checkpointing: bool = False,
                  lr: float = 0.001):
         super().__init__()
@@ -77,12 +86,21 @@ class NuGraph3(LightningModule):
         self.lr = lr
 
         self.encoder = Encoder(in_features, hit_features,
-                               nexus_features, interaction_features)
+                               nexus_features, interaction_features,
+                               ophit_features, pmt_features, flash_features, use_optical)
 
         self.core_net = NuGraphCore(hit_features,
                                     nexus_features,
                                     interaction_features,
                                     use_checkpointing)
+
+        if use_optical:
+            self.optical_net = NuGraphOptical(interaction_features=interaction_features,
+                                              nexus_features=nexus_features,
+                                              ophit_features=ophit_features,
+                                              pmt_features=pmt_features,
+                                              flash_features=flash_features,
+                                              use_checkpointing=use_checkpointing)
 
         self.decoders = []
 
@@ -128,6 +146,8 @@ class NuGraph3(LightningModule):
         self.encoder(data)
         for _ in range(self.num_iters):
             self.core_net(data)
+            if hasattr(self, "optical_net"):
+                self.optical_net(data)
         total_loss = 0.
         total_metrics = {}
         for decoder in self.decoders:
@@ -209,7 +229,7 @@ class NuGraph3(LightningModule):
         model = parser.add_argument_group('model', 'NuGraph3 model configuration')
         model.add_argument('--num-iters', type=int, default=5,
                            help='Number of message-passing iterations')
-        model.add_argument('--in-feats', type=int, default=5,
+        model.add_argument('--in-feats', type=int,
                            help='Number of input node features')
         model.add_argument('--hit-feats', type=int, default=128,
                            help='Hidden dimensionality of hit convolutions')
@@ -219,6 +239,12 @@ class NuGraph3(LightningModule):
                            help='Hidden dimensionality of interaction layer')
         model.add_argument('--instance-feats', type=int, default=8,
                            help='Hidden dimensionality of object condensation')
+        model.add_argument('--ophit-features', type=int, default=128,
+                           help='Number of optical hit features')
+        model.add_argument('--pmt-features', type=int, default=64,
+                           help='Number of PMT features')
+        model.add_argument('--flash-features', type=int, default=32,
+                           help='Number of optical flashes features')
         model.add_argument('--event', action='store_true',
                            help='Enable event classification head')
         model.add_argument('--semantic', action='store_true',
@@ -231,6 +257,8 @@ class NuGraph3(LightningModule):
                            help='Enable vertex regression head')
         model.add_argument("--spacepoint", action="store_true",
                            help="Enable spacepoint prediction head")
+        model.add_argument('--optical', action='store_true',
+                           help='Enable optical hierarchy')
         model.add_argument('--no-checkpointing', action='store_false',
                            dest="use_checkpointing",
                            help='Disable checkpointing during training')
@@ -249,12 +277,22 @@ class NuGraph3(LightningModule):
             args: Namespace containing parsed arguments
             nudata: Data module
         """
+
+        if args.in_feats is not None:
+            print(("Warning: the --in-feats argument has been deprecated, as the number of "
+                   "input features is now automatically detected from the dataset. Please "
+                   "update your workflow, as this argument will be removed in a future "
+                   "release."))
+
         return cls(
-            in_features=args.in_feats,
+            in_features=nudata.num_hit_features,
             hit_features=args.hit_feats,
             nexus_features=args.nexus_feats,
             interaction_features=args.interaction_feats,
             instance_features=args.instance_feats,
+            ophit_features=args.ophit_features,
+            pmt_features=args.pmt_features,
+            flash_features=args.flash_features,
             planes=nudata.planes,
             semantic_classes=nudata.semantic_classes,
             event_classes=nudata.event_classes,
@@ -265,5 +303,6 @@ class NuGraph3(LightningModule):
             vertex_head=args.vertex,
             instance_head=args.instance,
             spacepoint_head=args.spacepoint,
+            use_optical=args.optical,
             use_checkpointing=args.use_checkpointing,
             lr=args.learning_rate)

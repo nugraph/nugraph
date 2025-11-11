@@ -12,6 +12,8 @@ def configure():
                       help='add true vertex label to graphs')
     args.add_argument("--label-position", action="store_true",
                       help="add true 3D hit position to graphs")
+    args.add_argument("--optical", action="store_true",
+                      help="add optical hierarchy")
     return args.parse_args()  
 
 def process(args):
@@ -25,7 +27,8 @@ def process(args):
             semantic_labeller=pynuml.labels.StandardLabels(),
             event_labeller=pynuml.labels.FlavorLabels(),
             label_vertex=args.label_vertex,
-            label_position=args.label_position)
+            label_position=args.label_position,
+            optical=args.optical)
 
     # create output file stream
     out = pynuml.io.H5Out(args.outfile)
