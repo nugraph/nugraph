@@ -90,10 +90,12 @@ class NuGraphCore(nn.Module):
                  hit_features: int,
                  nexus_features: int,
                  interaction_features: int,
+                 instance_features: int,
                  use_checkpointing: bool = True):
         super().__init__()
 
         self.use_checkpointing = use_checkpointing
+        self.instance_features = instance_features
 
         # internal planar message-passing
         self.plane_net = NuGraphBlock(hit_features, hit_features,
@@ -116,6 +118,22 @@ class NuGraphCore(nn.Module):
         # message-passing from nexus nodes to planar nodes
         self.nexus_to_plane = NuGraphBlock(nexus_features, hit_features,
                                            hit_features)
+        
+        hidden = hit_features  # you can tune this
+
+        # input = [prev_beta (1), hit_x (hit_features)]
+        self.beta_core_mlp = nn.Sequential(
+            nn.Linear(hit_features + 1, hidden),
+            nn.Mish(),
+            nn.Linear(hidden, 1),
+        )
+
+        # input = [prev_coords (instance_features), hit_x (hit_features)]
+        self.coord_core_mlp = nn.Sequential(
+            nn.Linear(hit_features + instance_features, hidden),
+            nn.Mish(),
+            nn.Linear(hidden, instance_features),
+        )
 
     def checkpoint(self, net: nn.Module, *args) -> TD:
         """
@@ -137,7 +155,6 @@ class NuGraphCore(nn.Module):
         Args:
             data: Graph data object
         """
-
         # message-passing in hits
         data["hit"].x = self.checkpoint(
             self.plane_net, data["hit"].x,
@@ -162,3 +179,21 @@ class NuGraphCore(nn.Module):
         data["hit"].x = self.checkpoint(
             self.nexus_to_plane, (data["sp"].x, data["hit"].x),
             data["hit", "nexus", "sp"].edge_index[(1,0), :])
+
+ # New Shit
+        h = data["hit"]
+
+        if not hasattr(h, "of") or not hasattr(h, "ox"):
+            raise RuntimeError(
+                "NuGraphCore expected data['hit'].of and .ox to be set by Encoder."
+            )
+
+        # prev betas
+        beta_prev = h.of.unsqueeze(-1)        # [N] -> [N, 1]
+        coords_prev = h.ox                    # [N, instance_features]
+
+        beta_in = torch.cat([beta_prev, h.x], dim=1)
+        coord_in = torch.cat([coords_prev, h.x], dim=1)
+
+        h.of = self.beta_core_mlp(beta_in).squeeze(-1).sigmoid()
+        h.ox = self.coord_core_mlp(coord_in)

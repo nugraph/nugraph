@@ -17,12 +17,16 @@ class Encoder(torch.nn.Module):
                  in_features: int,
                  planar_features: int,
                  nexus_features: int,
-                 interaction_features: int):
+                 interaction_features: int,
+                 instance_features:int):
         super().__init__()
         self.input_norm = InputNorm(in_features)
         self.planar_net = torch.nn.Linear(in_features, planar_features)
         self.nexus_features = nexus_features
         self.interaction_features = interaction_features
+
+        self.beta_init_net = torch.nn.Linear(planar_features, 1)
+        self.coord_init_net = torch.nn.Linear(planar_features, instance_features)
 
     def forward(self, data: NuGraphData) -> None:
         """
@@ -39,3 +43,9 @@ class Encoder(torch.nn.Module):
         data["evt"].x = torch.zeros(data["evt"].num_nodes,
                                     self.interaction_features,
                                     device=data["hit"].x.device)
+
+        beta0 = self.beta_init_net(data["hit"].x).squeeze(-1).sigmoid()        
+        coords0 = self.coord_init_net(data["hit"].x)                           
+
+        data["hit"].of = beta0
+        data["hit"].ox = coords0
