@@ -1,7 +1,4 @@
 #!/usr/bin/env python
-"""
-Group Michel hits → Sum energies → Apply 30 MeV Gaussian penalty
-"""
 
 import os
 import sys
@@ -9,24 +6,47 @@ import argparse
 import torch
 import pytorch_lightning as pl
 import json
-import csv
 import time
 import logging
 from datetime import datetime
 import matplotlib.pyplot as plt
 import numpy as np
-import seaborn as sns
-from sklearn.metrics import confusion_matrix, classification_report
-import pandas as pd
-import gc
 from pathlib import Path
+import seaborn as sns
+from sklearn.metrics import confusion_matrix
+import gc
+import tqdm
 
-# environment variables
+# Environment setup
 os.environ['WANDB_MODE'] = 'disabled'
 os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'max_split_size_mb:128,expandable_segments:True'
 
+def cleanup_memory():
+    """Comprehensive memory cleanup"""
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        torch.cuda.synchronize()
+    gc.collect()
+
+def cleanup_batch_memory(batch):
+    """Clean up batch-specific memory"""
+    try:
+        for node_type in batch.node_types:
+            node_store = batch.get_node_store(node_type)
+            if hasattr(node_store, 'x') and node_store.x is not None:
+                if node_store.x.grad is not None:
+                    node_store.x.grad = None
+        
+        for edge_type in batch.edge_types:
+            edge_store = batch.get_edge_store(*edge_type)
+            if hasattr(edge_store, 'edge_index') and edge_store.edge_index.grad is not None:
+                edge_store.edge_index.grad = None
+                
+    except Exception as e:
+        print(f"Batch cleanup warning: {e}")
+
 def setup_nugraph_environment():
-    """nugraph environment variables"""
+    """Setup nugraph environment variables"""
     try:
         current_file = os.path.abspath(__file__)
         nugraph_dir = os.path.dirname(current_file)
@@ -48,211 +68,932 @@ def setup_nugraph_environment():
         print(f"NuGraph environment setup failed: {e}")
         return False
 
-# environment
 setup_nugraph_environment()
-
-# matplotlib
 plt.switch_backend('Agg')
 
-# Ensure deterministic behavior
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
 
-# Michel regularizer with instance decoder
-class MichelRegularizer:
-    def __init__(self, lambda_param=0.1, verbose=False):
+class MemoryCleanupCallback(pl.Callback):
+    def __init__(self, metrics_logger):
+        super().__init__()
+        self.metrics_logger = metrics_logger
+    
+    def on_train_epoch_start(self, trainer, pl_module):
+        """Reset epoch metrics at start of each epoch"""
+        self.metrics_logger.reset_epoch_metrics()
+    
+    def on_train_epoch_end(self, trainer, pl_module):
+        """Log epoch summary and cleanup memory"""
+        self.metrics_logger.log_epoch_summary(trainer.current_epoch)
+        cleanup_memory()
+        print(f"Epoch {trainer.current_epoch} completed - memory cleaned")
+    
+    def on_validation_epoch_end(self, trainer, pl_module):
+        cleanup_memory()
+
+
+class CorrectedMichelEnergyAnalyzer:
+    """Analyzer with overlap filtering and diagnostics - NO THRESHOLDS"""
+
+    def __init__(self, overlap_threshold=0.5, verbose=False):
+        self.overlap_threshold = overlap_threshold
+        self.verbose = verbose
+        self.true_clusters = []
+        self.predicted_clusters = []
+        self.validated_predicted_clusters = []
+
+        self.all_true_labels = []
+        self.all_pred_labels = []
+
+    def analyze_batch(self, batch, predictions=None):
+        """Analyze true, predicted, and validated predicted Michel clusters"""
+
+        if predictions is not None:
+            self._collect_labels_for_confusion_matrix(batch, predictions)
+
+        if ('hit', 'cluster-truth', 'particle-truth') not in batch.edge_types:
+            if self.verbose:
+                print("   No ground truth clustering edges found")
+            return
+
+        true_clusters = self._analyze_true_clusters_with_diagnostics(batch, predictions)
+        self.true_clusters.extend(true_clusters)
+
+        if predictions is not None:
+            pred_clusters = self._analyze_predicted_clusters_with_instance_decoder(batch, predictions)
+            self.predicted_clusters.extend(pred_clusters)
+
+            validated_clusters = self._filter_predicted_by_overlap(batch, pred_clusters, true_clusters)
+            self.validated_predicted_clusters.extend(validated_clusters)
+
+        if self.verbose:
+            print(f"   True: {len(true_clusters)}, "
+                  f"Predicted: {len(pred_clusters) if predictions is not None else 0}, "
+                  f"Validated: {len(validated_clusters) if predictions is not None else 0}")
+
+    def _collect_labels_for_confusion_matrix(self, batch, predictions):
+        """Collect true and predicted labels for confusion matrix"""
+        try:
+            hit_store = batch.get_node_store('hit')
+
+            if 'y_semantic' not in hit_store:
+                return
+
+            y_true = hit_store['y_semantic'].cpu().numpy()
+            y_pred = torch.argmax(predictions, dim=1).cpu().numpy()
+
+            self.all_true_labels.extend(y_true.tolist())
+            self.all_pred_labels.extend(y_pred.tolist())
+
+        except Exception as e:
+            if self.verbose:
+                print(f"Label collection error: {e}")
+
+    def _analyze_true_clusters_with_diagnostics(self, batch, predictions=None):
+        """Analyze true Michel clusters and track their predicted probabilities"""
+        try:
+            hit_store = batch.get_node_store('hit')
+
+            truth_edge_type = ('hit', 'cluster-truth', 'particle-truth')
+            if 'y_semantic' not in hit_store:
+                return []
+
+            y_semantic = hit_store['y_semantic']
+            edge_index = batch[truth_edge_type].edge_index
+            hit_indices = edge_index[0]
+            particle_indices = edge_index[1]
+
+            if predictions is not None:
+                probabilities = torch.softmax(predictions, dim=1)
+            else:
+                probabilities = None
+
+            michel_mask = y_semantic == 3
+            michel_hit_indices = torch.where(michel_mask)[0]
+
+            if len(michel_hit_indices) == 0:
+                return []
+
+            michel_particles = set()
+            for hit_idx in michel_hit_indices:
+                particle_mask = hit_indices == hit_idx
+                if torch.any(particle_mask):
+                    particle_id = particle_indices[particle_mask][0]
+                    michel_particles.add(particle_id.item())
+
+            clusters = []
+
+            for particle_id in michel_particles:
+                particle_mask = particle_indices == particle_id
+                particle_hit_indices = hit_indices[particle_mask]
+
+                particle_energies = hit_store['x_raw'][particle_hit_indices, 2]
+                total_energy_mev = torch.sum(particle_energies) * 0.00580717
+
+                particle_semantic_labels = y_semantic[particle_hit_indices]
+                michel_fraction = torch.sum(particle_semantic_labels == 3).float() / len(particle_hit_indices)
+
+                predicted_class_probs = {'MIP': 0.0, 'HIP': 0.0, 'Shower': 0.0, 'Michel': 0.0, 'Diffuse': 0.0}
+                predicted_max_class = 'Unknown'
+                would_be_predicted = False
+
+                if probabilities is not None:
+                    particle_probs = probabilities[particle_hit_indices]
+                    avg_class_probs = torch.mean(particle_probs, dim=0)
+
+                    predicted_class_probs = {
+                        'MIP': avg_class_probs[0].item(),
+                        'HIP': avg_class_probs[1].item(),
+                        'Shower': avg_class_probs[2].item(),
+                        'Michel': avg_class_probs[3].item(),
+                        'Diffuse': avg_class_probs[4].item()
+                    }
+
+                    max_prob_class_idx = torch.argmax(avg_class_probs)
+                    class_names = ['MIP', 'HIP', 'Shower', 'Michel', 'Diffuse']
+                    predicted_max_class = class_names[max_prob_class_idx.item()]
+                    would_be_predicted = (max_prob_class_idx == 3)
+
+                cluster_info = {
+                    'cluster_id': f'true_{particle_id}',
+                    'energy_mev': total_energy_mev.item(),
+                    'num_hits': len(particle_hit_indices),
+                    'michel_fraction': michel_fraction.item(),
+                    'predicted_class_probs': predicted_class_probs,
+                    'predicted_max_class': predicted_max_class,
+                    'would_be_predicted': would_be_predicted,
+                    'cluster_type': 'true',
+                    'hit_indices': particle_hit_indices.cpu().numpy()
+                }
+
+                clusters.append(cluster_info)
+
+            return clusters
+
+        except Exception as e:
+            if self.verbose:
+                print(f"True cluster analysis error: {e}")
+            return []
+
+    def _filter_predicted_by_overlap(self, batch, pred_clusters, true_clusters_in_batch):
+        """Filter predicted clusters by overlap with true Michel particles"""
+        try:
+            if not pred_clusters or not true_clusters_in_batch:
+                return []
+
+            current_batch_true_michel_hits = set()
+            for true_cluster in true_clusters_in_batch:
+                if 'hit_indices' in true_cluster:
+                    current_batch_true_michel_hits.update(true_cluster['hit_indices'])
+
+            validated_clusters = []
+
+            for pred_cluster in pred_clusters:
+                if 'hit_indices' not in pred_cluster:
+                    continue
+
+                pred_hits = set(pred_cluster['hit_indices'])
+
+                overlap_hits = pred_hits.intersection(current_batch_true_michel_hits)
+                overlap_fraction = len(overlap_hits) / len(pred_hits) if len(pred_hits) > 0 else 0.0
+
+                if overlap_fraction >= self.overlap_threshold:
+                    validated_cluster = pred_cluster.copy()
+                    validated_cluster['overlap_fraction'] = overlap_fraction
+                    validated_cluster['cluster_type'] = 'validated_predicted'
+                    validated_clusters.append(validated_cluster)
+
+            return validated_clusters
+
+        except Exception as e:
+            if self.verbose:
+                print(f"Overlap filtering error: {e}")
+            return []
+
+    def _analyze_predicted_clusters_with_instance_decoder(self, batch, predictions):
+        """Analyze predicted Michel clusters using max probability approach"""
+        try:
+            hit_store = batch.get_node_store('hit')
+
+            edge_type = ('hit', 'cluster', 'particle')
+            if edge_type not in batch.edge_types:
+                return []
+
+            edge_index = batch[edge_type].edge_index
+            hit_indices = edge_index[0]
+            instance_indices = edge_index[1]
+
+            max_hit_index = hit_store['x_raw'].size(0) - 1
+            if hit_indices.numel() == 0 or instance_indices.numel() == 0:
+                return []
+
+            valid_hit_mask = (hit_indices >= 0) & (hit_indices <= max_hit_index)
+            if not torch.all(valid_hit_mask):
+                hit_indices = hit_indices[valid_hit_mask]
+                instance_indices = instance_indices[valid_hit_mask]
+
+            if hit_indices.numel() == 0:
+                return []
+
+            probabilities = torch.softmax(predictions, dim=1)
+
+            unique_instances = torch.unique(instance_indices)
+            clusters = []
+
+            for instance_id in unique_instances:
+                instance_mask = instance_indices == instance_id
+                instance_hits = hit_indices[instance_mask]
+
+                if torch.any(instance_hits >= hit_store['x_raw'].size(0)):
+                    continue
+
+                instance_probs = probabilities[instance_hits]
+                avg_class_probs = torch.mean(instance_probs, dim=0)
+
+                max_prob_class = torch.argmax(avg_class_probs)
+                michel_class_idx = 3
+
+                if max_prob_class == michel_class_idx:
+                    avg_michel_prob = avg_class_probs[michel_class_idx]
+
+                    instance_energies = hit_store['x_raw'][instance_hits, 2]
+                    total_energy_raw = torch.sum(instance_energies)
+                    total_energy_mev = total_energy_raw * 0.00580717
+
+                    true_michel_fraction = 0.0
+                    if 'y_semantic' in hit_store:
+                        instance_gt_labels = hit_store['y_semantic'][instance_hits]
+                        true_michel_fraction = torch.sum(instance_gt_labels == 3).float() / len(instance_hits)
+
+                    cluster_info = {
+                        'cluster_id': f'pred_{instance_id.item()}',
+                        'energy_mev': total_energy_mev.item(),
+                        'num_hits': len(instance_hits),
+                        'avg_michel_prob': avg_michel_prob.item(),
+                        'all_class_probs': {
+                            'MIP': avg_class_probs[0].item(),
+                            'HIP': avg_class_probs[1].item(),
+                            'Shower': avg_class_probs[2].item(),
+                            'Michel': avg_class_probs[3].item(),
+                            'Diffuse': avg_class_probs[4].item()
+                        },
+                        'true_michel_fraction': true_michel_fraction.item(),
+                        'cluster_type': 'predicted',
+                        'hit_indices': instance_hits.cpu().numpy()
+                    }
+
+                    clusters.append(cluster_info)
+
+            return clusters
+
+        except Exception as e:
+            if self.verbose:
+                print(f"Predicted cluster analysis error: {e}")
+            return []
+
+    def get_energy_data(self):
+        """Get energy data for three-way plotting"""
+        true_energies = [c['energy_mev'] for c in self.true_clusters]
+        pred_energies = [c['energy_mev'] for c in self.predicted_clusters]
+        validated_energies = [c['energy_mev'] for c in self.validated_predicted_clusters]
+        
+        return true_energies, pred_energies, validated_energies
+    
+    def plot_energy_spectra(self, output_dir):
+        """Create three-panel energy spectrum plot"""
+        true_energies, pred_energies, validated_energies = self.get_energy_data()
+        
+        fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+        
+        if true_energies:
+            axes[0].hist(true_energies, bins=50, alpha=0.7, color='blue', edgecolor='black')
+            axes[0].axvline(40, color='red', linestyle='--', linewidth=2, label='Target: 40 MeV')
+            axes[0].set_xlabel('Energy (MeV)')
+            axes[0].set_ylabel('Count')
+            axes[0].set_title(f'True Michel Energy Spectrum\n(n={len(true_energies)})')
+            axes[0].legend()
+            axes[0].grid(True, alpha=0.3)
+            
+            mean_energy = np.mean(true_energies)
+            std_energy = np.std(true_energies)
+            axes[0].text(0.05, 0.95, f'Mean: {mean_energy:.1f} MeV\nStd: {std_energy:.1f} MeV', 
+                        transform=axes[0].transAxes, verticalalignment='top',
+                        bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+        else:
+            axes[0].text(0.5, 0.5, 'No true Michel clusters', 
+                        transform=axes[0].transAxes, ha='center', va='center')
+            axes[0].set_title('True Michel Energy Spectrum\n(n=0)')
+        
+        if pred_energies:
+            axes[1].hist(pred_energies, bins=50, alpha=0.7, color='orange', edgecolor='black')
+            axes[1].axvline(40, color='red', linestyle='--', linewidth=2, label='Target: 40 MeV')
+            axes[1].set_xlabel('Energy (MeV)')
+            axes[1].set_ylabel('Count')
+            axes[1].set_title(f'Predicted Michel Energy Spectrum\n(n={len(pred_energies)})')
+            axes[1].legend()
+            axes[1].grid(True, alpha=0.3)
+            
+            mean_energy = np.mean(pred_energies)
+            std_energy = np.std(pred_energies)
+            axes[1].text(0.05, 0.95, f'Mean: {mean_energy:.1f} MeV\nStd: {std_energy:.1f} MeV', 
+                        transform=axes[1].transAxes, verticalalignment='top',
+                        bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+        else:
+            axes[1].text(0.5, 0.5, 'No predicted Michel clusters', 
+                        transform=axes[1].transAxes, ha='center', va='center')
+            axes[1].set_title('Predicted Michel Energy Spectrum\n(n=0)')
+        
+        if validated_energies:
+            axes[2].hist(validated_energies, bins=50, alpha=0.7, color='green', edgecolor='black')
+            axes[2].axvline(40, color='red', linestyle='--', linewidth=2, label='Target: 40 MeV')
+            axes[2].set_xlabel('Energy (MeV)')
+            axes[2].set_ylabel('Count')
+            axes[2].set_title(f'Validated Michel Energy Spectrum\n(≥{self.overlap_threshold*100:.0f}% overlap, n={len(validated_energies)})')
+            axes[2].legend()
+            axes[2].grid(True, alpha=0.3)
+            
+            mean_energy = np.mean(validated_energies)
+            std_energy = np.std(validated_energies)
+            axes[2].text(0.05, 0.95, f'Mean: {mean_energy:.1f} MeV\nStd: {std_energy:.1f} MeV', 
+                        transform=axes[2].transAxes, verticalalignment='top',
+                        bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+        else:
+            axes[2].text(0.5, 0.5, 'No validated Michel clusters', 
+                        transform=axes[2].transAxes, ha='center', va='center')
+            axes[2].set_title(f'Validated Michel Energy Spectrum\n(≥{self.overlap_threshold*100:.0f}% overlap, n=0)')
+        
+        plt.tight_layout()
+        
+        energy_plot_path = Path(output_dir) / "michel_energy_spectra.png"
+        plt.savefig(energy_plot_path, dpi=300, bbox_inches='tight')
+        plt.close()
+        
+        print(f"Energy spectra plot saved: {energy_plot_path}")
+        return energy_plot_path
+    
+    def plot_confusion_matrix(self, output_dir):
+        """Create confusion matrix plot"""
+        if not self.all_true_labels or not self.all_pred_labels:
+            print("No labels available for confusion matrix")
+            return None
+        
+        class_names = ['MIP', 'HIP', 'Shower', 'Michel', 'Diffuse']
+        
+        cm = confusion_matrix(self.all_true_labels, self.all_pred_labels, 
+                            labels=list(range(len(class_names))))
+        
+        cm_normalized = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
+        
+        plt.figure(figsize=(10, 8))
+        sns.heatmap(cm_normalized, annot=True, fmt='.3f', 
+                   xticklabels=class_names, yticklabels=class_names,
+                   cmap='Blues', cbar_kws={'label': 'Fraction'})
+        
+        plt.xlabel('Predicted Label')
+        plt.ylabel('True Label')
+        plt.title('Semantic Classification Confusion Matrix\n(Normalized by True Class)')
+        
+        for i in range(len(class_names)):
+            for j in range(len(class_names)):
+                plt.text(j+0.5, i+0.7, f'({cm[i,j]})', 
+                        ha='center', va='center', fontsize=8, color='gray')
+        
+        plt.tight_layout()
+        
+        cm_plot_path = Path(output_dir) / "confusion_matrix.png"
+        plt.savefig(cm_plot_path, dpi=300, bbox_inches='tight')
+        plt.close()
+        
+        print(f"Confusion matrix plot saved: {cm_plot_path}")
+        return cm_plot_path
+    
+    def print_diagnostics(self):
+        """Print comprehensive diagnostic information"""
+        print(f"\nMichel Cluster Diagnostics:")
+        print(f"   Total true Michel particles: {len(self.true_clusters)}")
+        print(f"   Total predicted clusters: {len(self.predicted_clusters)}")
+        print(f"   Validated predicted clusters: {len(self.validated_predicted_clusters)}")
+        
+        if self.true_clusters:
+            would_predict = [c['would_be_predicted'] for c in self.true_clusters]
+            predicted_classes = [c['predicted_max_class'] for c in self.true_clusters]
+            
+            print(f"\nTrue Michel Prediction Analysis:")
+            print(f"   Would be predicted as Michel: {sum(would_predict)}/{len(would_predict)} ({100*sum(would_predict)/len(would_predict):.1f}%)")
+            
+            from collections import Counter
+            class_counts = Counter(predicted_classes)
+            print(f"   Predicted classes for true Michel particles:")
+            for class_name, count in class_counts.items():
+                percentage = 100 * count / len(predicted_classes)
+                print(f"     {class_name}: {count}/{len(predicted_classes)} ({percentage:.1f}%)")
+            
+            michel_probs = [c['predicted_class_probs']['Michel'] for c in self.true_clusters]
+            print(f"   Average Michel probability for true Michel particles: {np.mean(michel_probs):.3f}")
+            
+        if self.validated_predicted_clusters:
+            overlaps = [c['overlap_fraction'] for c in self.validated_predicted_clusters]
+            print(f"\nValidated Cluster Overlap Analysis:")
+            print(f"   Average overlap: {np.mean(overlaps):.2f}")
+            print(f"   Overlap range: {np.min(overlaps):.2f} - {np.max(overlaps):.2f}")
+
+
+class ImprovedMichelRegularizer:
+    """
+    - Target energy: 40 MeV
+    - Max probability approach (NO THRESHOLDS)
+    - Anti-fragmentation penalty 
+    - Strong penalty for high-energy clusters (≥100 MeV)
+    """
+    def __init__(self, lambda_param=0.1, target_energy=40.0, high_energy_threshold=100.0, verbose=False):
         self.lambda_param = lambda_param
+        self.target_energy = target_energy
+        self.high_energy_threshold = high_energy_threshold
         self.verbose = verbose
 
     def __call__(self, batch):
-        """instance decoder outputs for Michel clustering"""
+        """Apply improved Michel physics regularization"""
         try:
             hit_store = batch.get_node_store('hit')
             
-            # Use instance decoder output edges
             if ('hit', 'cluster', 'particle') in batch.edge_types:
-                return self._instance_based_regularization(batch, ('hit', 'cluster', 'particle'))
+                return self._improved_regularization(batch, ('hit', 'cluster', 'particle'))
             
-            # Fallback if no clustering available
             device = hit_store['x_raw'].device
             return torch.tensor(0.0, device=device, requires_grad=True)
             
         except Exception as e:
             if self.verbose:
                 print(f"   Regularization error: {e}")
-            device = torch.device('cuda')
+            device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
             return torch.tensor(0.0, device=device, requires_grad=True)
     
-    def _instance_based_regularization(self, batch, edge_type):
+    def _improved_regularization(self, batch, edge_type):
+        """Apply improved physics constraints with max probability approach and anti-fragmentation"""
         try:
             hit_store = batch.get_node_store('hit')
         
-            # hit-to-instance mapping from instance decoder
             edge_index = batch[edge_type].edge_index
             hit_indices = edge_index[0]
             instance_indices = edge_index[1]
 
-            #Check bounds
             max_hit_index = hit_store['x_raw'].size(0) - 1
             valid_mask = hit_indices <= max_hit_index
-
             if not torch.all(valid_mask):
-                print(f"   WARNING: Found invalid hit indices, filtering them out")
                 hit_indices = hit_indices[valid_mask]
                 instance_indices = instance_indices[valid_mask]
         
-            # Michel probabilities
             probabilities = torch.softmax(hit_store['x_semantic'], dim=1)
-            michel_probs = probabilities[:, 3]
+            
+            y_true = hit_store.get('y_semantic', None)
         
-            # Process each instance
             unique_instances = torch.unique(instance_indices)
             total_reg_loss = torch.tensor(0.0, device=hit_store['x_raw'].device, requires_grad=True)
-            michel_instances_found = 0
+            michel_instances_processed = 0
+            
+            # Anti-fragmentation loss
+            fragmentation_loss = torch.tensor(0.0, device=hit_store['x_raw'].device, requires_grad=True)
+            
+            if y_true is not None and ('hit', 'cluster-truth', 'particle-truth') in batch.edge_types:
+                truth_edge_type = ('hit', 'cluster-truth', 'particle-truth')
+                truth_edge_index = batch[truth_edge_type].edge_index
+                truth_hit_indices = truth_edge_index[0]
+                truth_particle_indices = truth_edge_index[1]
+                
+                michel_mask = y_true == 3
+                michel_hit_indices_set = set(torch.where(michel_mask)[0].cpu().numpy().tolist())
+                
+                michel_particles = set()
+                for hit_idx in michel_hit_indices_set:
+                    if hit_idx < 0 or hit_idx > max_hit_index:
+                        continue
+                    hit_idx_tensor = torch.tensor([hit_idx], device=truth_hit_indices.device, dtype=truth_hit_indices.dtype)
+                    particle_mask = truth_hit_indices == hit_idx_tensor
+                    if torch.any(particle_mask):
+                        particle_id = truth_particle_indices[particle_mask][0]
+                        michel_particles.add(particle_id.item())
+                
+                for true_particle_id in michel_particles:
+                    particle_mask = truth_particle_indices == true_particle_id
+                    true_particle_hit_indices = truth_hit_indices[particle_mask]
+                    
+                    if len(true_particle_hit_indices) == 0:
+                        continue
+                    
+                    instance_assignments = []
+                    for true_hit in true_particle_hit_indices:
+                        true_hit_item = true_hit.item()
+                        if true_hit_item < 0 or true_hit_item > max_hit_index:
+                            continue
+                        pred_mask = hit_indices == true_hit
+                        if torch.any(pred_mask):
+                            assigned_instance = instance_indices[pred_mask][0]
+                            instance_assignments.append(assigned_instance.item())
+                    
+                    if len(instance_assignments) > 0:
+                        num_unique_instances = len(set(instance_assignments))
+                        
+                        if num_unique_instances > 1:
+                            frag_penalty = self.lambda_param * (num_unique_instances - 1) * 2.0
+                            fragmentation_loss = fragmentation_loss + frag_penalty
+                            
+                            if self.verbose:
+                                print(f"     TRUE Michel particle {true_particle_id} fragmented into {num_unique_instances} instances")
         
             for instance_id in unique_instances:
                 instance_mask = instance_indices == instance_id
                 instance_hits = hit_indices[instance_mask]
 
-                if torch.any(instance_hits >= hit_store['x_raw'].size(0)):
-                    print(f"   Skipping instance {instance_id} - invalid hit indices")
+                if instance_hits.numel() == 0:
                     continue
-            
-                # Check if this instance is likely a Michel electron
-                instance_michel_probs = michel_probs[instance_hits]
-                avg_michel_prob = torch.mean(instance_michel_probs)
+                    
+                if torch.any(instance_hits >= hit_store['x_raw'].size(0)) or torch.any(instance_hits < 0):
+                    continue
 
-                #if michel_instances_found < 3:
-                    #print(f"   Instance {instance_id}: {len(instance_hits)} hits, avg Michel prob: {avg_michel_prob.item():.3f}")
+                if torch.any(instance_hits >= probabilities.size(0)) or torch.any(instance_hits < 0):
+                    continue
+                    
+                instance_probs = probabilities[instance_hits]
+                avg_class_probs = torch.mean(instance_probs, dim=0)
+                
+                max_prob_class = torch.argmax(avg_class_probs)
+                michel_class_idx = 3
+                
+                if max_prob_class == michel_class_idx:
+                    michel_instances_processed += 1
+                    avg_michel_prob = avg_class_probs[michel_class_idx]
+                    
+                    try:
+                        instance_energies = hit_store['x_raw'][instance_hits, 2]
+                        total_energy_raw = torch.sum(instance_energies)
+                        total_energy_mev = total_energy_raw * 0.00580717
+                    except (IndexError, RuntimeError) as e:
+                        if self.verbose:
+                            print(f"Energy calculation error for instance {instance_id}: {e}")
+                        continue
+                
+                    is_true_michel = False
+                    true_michel_purity = 0.0
+                    if y_true is not None:
+                        instance_gt = y_true[instance_hits]
+                        true_michel_fraction = torch.sum(instance_gt == 3).float() / len(instance_hits)
+                        true_michel_purity = true_michel_fraction.item()
+                        is_true_michel = true_michel_fraction > 0.5
+                    
+                    sigma = 10.0
+                    energy_diff = total_energy_mev - self.target_energy
+                    gaussian_penalty = torch.exp(-0.5 * (energy_diff / sigma)**2)
+                    
+                    high_energy_penalty = torch.tensor(0.0, device=hit_store['x_raw'].device)
+                    if total_energy_mev >= self.high_energy_threshold:
+                        high_energy_penalty = self.lambda_param * avg_michel_prob * 10.0
+                    
+                    if y_true is not None:
+                        if is_true_michel:
+                            energy_loss = self.lambda_param * avg_michel_prob * (1 - gaussian_penalty)
+                        else:
+                            false_positive_penalty = self.lambda_param * avg_michel_prob * 5.0
+                            
+                            if true_michel_purity > 0 and true_michel_purity < 0.5:
+                                impurity_penalty = self.lambda_param * avg_michel_prob * (1 - true_michel_purity) * 2.0
+                                false_positive_penalty = false_positive_penalty + impurity_penalty
+                            
+                            energy_loss = false_positive_penalty
+                    else:
+                        energy_loss = self.lambda_param * avg_michel_prob * (1 - gaussian_penalty)
+                    
+                    total_instance_loss = energy_loss + high_energy_penalty
+                    total_reg_loss = total_reg_loss + total_instance_loss
+                    
+                    if self.verbose and michel_instances_processed <= 3:
+                        print(f"     Instance {instance_id}: {len(instance_hits)} hits")
+                        print(f"     Class probs: MIP={avg_class_probs[0]:.3f}, HIP={avg_class_probs[1]:.3f}, "
+                              f"Shower={avg_class_probs[2]:.3f}, Michel={avg_class_probs[3]:.3f}, "
+                              f"Diffuse={avg_class_probs[4]:.3f}")
+                        print(f"     Energy: {total_energy_mev:.2f} MeV, True Michel: {is_true_michel}, Purity: {true_michel_purity:.2f}")
+                        print(f"     Energy loss: {energy_loss.item():.6f}, High-E penalty: {high_energy_penalty.item():.6f}")
             
-                if avg_michel_prob > 0.25:  # Michel electron threshold
-                    michel_instances_found += 1
-                
-                    # Sum energy for complete Michel electron instance
-                    instance_energies = hit_store['x_raw'][instance_hits, 2]
-                    total_energy_raw = torch.sum(instance_energies)
-                    total_energy_mev = total_energy_raw * 0.00580717  # Landau conversion
-                
-                    # Apply 30 MeV Gaussian penalty
-                    target_energy = 30.0  # MeV per complete Michel electron
-                
-                    if total_energy_mev > 5.0:  # Only regularize reasonable energies
-                        sigma = 10.0  # Tolerance around 30 MeV
-                        prob_weight = avg_michel_prob  # Weight by Michel probability
-                    
-                        # Gaussian penalty around target
-                        energy_diff = total_energy_mev - target_energy
-                        gaussian_penalty = torch.exp(-0.5 * (energy_diff / sigma)**2)
-                        instance_loss = self.lambda_param * prob_weight * (1 - gaussian_penalty) * 10
-                    
-                        total_reg_loss = total_reg_loss + instance_loss
-                    
-                        if self.verbose and michel_instances_found <= 3:  # Log first few
-                            print(f"     Michel instance {instance_id}: {len(instance_hits)} hits")
-                            print(f"     Avg Michel prob: {avg_michel_prob.item():.3f}")
-                            print(f"     Total energy: {total_energy_mev.item():.2f} MeV")
-                            print(f"     Loss contribution: {instance_loss.item():.6f}")
-        
-            #if michel_instances_found == 0:
-                #print(f"   No instances with avg Michel prob > 0.3 found (checked {len(unique_instances)} instances)")
-            #else:
-                #print(f"   Found {michel_instances_found} Michel instances")
+            total_reg_loss = total_reg_loss + fragmentation_loss
         
             if self.verbose:
+                print(f"   Processed {michel_instances_processed} Michel instances")
+                print(f"   Fragmentation loss: {fragmentation_loss.item():.6f}")
                 print(f"   Total regularization loss: {total_reg_loss.item():.6f}")
         
             return total_reg_loss
         
         except Exception as e:
             if self.verbose:
-                print(f"   Instance regularization error: {e}")
+                print(f"   Regularization error: {e}")
             device = hit_store['x_raw'].device
             return torch.tensor(0.0, device=device, requires_grad=True)
 
-def verify_gradient_flow(model, batch, michel_reg, verbose=True):
-    """Verify that gradients flow through the regularization"""
-    if verbose:
-        print("GRADIENT FLOW VERIFICATION:")
-        print("-" * 50)
-    
+
+def fix_batch_structure(batch):
+    """Fix batch structure for all node types including sp"""
     try:
-        with torch.no_grad():
-            hit_store = batch.get_node_store('hit')
+        for node_type in batch.node_types:
+            node_store = batch.get_node_store(node_type)
             
-            if verbose:
-                print(f"  Semantic logits require_grad: {hit_store['x_semantic'].requires_grad}")
-                print(f"  Regularizer callable: {callable(michel_reg)}")
+            if node_store.num_nodes == 0:
+                continue
         
-        with torch.enable_grad():
-            reg_loss = michel_reg(batch)
+            if node_type == 'sp' and (not hasattr(node_store, 'x') or node_store.x is None or node_store.x.size(1) == 0):
+                device = batch.get_node_store('hit').x.device
+                node_store.x = torch.zeros(node_store.num_nodes, 16, device=device)
+        
+            elif node_type == 'evt' and (not hasattr(node_store, 'x') or node_store.x is None or node_store.x.size(1) == 0):
+                device = batch.get_node_store('hit').x.device  
+                node_store.x = torch.zeros(node_store.num_nodes, 16, device=device)
             
-            if verbose:
-                print(f"  Reg loss value: {reg_loss.item():.6f}")
-                print(f"  Reg loss require_grad: {reg_loss.requires_grad}")
-                print(f"  Reg loss is leaf: {reg_loss.is_leaf}")
-            
-            if reg_loss.requires_grad and reg_loss.item() > 0:
-                has_grad_fn = reg_loss.grad_fn is not None
-                
-                if verbose:
-                    print(f"  Tensor has grad_fn: {has_grad_fn}")
-                    if has_grad_fn:
-                        print(f"SUCCESS: Regularization is part of computational graph!")
-                        print(f"Gradients will flow during training!")
+            elif node_type == 'particle-truth' and (not hasattr(node_store, 'x') or node_store.x is None or node_store.x.size(1) == 0):
+                device = batch.get_node_store('hit').x.device
+                node_store.x = torch.zeros(node_store.num_nodes, 8, device=device)
+        
+            if hasattr(batch, '_slice_dict') and node_type not in batch._slice_dict:
+                if hasattr(node_store, 'ptr') and node_store.ptr is not None:
+                    batch._slice_dict[node_type] = {'x': node_store.ptr}
+                else:
+                    device = batch.get_node_store('hit').x.device
+                    if batch.num_graphs > 0:
+                        step_size = max(1, node_store.num_nodes // batch.num_graphs)
+                        node_store.ptr = torch.arange(0, node_store.num_nodes + step_size, step_size, 
+                                                     device=device, dtype=torch.long)
+                        if node_store.ptr[-1] != node_store.num_nodes:
+                            node_store.ptr[-1] = node_store.num_nodes
                     else:
-                        print(f"   Tensor is detached from computational graph")
-                
-                return has_grad_fn
-            else:
-                if verbose:
-                    print(f" No gradients to test (zero loss or no grad)")
-                return False
+                        node_store.ptr = torch.tensor([0, node_store.num_nodes], device=device, dtype=torch.long)
+                    batch._slice_dict[node_type] = {'x': node_store.ptr}
+        
+            if hasattr(batch, '_inc_dict') and node_type not in batch._inc_dict:
+                device = batch.get_node_store('hit').x.device
+                batch._inc_dict[node_type] = {'x': torch.zeros(batch.num_graphs, device=device, dtype=torch.long)}
+                    
+    except Exception as e:
+        print(f"Batch fixing error: {e}")
+
+    return batch
+
+
+def track_fragmentation_stats(batch, frag_stats):
+    """Helper to track fragmentation without logger dependency"""
+    try:
+        hit_store = batch.get_node_store('hit')
+        
+        if ('hit', 'cluster-truth', 'particle-truth') not in batch.edge_types:
+            return
+        if ('hit', 'cluster', 'particle') not in batch.edge_types:
+            return
+        if 'y_semantic' not in hit_store:
+            return
+        
+        y_true = hit_store['y_semantic']
+        
+        truth_edge_type = ('hit', 'cluster-truth', 'particle-truth')
+        truth_edge_index = batch[truth_edge_type].edge_index
+        truth_hit_indices = truth_edge_index[0]
+        truth_particle_indices = truth_edge_index[1]
+        
+        pred_edge_type = ('hit', 'cluster', 'particle')
+        pred_edge_index = batch[pred_edge_type].edge_index
+        pred_hit_indices = pred_edge_index[0]
+        pred_instance_indices = pred_edge_index[1]
+        
+        max_hit_index = y_true.size(0) - 1
+        if max_hit_index < 0:
+            return
+        
+        valid_truth_mask = (truth_hit_indices >= 0) & (truth_hit_indices <= max_hit_index)
+        if not torch.all(valid_truth_mask):
+            truth_hit_indices = truth_hit_indices[valid_truth_mask]
+            truth_particle_indices = truth_particle_indices[valid_truth_mask]
+        
+        valid_pred_mask = (pred_hit_indices >= 0) & (pred_hit_indices <= max_hit_index)
+        if not torch.all(valid_pred_mask):
+            pred_hit_indices = pred_hit_indices[valid_pred_mask]
+            pred_instance_indices = pred_instance_indices[valid_pred_mask]
+        
+        if truth_hit_indices.numel() == 0 or pred_hit_indices.numel() == 0:
+            return
+        
+        michel_mask = y_true == 3
+        michel_hit_indices_set = set(torch.where(michel_mask)[0].cpu().numpy().tolist())
+        
+        if len(michel_hit_indices_set) == 0:
+            return
+        
+        michel_particles = set()
+        for hit_idx in michel_hit_indices_set:
+            if hit_idx < 0 or hit_idx > max_hit_index:
+                continue
+            hit_idx_tensor = torch.tensor([hit_idx], device=truth_hit_indices.device, dtype=truth_hit_indices.dtype)
+            particle_mask = truth_hit_indices == hit_idx_tensor
+            if torch.any(particle_mask):
+                particle_id = truth_particle_indices[particle_mask][0]
+                michel_particles.add(particle_id.item())
+        
+        for true_particle_id in michel_particles:
+            particle_mask = truth_particle_indices == true_particle_id
+            true_particle_hit_indices = truth_hit_indices[particle_mask]
+            
+            if len(true_particle_hit_indices) == 0:
+                continue
+            
+            instance_assignments = []
+            for true_hit in true_particle_hit_indices:
+                true_hit_item = true_hit.item()
+                if true_hit_item < 0 or true_hit_item > max_hit_index:
+                    continue
+                pred_mask = pred_hit_indices == true_hit
+                if torch.any(pred_mask):
+                    assigned_instance = pred_instance_indices[pred_mask][0]
+                    instance_assignments.append(assigned_instance.item())
+            
+            if len(instance_assignments) > 0:
+                num_instances = len(set(instance_assignments))
+                frag_stats['total_true_michel_particles'] += 1
+                frag_stats['total_instances_used'] += num_instances
+                frag_stats['fragmentation_ratios'].append(num_instances)
                 
     except Exception as e:
-        if verbose:
-            print(f"Verification failed: {e}")
-        return False
-    finally:
-        if verbose:
-            print("-" * 50)
+        pass
 
-class LocalMetricsLogger:
-    """Simplified metrics logging"""
+
+def analyze_full_dataset(model, dataloader, output_dir, experiment_name):
+    """Analyze complete dataset after training"""
+    print("\n" + "="*60)
+    print("ANALYZING FULL DATASET (all validation data)")
+    print("="*60)
     
+    full_analyzer = CorrectedMichelEnergyAnalyzer(overlap_threshold=0.5, verbose=False)
+    
+    full_frag_stats = {
+        'total_true_michel_particles': 0,
+        'total_instances_used': 0,
+        'fragmentation_ratios': []
+    }
+    
+    model.eval()
+    model.freeze()
+    
+    device = next(model.parameters()).device
+    
+    print(f"Processing {len(dataloader)} batches...")
+    
+    with torch.no_grad():
+        for batch_idx, batch in enumerate(tqdm.tqdm(dataloader)):
+            try:
+                batch = batch.to(device)
+                
+                model.forward(batch)
+                
+                hit_store = batch.get_node_store('hit')
+                predictions = hit_store.get('x_semantic', None)
+                
+                if predictions is not None:
+                    full_analyzer.analyze_batch(batch, predictions)
+                    track_fragmentation_stats(batch, full_frag_stats)
+                
+                if batch_idx % 50 == 0:
+                    cleanup_memory()
+                    
+            except Exception as e:
+                print(f"Warning: Batch {batch_idx} failed: {e}")
+                continue
+    
+    print("\nGenerating final plots from full dataset...")
+    
+    energy_plot = full_analyzer.plot_energy_spectra(output_dir)
+    cm_plot = full_analyzer.plot_confusion_matrix(output_dir)
+    
+    full_analyzer.print_diagnostics()
+    
+    avg_fragmentation = 1.0
+    if full_frag_stats['total_true_michel_particles'] > 0:
+        avg_fragmentation = (full_frag_stats['total_instances_used'] / 
+                           full_frag_stats['total_true_michel_particles'])
+    
+    print("\nFull Dataset Fragmentation Analysis:")
+    print(f"  Total true Michel particles: {full_frag_stats['total_true_michel_particles']}")
+    print(f"  Average instances per particle: {avg_fragmentation:.2f}")
+    print(f"  Distribution:")
+    print(f"    1 instance: {sum(1 for r in full_frag_stats['fragmentation_ratios'] if r == 1)}")
+    print(f"    2 instances: {sum(1 for r in full_frag_stats['fragmentation_ratios'] if r == 2)}")
+    print(f"    3 instances: {sum(1 for r in full_frag_stats['fragmentation_ratios'] if r == 3)}")
+    print(f"    4+ instances: {sum(1 for r in full_frag_stats['fragmentation_ratios'] if r >= 4)}")
+    
+    true_energies, pred_energies, validated_energies = full_analyzer.get_energy_data()
+    
+    full_analysis = {
+        'analysis_type': 'full_validation_dataset',
+        'total_batches_analyzed': len(dataloader),
+        'energy_analysis': {
+            'true_michel_clusters': len(true_energies),
+            'predicted_michel_clusters': len(pred_energies),
+            'validated_michel_clusters': len(validated_energies),
+            'true_energy_mean': float(np.mean(true_energies)) if true_energies else 0,
+            'predicted_energy_mean': float(np.mean(pred_energies)) if pred_energies else 0,
+            'validated_energy_mean': float(np.mean(validated_energies)) if validated_energies else 0
+        },
+        'fragmentation_analysis': {
+            'total_true_michel_particles': full_frag_stats['total_true_michel_particles'],
+            'average_instances_per_particle': avg_fragmentation,
+            'distribution': {
+                '1_instance': sum(1 for r in full_frag_stats['fragmentation_ratios'] if r == 1),
+                '2_instances': sum(1 for r in full_frag_stats['fragmentation_ratios'] if r == 2),
+                '3_instances': sum(1 for r in full_frag_stats['fragmentation_ratios'] if r == 3),
+                '4+_instances': sum(1 for r in full_frag_stats['fragmentation_ratios'] if r >= 4)
+            }
+        }
+    }
+    
+    analysis_file = Path(output_dir) / "full_dataset_analysis.json"
+    with open(analysis_file, 'w') as f:
+        json.dump(full_analysis, f, indent=2)
+    
+    print(f"\nFull dataset analysis saved: {analysis_file}")
+    print("="*60)
+    
+    return full_analysis
+
+
+class SimpleMetricsLogger:
+    """Simplified metrics logging with fragmentation tracking"""
+
     def __init__(self, output_dir, experiment_name):
         self.output_dir = Path(output_dir)
         self.experiment_name = experiment_name
         self.metrics_dir = self.output_dir / "metrics"
         self.logs_dir = self.output_dir / "logs"
-        self.plots_dir = self.output_dir / "plots"
-        
-        # Create directories
-        for dir_path in [self.metrics_dir, self.logs_dir, self.plots_dir]:
+
+        for dir_path in [self.metrics_dir, self.logs_dir]:
             dir_path.mkdir(parents=True, exist_ok=True)
-        
-        # Initialize files
-        self.batch_metrics_file = self.metrics_dir / "batch_metrics.csv"
-        self.epoch_metrics_file = self.metrics_dir / "epoch_metrics.csv"
-        
-        self.init_csv_files()
+
         self.setup_logging()
-        
-        # Metrics storage
-        self.batch_metrics = []
-        self.epoch_metrics = []
-        
-        # Tracking counters
+
         self.counters = {
             'total_batches': 0,
             'total_michel_pred': 0,
-            'total_michel_gt': 0,
-            'gradient_verified': False
+            'total_michel_gt': 0
+        }
+
+        self.fragmentation_stats = {
+            'total_true_michel_particles': 0,
+            'total_instances_used': 0,
+            'fragmentation_ratios': []
+        }
+
+        self.energy_analyzer = CorrectedMichelEnergyAnalyzer(
+            overlap_threshold=0.5,
+            verbose=False
+        )
+
+        self.epoch_stats = {
+            'epoch_numbers': [],
+            'avg_fragmentation': [],
+            'true_energy_mean': [],
+            'pred_energy_mean': [],
+            'val_energy_mean': [],
+            'true_michel_count': [],
+            'pred_michel_count': [],
+            'fragmentation_loss': [],
+            'energy_loss': []
+        }
+        
+        # Track current epoch metrics
+        self.current_epoch_frag = {
+            'total_true_michel_particles': 0,
+            'total_instances_used': 0,
+            'fragmentation_loss_sum': 0.0,
+            'energy_loss_sum': 0.0,
+            'num_batches': 0
+        }
+
+        self.epoch_stats = {
+            'epoch_numbers': [],
+            'avg_fragmentation': [],
+            'true_energy_mean': [],
+            'pred_energy_mean': [],
+            'val_energy_mean': [],
+            'true_michel_count': [],
+            'pred_michel_count': [],
+            'fragmentation_loss': [],
+            'energy_loss': []
+        }
+
+        self.current_epoch_frag = {
+            'total_true_michel_particles': 0,
+            'total_instances_used': 0,
+            'fragmentation_loss_sum': 0.0,
+            'energy_loss_sum': 0.0,
+            'num_batches': 0
         }
         
     def setup_logging(self):
         """Setup logging"""
         log_file = self.logs_dir / f"{self.experiment_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
-        
+
         logging.basicConfig(
             level=logging.INFO,
             format='%(asctime)s - %(levelname)s - %(message)s',
@@ -263,290 +1004,374 @@ class LocalMetricsLogger:
             force=True
         )
         self.logger = logging.getLogger(__name__)
-        
-    def init_csv_files(self):
-        """Initialize CSV files"""
-        # Batch metrics
-        with open(self.batch_metrics_file, 'w', newline='') as f:
-            writer = csv.writer(f)
-            writer.writerow(['timestamp', 'epoch', 'batch', 'train_loss', 'michel_reg_loss', 
-                           'total_loss', 'michel_pred', 'michel_gt', 'total_hits', 
-                           'max_michel_prob', 'avg_michel_prob'])
-        
-        # Epoch metrics
-        with open(self.epoch_metrics_file, 'w', newline='') as f:
-            writer = csv.writer(f)
-            writer.writerow(['timestamp', 'epoch', 'avg_train_loss', 'avg_michel_reg_loss', 
-                           'total_michel_pred', 'total_michel_gt', 'training_time_min'])
+
+    def track_fragmentation(self, batch):
+        """Track how fragmented true Michel particles are across predicted instances"""
+        try:
+            hit_store = batch.get_node_store('hit')
+            
+            if ('hit', 'cluster-truth', 'particle-truth') not in batch.edge_types:
+                return
+            if ('hit', 'cluster', 'particle') not in batch.edge_types:
+                return
+            if 'y_semantic' not in hit_store:
+                return
+            
+            y_true = hit_store['y_semantic']
+            
+            truth_edge_type = ('hit', 'cluster-truth', 'particle-truth')
+            truth_edge_index = batch[truth_edge_type].edge_index
+            truth_hit_indices = truth_edge_index[0]
+            truth_particle_indices = truth_edge_index[1]
+            
+            pred_edge_type = ('hit', 'cluster', 'particle')
+            pred_edge_index = batch[pred_edge_type].edge_index
+            pred_hit_indices = pred_edge_index[0]
+            pred_instance_indices = pred_edge_index[1]
+            
+            # CRITICAL: Bounds checking
+            max_hit_index = y_true.size(0) - 1
+            if max_hit_index < 0:
+                return
+            
+            valid_truth_mask = (truth_hit_indices >= 0) & (truth_hit_indices <= max_hit_index)
+            if not torch.all(valid_truth_mask):
+                truth_hit_indices = truth_hit_indices[valid_truth_mask]
+                truth_particle_indices = truth_particle_indices[valid_truth_mask]
+            
+            valid_pred_mask = (pred_hit_indices >= 0) & (pred_hit_indices <= max_hit_index)
+            if not torch.all(valid_pred_mask):
+                pred_hit_indices = pred_hit_indices[valid_pred_mask]
+                pred_instance_indices = pred_instance_indices[valid_pred_mask]
+            
+            if truth_hit_indices.numel() == 0 or pred_hit_indices.numel() == 0:
+                return
+            
+            michel_mask = y_true == 3
+            michel_hit_indices_set = set(torch.where(michel_mask)[0].cpu().numpy().tolist())
+            
+            if len(michel_hit_indices_set) == 0:
+                return
+            
+            michel_particles = set()
+            for hit_idx in michel_hit_indices_set:
+                if hit_idx < 0 or hit_idx > max_hit_index:
+                    continue
+                hit_idx_tensor = torch.tensor([hit_idx], device=truth_hit_indices.device, dtype=truth_hit_indices.dtype)
+                particle_mask = truth_hit_indices == hit_idx_tensor
+                if torch.any(particle_mask):
+                    particle_id = truth_particle_indices[particle_mask][0]
+                    michel_particles.add(particle_id.item())
+            
+            for true_particle_id in michel_particles:
+                particle_mask = truth_particle_indices == true_particle_id
+                true_particle_hit_indices = truth_hit_indices[particle_mask]
+                
+                if len(true_particle_hit_indices) == 0:
+                    continue
+                
+                instance_assignments = []
+                for true_hit in true_particle_hit_indices:
+                    true_hit_item = true_hit.item()
+                    if true_hit_item < 0 or true_hit_item > max_hit_index:
+                        continue
+                    pred_mask = pred_hit_indices == true_hit
+                    if torch.any(pred_mask):
+                        assigned_instance = pred_instance_indices[pred_mask][0]
+                        instance_assignments.append(assigned_instance.item())
+                
+                if len(instance_assignments) > 0:
+                    num_instances = len(set(instance_assignments))
+                    self.fragmentation_stats['total_true_michel_particles'] += 1
+                    self.fragmentation_stats['total_instances_used'] += num_instances
+                    self.fragmentation_stats['fragmentation_ratios'].append(num_instances)
+                    
+        except Exception as e:
+            self.logger.warning(f"Fragmentation tracking failed: {e}")
+
+    def reset_epoch_metrics(self):
+        """Reset metrics at start of each epoch"""
+        self.current_epoch_frag = {
+            'total_true_michel_particles': 0,
+            'total_instances_used': 0,
+            'fragmentation_loss_sum': 0.0,
+            'energy_loss_sum': 0.0,
+            'num_batches': 0
+        }
+
+        self.epoch_analyzer = CorrectedMichelEnergyAnalyzer(overlap_threshold=0.5, verbose=False)
+
+    def update_epoch_metrics(self, frag_loss, energy_loss):
+        """Update running metrics for current epoch"""
+        self.current_epoch_frag['fragmentation_loss_sum'] += frag_loss
+        self.current_epoch_frag['energy_loss_sum'] += energy_loss
+        self.current_epoch_frag['num_batches'] += 1
     
+    def log_epoch_summary(self, epoch):
+        """Log comprehensive epoch statistics"""
+        self.logger.info("\n" + "="*70)
+        self.logger.info(f"EPOCH {epoch} SUMMARY")
+        self.logger.info("="*70)
+
+        # Calculate fragmentation for this epoch
+        avg_frag = 1.0
+        if self.current_epoch_frag['total_true_michel_particles'] > 0:
+            avg_frag = (self.current_epoch_frag['total_instances_used'] / 
+                       self.current_epoch_frag['total_true_michel_particles'])
+
+        # Get energy statistics from epoch analyzer
+        true_energies, pred_energies, val_energies = self.epoch_analyzer.get_energy_data()
+        
+        true_energy_mean = np.mean(true_energies) if true_energies else 0.0
+        pred_energy_mean = np.mean(pred_energies) if pred_energies else 0.0
+        val_energy_mean = np.mean(val_energies) if val_energies else 0.0
+        
+        # Calculate average losses
+        avg_frag_loss = 0.0
+        avg_energy_loss = 0.0
+        if self.current_epoch_frag['num_batches'] > 0:
+            avg_frag_loss = self.current_epoch_frag['fragmentation_loss_sum'] / self.current_epoch_frag['num_batches']
+            avg_energy_loss = self.current_epoch_frag['energy_loss_sum'] / self.current_epoch_frag['num_batches']
+        
+        # Store epoch statistics
+        self.epoch_stats['epoch_numbers'].append(epoch)
+        self.epoch_stats['avg_fragmentation'].append(avg_frag)
+        self.epoch_stats['true_energy_mean'].append(true_energy_mean)
+        self.epoch_stats['pred_energy_mean'].append(pred_energy_mean)
+        self.epoch_stats['val_energy_mean'].append(val_energy_mean)
+        self.epoch_stats['true_michel_count'].append(len(true_energies))
+        self.epoch_stats['pred_michel_count'].append(len(pred_energies))
+        self.epoch_stats['fragmentation_loss'].append(avg_frag_loss)
+        self.epoch_stats['energy_loss'].append(avg_energy_loss)
+        
+        # Log statistics
+        self.logger.info(f"\nFragmentation Metrics:")
+        self.logger.info(f"  Average instances per true Michel particle: {avg_frag:.3f}")
+        self.logger.info(f"  Total true Michel particles: {self.current_epoch_frag['total_true_michel_particles']}")
+        self.logger.info(f"  Average fragmentation loss: {avg_frag_loss:.6f}")
+        
+        self.logger.info(f"\nEnergy Metrics:")
+        self.logger.info(f"  True Michel energy:      {true_energy_mean:.1f} MeV (n={len(true_energies)})")
+        self.logger.info(f"  Predicted Michel energy: {pred_energy_mean:.1f} MeV (n={len(pred_energies)})")
+        self.logger.info(f"  Validated Michel energy: {val_energy_mean:.1f} MeV (n={len(val_energies)})")
+        self.logger.info(f"  Average energy loss: {avg_energy_loss:.6f}")
+        
+        self.logger.info(f"\nMichel Detection:")
+        self.logger.info(f"  True Michel clusters detected: {len(true_energies)}")
+        self.logger.info(f"  Predicted Michel clusters: {len(pred_energies)}")
+        
+        # Show improvement trend if not first epoch
+        if len(self.epoch_stats['epoch_numbers']) > 1:
+            frag_change = avg_frag - self.epoch_stats['avg_fragmentation'][-2]
+            energy_change = pred_energy_mean - self.epoch_stats['pred_energy_mean'][-2]
+            
+            self.logger.info(f"\nChange from previous epoch:")
+            self.logger.info(f"  Fragmentation: {frag_change:+.3f} {'↓ (improving)' if frag_change < 0 else '↑ (worsening)'}")
+            self.logger.info(f"  Predicted energy: {energy_change:+.1f} MeV {'↑ (improving)' if energy_change > 0 else '↓ (worsening)'}")
+        
+        self.logger.info("="*70 + "\n")
+
     def log_batch_metrics(self, epoch, batch_idx, train_loss, michel_reg_loss, total_loss, batch=None):
-        """Log batch metrics"""
-        timestamp = datetime.now().isoformat()
+        """Log batch metrics and analyze energy spectra"""
         self.counters['total_batches'] += 1
         
-        # Initialize defaults
         michel_pred = 0
         michel_gt = 0
-        total_hits = 0
-        max_michel_prob = 0.0
-        avg_michel_prob = 0.0
         
         if batch is not None:
             try:
                 hit_store = batch.get_node_store('hit')
                 
                 with torch.no_grad():
-                    # Get soft probabilities for monitoring
+                    predictions = None
                     if 'x_semantic' in hit_store:
-                        probs = torch.softmax(hit_store['x_semantic'], dim=1)
-                        michel_probs = probs[:, 3]
-                        max_michel_prob = torch.max(michel_probs).item()
-                        avg_michel_prob = torch.mean(michel_probs).item()
-                        
-                        # Hard predictions for counting
                         y_pred = torch.argmax(hit_store['x_semantic'], dim=1)
                         michel_pred = torch.sum(y_pred == 3).item()
-                        total_hits = len(y_pred)
+                        predictions = hit_store['x_semantic']
                     
-                    # Ground truth
                     if 'y_semantic' in hit_store:
                         y_true = hit_store['y_semantic']
                         michel_gt = torch.sum(y_true == 3).item()
                         
                         self.counters['total_michel_pred'] += michel_pred
                         self.counters['total_michel_gt'] += michel_gt
+                    
+                    self.energy_analyzer.analyze_batch(batch, predictions)
+                    self.track_fragmentation(batch)
+
+                    self.epoch_analyzer.analyze_batch(batch, predictions)
+                    track_fragmentation_stats(batch, self.current_epoch_frag)
+
+                    if self.counters['total_batches'] % 50 == 0:
+                        if len(self.energy_analyzer.true_clusters) > 1000:
+                            self.energy_analyzer.true_clusters = self.energy_analyzer.true_clusters[-500:]
+                        if len(self.energy_analyzer.predicted_clusters) > 1000:
+                            self.energy_analyzer.predicted_clusters = self.energy_analyzer.predicted_clusters[-500:]
+                        if len(self.energy_analyzer.validated_predicted_clusters) > 1000:
+                            self.energy_analyzer.validated_predicted_clusters = self.energy_analyzer.validated_predicted_clusters[-500:]
+                    
+                        if len(self.energy_analyzer.all_true_labels) > 10000:
+                            self.energy_analyzer.all_true_labels = self.energy_analyzer.all_true_labels[-5000:]
+                            self.energy_analyzer.all_pred_labels = self.energy_analyzer.all_pred_labels[-5000:]
                         
             except Exception as e:
                 self.logger.warning(f"Batch analysis failed: {e}")
         
-        # Save to CSV
-        with open(self.batch_metrics_file, 'a', newline='') as f:
-            writer = csv.writer(f)
-            writer.writerow([timestamp, epoch, batch_idx, train_loss, michel_reg_loss,
-                           total_loss, michel_pred, michel_gt, total_hits,
-                           max_michel_prob, avg_michel_prob])
-        
-        # Store in memory
-        self.batch_metrics.append({
-            'epoch': epoch, 'batch': batch_idx, 'train_loss': train_loss,
-            'michel_reg_loss': michel_reg_loss, 'total_loss': total_loss,
-            'michel_pred': michel_pred, 'michel_gt': michel_gt,
-            'max_michel_prob': max_michel_prob, 'avg_michel_prob': avg_michel_prob
-        })
-        
-        # Keep last 1000 batches to avoid memory issues
-        if len(self.batch_metrics) > 1000:
-            self.batch_metrics = self.batch_metrics[-500:]
+        if batch_idx % 20 == 0:
+            self.logger.info(
+                f"Epoch {epoch}, Batch {batch_idx}: "
+                f"Loss={train_loss:.4f}, Michel reg={michel_reg_loss:.6f}, "
+                f"Total={total_loss:.4f}, Michel pred/gt={michel_pred}/{michel_gt}"
+            )
     
-    def log_epoch_metrics(self, epoch, avg_train_loss, avg_michel_reg_loss, training_time):
-        """Log epoch metrics"""
-        timestamp = datetime.now().isoformat()
-        
-        with open(self.epoch_metrics_file, 'a', newline='') as f:
-            writer = csv.writer(f)
-            writer.writerow([timestamp, epoch, avg_train_loss, avg_michel_reg_loss,
-                           self.counters['total_michel_pred'], self.counters['total_michel_gt'],
-                           training_time])
-        
-        self.epoch_metrics.append({
-            'epoch': epoch, 'avg_train_loss': avg_train_loss,
-            'avg_michel_reg_loss': avg_michel_reg_loss, 'training_time': training_time
-        })
-        
-        # Generate plots
-        self.generate_plots()
-    
-    def generate_plots(self):
-        """training progress plots"""
-        if not self.batch_metrics:
-            return
-        
+    def create_final_plots(self):
+        """Create energy spectra and confusion matrix plots"""
         try:
-            fig, axes = plt.subplots(2, 3, figsize=(18, 12))
+            energy_plot = self.energy_analyzer.plot_energy_spectra(self.output_dir)
+            cm_plot = self.energy_analyzer.plot_confusion_matrix(self.output_dir)
+            self.energy_analyzer.print_diagnostics()
             
-            # Extract data
-            batches = [m['batch'] for m in self.batch_metrics]
-            train_losses = [m['train_loss'] for m in self.batch_metrics]
-            michel_losses = [m['michel_reg_loss'] for m in self.batch_metrics]
-            michel_preds = [m['michel_pred'] for m in self.batch_metrics]
-            michel_gts = [m['michel_gt'] for m in self.batch_metrics]
-            max_probs = [m['max_michel_prob'] for m in self.batch_metrics]
-            avg_probs = [m['avg_michel_prob'] for m in self.batch_metrics]
-            
-            # Training loss
-            axes[0,0].plot(batches, train_losses, 'b-', alpha=0.7)
-            axes[0,0].set_title('Training Loss')
-            axes[0,0].set_xlabel('Batch')
-            axes[0,0].set_ylabel('Loss')
-            axes[0,0].grid(True, alpha=0.3)
-            
-            # Michel regularization loss
-            axes[0,1].plot(batches, michel_losses, 'r-', alpha=0.7)
-            axes[0,1].set_title('Michel Regularization Loss')
-            axes[0,1].set_xlabel('Batch')
-            axes[0,1].set_ylabel('Reg Loss')
-            axes[0,1].grid(True, alpha=0.3)
-            
-            # Michel detection counts
-            axes[0,2].plot(batches, michel_preds, 'g-', alpha=0.7, label='Predicted')
-            axes[0,2].plot(batches, michel_gts, 'b--', alpha=0.7, label='Ground Truth')
-            axes[0,2].set_title('Michel Detection Count')
-            axes[0,2].set_xlabel('Batch')
-            axes[0,2].set_ylabel('Count')
-            axes[0,2].legend()
-            axes[0,2].grid(True, alpha=0.3)
-            
-            # Michel probabilities
-            axes[1,0].plot(batches, max_probs, 'purple', alpha=0.7, label='Max Prob')
-            axes[1,0].plot(batches, avg_probs, 'orange', alpha=0.7, label='Avg Prob')
-            axes[1,0].set_title('Michel Probabilities (Soft Classification)')
-            axes[1,0].set_xlabel('Batch')
-            axes[1,0].set_ylabel('Probability')
-            axes[1,0].set_ylim(0, 1.1)
-            axes[1,0].legend()
-            axes[1,0].grid(True, alpha=0.3)
-            
-            # Combined losses
-            total_losses = [m['total_loss'] for m in self.batch_metrics]
-            axes[1,1].plot(batches, train_losses, 'b-', alpha=0.7, label='Classification')
-            axes[1,1].plot(batches, michel_losses, 'r-', alpha=0.7, label='Michel Reg')
-            axes[1,1].plot(batches, total_losses, 'k-', linewidth=2, label='Total')
-            axes[1,1].set_title('Loss Breakdown')
-            axes[1,1].set_xlabel('Batch')
-            axes[1,1].set_ylabel('Loss')
-            axes[1,1].legend()
-            axes[1,1].grid(True, alpha=0.3)
-            
-            # Epoch summary
-            if self.epoch_metrics:
-                epochs = [m['epoch'] for m in self.epoch_metrics]
-                epoch_losses = [m['avg_train_loss'] for m in self.epoch_metrics]
-                axes[1,2].plot(epochs, epoch_losses, 'bo-')
-                axes[1,2].set_title('Average Loss per Epoch')
-                axes[1,2].set_xlabel('Epoch')
-                axes[1,2].set_ylabel('Avg Loss')
-                axes[1,2].grid(True, alpha=0.3)
-            
-            plt.tight_layout()
-            
-            # Save plot
-            latest_epoch = max([m['epoch'] for m in self.batch_metrics]) if self.batch_metrics else 0
-            plot_file = self.plots_dir / f"training_progress_epoch_{latest_epoch}.png"
-            plt.savefig(plot_file, dpi=150, bbox_inches='tight')
-            plt.close()
-            
-            self.logger.info(f"📊 Plot saved: {plot_file}")
+            return energy_plot, cm_plot
             
         except Exception as e:
-            self.logger.error(f"Plot generation failed: {e}")
-            plt.close('all')
+            self.logger.error(f"Plot creation failed: {e}")
+            return None, None
+    
+    def save_final_summary(self, model_info):
+        """Save final training summary with energy and fragmentation analysis"""
+        true_energies, pred_energies, validated_energies = self.energy_analyzer.get_energy_data()
+        
+        avg_fragmentation = 1.0
+        if self.fragmentation_stats['total_true_michel_particles'] > 0:
+            avg_fragmentation = (self.fragmentation_stats['total_instances_used'] / 
+                               self.fragmentation_stats['total_true_michel_particles'])
+        
+        summary = {
+            'experiment_name': self.experiment_name,
+            'training_completed_at': datetime.now().isoformat(),
+            'model_info': model_info,
+            'physics_validation': {
+                'total_michel_predicted': self.counters['total_michel_pred'],
+                'total_michel_ground_truth': self.counters['total_michel_gt'],
+                'detection_ratio': self.counters['total_michel_pred'] / max(self.counters['total_michel_gt'], 1)
+            },
+            'energy_analysis': {
+                'true_michel_clusters': len(true_energies),
+                'predicted_michel_clusters': len(pred_energies),
+                'validated_michel_clusters': len(validated_energies),
+                'true_energy_stats': {
+                    'mean': np.mean(true_energies) if true_energies else 0,
+                    'std': np.std(true_energies) if true_energies else 0,
+                    'min': np.min(true_energies) if true_energies else 0,
+                    'max': np.max(true_energies) if true_energies else 0
+                },
+                'predicted_energy_stats': {
+                    'mean': np.mean(pred_energies) if pred_energies else 0,
+                    'std': np.std(pred_energies) if pred_energies else 0,
+                    'min': np.min(pred_energies) if pred_energies else 0,
+                    'max': np.max(pred_energies) if pred_energies else 0
+                },
+                'validated_energy_stats': {
+                    'mean': np.mean(validated_energies) if validated_energies else 0,
+                    'std': np.std(validated_energies) if validated_energies else 0,
+                    'min': np.min(validated_energies) if validated_energies else 0,
+                    'max': np.max(validated_energies) if validated_energies else 0
+                }
+            },
+            'fragmentation_analysis': {
+                'total_true_michel_particles': self.fragmentation_stats['total_true_michel_particles'],
+                'average_instances_per_particle': avg_fragmentation,
+                'perfect_clustering_would_be': 1.0,
+                'fragmentation_ratios': {
+                    '1_instance': sum(1 for r in self.fragmentation_stats['fragmentation_ratios'] if r == 1),
+                    '2_instances': sum(1 for r in self.fragmentation_stats['fragmentation_ratios'] if r == 2),
+                    '3_instances': sum(1 for r in self.fragmentation_stats['fragmentation_ratios'] if r == 3),
+                    '4+_instances': sum(1 for r in self.fragmentation_stats['fragmentation_ratios'] if r >= 4)
+                }
+            },
+            'improvements_applied': [
+                'Updated target energy to 40 MeV (matches actual data)',
+                'REMOVED all hard thresholds - pure max probability approach',
+                'Added anti-fragmentation regularization (Option 1)',
+                'Added impurity penalty for low-purity clusters',
+                'Ground truth validation penalty',
+                'Comprehensive SP node fixes',
+                'Full dataset analysis after training',
+                'Three-way energy spectrum analysis',
+                'Confusion matrix generation',
+                'Overlap-based validation filtering',
+                'Reduced sigma to 10.0 for tighter energy constraint',
+                'Strong penalty for clusters ≥100 MeV',
+                'Fragmentation metrics tracking',
+                'Comprehensive bounds checking to prevent CUDA errors'
+            ],
+            'epoch_progression': {
+                'epochs': self.epoch_stats['epoch_numbers'],
+                'fragmentation': self.epoch_stats['avg_fragmentation'],
+                'true_energy_mean': self.epoch_stats['true_energy_mean'],
+                'predicted_energy_mean': self.epoch_stats['pred_energy_mean'],
+                'validated_energy_mean': self.epoch_stats['val_energy_mean'],
+                'true_michel_count': self.epoch_stats['true_michel_count'],
+                'predicted_michel_count': self.epoch_stats['pred_michel_count'],
+                'fragmentation_loss': self.epoch_stats['fragmentation_loss'],
+                'energy_loss': self.epoch_stats['energy_loss']
+            },
+        }
         
         summary_file = self.output_dir / "training_summary.json"
         with open(summary_file, 'w') as f:
             json.dump(summary, f, indent=2)
         
-        self.logger.info(f"📋 Summary saved: {summary_file}")
+        self.logger.info(f"Summary saved: {summary_file}")
         return summary
+
 
 def configure():
     parser = argparse.ArgumentParser()
     parser.add_argument('--data-path', type=str, default='/nugraph/NG2-paper.gnn.h5')
-    parser.add_argument('--output-dir', type=str, default='./training_outputs')
+    parser.add_argument('--output-dir', type=str, default='./improved_training_outputs')
     parser.add_argument('--experiment-name', type=str, required=True)
     parser.add_argument('--batch-size', type=int, default=4)
-    parser.add_argument('--enable-michel-reg', action='store_true')
-    parser.add_argument('--michel-reg-lambda', type=float, default=0.1)
-    parser.add_argument('--epochs', type=int, default=10)
+    parser.add_argument('--epochs', type=int, default=15)
     parser.add_argument('--learning-rate', type=float, default=0.001)
-    parser.add_argument('--log-interval', type=int, default=20)
-    parser.add_argument('--verify-gradients', action='store_true')
-    parser.add_argument('--resume-from-checkpoint', type=str, default=None, help='Path to checkpoint to resume from')
+    parser.add_argument('--michel-reg-lambda', type=float, default=1.0)
+    parser.add_argument('--target-energy', type=float, default=40.0)
+    parser.add_argument('--baseline', action='store_true', 
+                       help='Run baseline training without energy regularization')
+    parser.add_argument('--resume-from-checkpoint', type=str, default=None)
     return parser.parse_args()
 
+
 def train(args):
-    """Main training function with DIRECT clustering"""
+    """Main training function with improved Michel physics and energy analysis"""
     try:
-        # Create experiment directory
         experiment_dir = Path(args.output_dir) / args.experiment_name
         experiment_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Initialize logging
-        metrics_logger = LocalMetricsLogger(experiment_dir, args.experiment_name)
-        
-        metrics_logger.logger.info(f"DIRECT CLUSTERING training: {args.experiment_name}")
-        
-        # Import libraries
+
+        metrics_logger = SimpleMetricsLogger(experiment_dir, args.experiment_name)
+
+        metrics_logger.logger.info(f"Training mode: {'BASELINE (no regularization)' if args.baseline else 'REGULARIZED WITH ANTI-FRAGMENTATION'}")
+        metrics_logger.logger.info(f"Improved Michel training: {args.experiment_name}")
+        metrics_logger.logger.info(f"Target energy: {args.target_energy} MeV")
+        if not args.baseline:
+            metrics_logger.logger.info(f"Regularization strength: {args.michel_reg_lambda}")
+        else:
+            metrics_logger.logger.info("Regularization: DISABLED for baseline")
+
         import nugraph
         from nugraph.data import H5DataModule
         from nugraph.models.nugraph3.decoders.spacepoint import SpacepointDecoder
         import nugraph.models.nugraph3.decoders
         nugraph.models.nugraph3.decoders.SpacepointDecoder = SpacepointDecoder
         from nugraph.models.nugraph3.nugraph3 import NuGraph3
-        
-        # Load data
+
         metrics_logger.logger.info(f'Loading data: {args.data_path}')
         nudata = H5DataModule(args.data_path, batch_size=args.batch_size)
         transform = NuGraph3.transform(nudata.planes)
         nudata.transform = transform
-        print(f"Transform applied for planes: {nudata.planes}")
 
-        #print("Debugging data structure...")
-        test_batch = next(iter(nudata.val_dataloader()))
-        #print(f"Available node types: {list(test_batch.node_types)}")
-        #print(f"Available edge types: {list(test_batch.edge_types)}")
-
-        # Check what's in the batch
-        for node_type in test_batch.node_types:
-            node_store = test_batch.get_node_store(node_type)
-            print(f"Node '{node_type}': {node_store.num_nodes} nodes")
-            if hasattr(node_store, 'x') and node_store.x is not None:
-                print(f"  Features shape: {node_store.x.shape}")
-
-        def fix_batch_structure(batch):
-            """Fix batch structure for all node types including sp"""
-            try:
-                # Ensure all node types have proper batch metadata
-                for node_type in batch.node_types:
-                    node_store = batch.get_node_store(node_type)
-                
-                    # Initialize features for empty node types
-                    if node_type == 'sp' and (not hasattr(node_store, 'x') or node_store.x is None or node_store.x.size(1) == 0):
-                        device = batch.get_node_store('hit').x.device
-                        node_store.x = torch.zeros(node_store.num_nodes, 16, device=device)
-                
-                    elif node_type == 'evt' and (not hasattr(node_store, 'x') or node_store.x is None or node_store.x.size(1) == 0):
-                        device = batch.get_node_store('hit').x.device  
-                        node_store.x = torch.zeros(node_store.num_nodes, 16, device=device)
-                    
-                    elif node_type == 'particle-truth' and (not hasattr(node_store, 'x') or node_store.x is None or node_store.x.size(1) == 0):
-                        device = batch.get_node_store('hit').x.device
-                        node_store.x = torch.zeros(node_store.num_nodes, 8, device=device)
-                
-                    # Ensure proper batch slicing
-                    if hasattr(batch, '_slice_dict') and node_type not in batch._slice_dict:
-                        if hasattr(node_store, 'ptr'):
-                            batch._slice_dict[node_type] = {'x': node_store.ptr}
-                        else:
-                            device = batch.get_node_store('hit').x.device
-                            node_store.ptr = torch.arange(0, node_store.num_nodes + 1, 
-                                                         node_store.num_nodes // batch.num_graphs, 
-                                                         device=device, dtype=torch.long)
-                            batch._slice_dict[node_type] = {'x': node_store.ptr}
-                
-                    # Ensure proper increment dict
-                    if hasattr(batch, '_inc_dict') and node_type not in batch._inc_dict:
-                        device = batch.get_node_store('hit').x.device
-                        batch._inc_dict[node_type] = {'x': torch.zeros(batch.num_graphs, device=device, dtype=torch.long)}
-                            
-            except Exception as e:
-                print(f"Batch fixing error: {e}")
-        
-            return batch
-
-        # the fix is applied to all dataloaders
         original_train_dataloader = nudata.train_dataloader
         original_val_dataloader = nudata.val_dataloader
-        original_test_dataloader = nudata.test_dataloader
 
         def fixed_train_dataloader():
             loader = original_train_dataloader()
@@ -575,226 +1400,161 @@ def train(args):
         nudata.train_dataloader = fixed_train_dataloader
         nudata.val_dataloader = fixed_val_dataloader
 
-        # Create model
         metrics_logger.logger.info('Creating NuGraph3 model')
-        model = NuGraph3(
-            in_features=5,
-            hit_features=64,
-            nexus_features=16,
-            interaction_features=16,
-            instance_features=8,
-            planes=nudata.planes,
-            semantic_classes=nudata.semantic_classes,
-            event_classes=nudata.event_classes,
-            num_iters=3,
-            event_head=False,
-            semantic_head=True,
-            filter_head=True,
-            vertex_head=False,
-            instance_head=True,  # ENABLED 
-            spacepoint_head=False,
-            use_checkpointing=True,
-            lr=args.learning_rate
-        )
-        
+        if args.resume_from_checkpoint:
+            metrics_logger.logger.info(f'Loading model from checkpoint: {args.resume_from_checkpoint}')
+            model = NuGraph3.load_from_checkpoint(
+                args.resume_from_checkpoint,
+                in_features=5,
+                hit_features=64,
+                nexus_features=16,
+                interaction_features=16,
+                instance_features=8,
+                planes=nudata.planes,
+                semantic_classes=nudata.semantic_classes,
+                event_classes=nudata.event_classes,
+                num_iters=3,
+                event_head=False,
+                semantic_head=True,
+                filter_head=True,
+                vertex_head=False,
+                instance_head=True,
+                spacepoint_head=False,
+                use_checkpointing=True,
+                lr=args.learning_rate
+            )
+        else:
+            model = NuGraph3(
+                in_features=5,
+                hit_features=64,
+                nexus_features=16,
+                interaction_features=16,
+                instance_features=8,
+                planes=nudata.planes,
+                semantic_classes=nudata.semantic_classes,
+                event_classes=nudata.event_classes,
+                num_iters=3,
+                event_head=False,
+                semantic_head=True,
+                filter_head=True,
+                vertex_head=False,
+                instance_head=True,
+                spacepoint_head=False,
+                use_checkpointing=True,
+                lr=args.learning_rate
+            )
+
         def fix_sp_node_features(batch):
-            """Initialize empty sp node features to prevent KeyError"""
             try:
                 sp_store = batch.get_node_store('sp')
                 if not hasattr(sp_store, 'x') or sp_store.x is None or sp_store.x.size(1) == 0:
-                    # Initialize with nexus_features size (16)
                     device = batch.get_node_store('hit').x.device
                     sp_store.x = torch.zeros(sp_store.num_nodes, 16, device=device)
             except Exception as e:
                 print(f"Warning: Could not fix sp node features: {e}")
             return batch
-        
+
         original_forward = model.forward
-        
+
         def fixed_forward(data, stage=None):
-            """Forward pass with sp node fix"""
             data = fix_sp_node_features(data)
             return original_forward(data, stage)
-        
+
         model.forward = fixed_forward
 
         original_validation_step = model.validation_step
 
         def fixed_validation_step(batch, batch_idx):
-            """Validation step with comprehensive sp node fix"""
             try:
-                # Fix sp node features AND batch slicing
                 sp_store = batch.get_node_store('sp')
-                
-                # Initialize features if missing
+
                 if not hasattr(sp_store, 'x') or sp_store.x is None or sp_store.x.size(1) == 0:
                     device = batch.get_node_store('hit').x.device
                     sp_store.x = torch.zeros(sp_store.num_nodes, 16, device=device)
-                
-                # Fix batch slicing for sp nodes
+
                 if hasattr(batch, '_slice_dict') and 'sp' not in batch._slice_dict:
-                    # Create proper slice dict entry for sp nodes
                     batch._slice_dict['sp'] = {'x': sp_store.ptr if hasattr(sp_store, 'ptr') else torch.tensor([0, sp_store.num_nodes], device=device)}
-                    
-                # Fix increment dict for sp nodes  
+
                 if hasattr(batch, '_inc_dict') and 'sp' not in batch._inc_dict:
                     batch._inc_dict['sp'] = {'x': torch.zeros(batch.num_graphs, device=device, dtype=torch.long)}
-                
+
                 return original_validation_step(batch, batch_idx)
-                
+
             except Exception as e:
                 print(f"Validation step error: {e}")
-                # Skip validation if it fails
                 return torch.tensor(0.0, device=batch.get_node_store('hit').x.device)
-        
+
         model.validation_step = fixed_validation_step
-        
+
         if torch.cuda.is_available():
             model = model.cuda()
             metrics_logger.logger.info("Model on GPU")
-        
-        # Setup Michel regularization
-        if args.enable_michel_reg:
-            michel_reg = MichelRegularizer(lambda_param=args.michel_reg_lambda, verbose=False)
-            metrics_logger.logger.info(f'DIRECT CLUSTERING Michel reg enabled (λ={args.michel_reg_lambda})')
-        else:
-            michel_reg = None
-            metrics_logger.logger.info('Baseline training (no regularization)')
-        
-        # Training state
-        original_training_step = model.training_step
+
+        michel_reg = None
+        if not args.baseline:
+            michel_reg = ImprovedMichelRegularizer(
+                lambda_param=args.michel_reg_lambda,
+                target_energy=args.target_energy,
+                verbose=False
+            )
+
         batch_losses = []
         michel_losses = []
-        epoch_start_time = time.time()
-        gradient_verified = False
-        
+        original_training_step = model.training_step
+
         def enhanced_training_step(batch, batch_idx):
-            """Enhanced training step with DIRECT clustering"""
-            nonlocal gradient_verified
-            
+            nonlocal batch_losses, michel_losses
             try:
                 if torch.cuda.is_available():
                     batch = batch.to('cuda')
-                
-                # Original training step
+
                 loss = original_training_step(batch, batch_idx)
-
-                for node_type in batch.node_types:
-                    if 'particle' in node_type.lower() or 'instance' in node_type.lower():
-                        node_store = batch.get_node_store(node_type)
-                        #print(f"  Node type '{node_type}': {node_store.num_nodes} nodes")
-
-                for edge_type in batch.edge_types:
-                    if 'particle' in str(edge_type) and 'truth' not in str(edge_type):
-                        #print(f"  Found non-truth particle edge: {edge_type}")
-                        edge_store = batch.get_edge_store(*edge_type)
-                        #print(f"    Edge count: {edge_store.edge_index.size(1)}")
+                reg_loss_val = 0.0
                 
-                # Apply DIRECT clustering Michel regularization
-                reg_loss = torch.tensor(0.0, device=loss.device, requires_grad=True)
-                if args.enable_michel_reg and michel_reg:
-                    try:
-                        reg_loss = michel_reg(batch)
-                        total_loss = loss + reg_loss
-                        
-                        # Gradient verification on first active batch
-                        if args.verify_gradients and not gradient_verified and reg_loss.item() > 0:
-                            metrics_logger.logger.info(f"\n GRADIENT VERIFICATION (Batch {batch_idx}):")
-                            success = verify_gradient_flow(model, batch, michel_reg, verbose=True)
-                            metrics_logger.counters['gradient_verified'] = success
-                            if success:
-                                metrics_logger.logger.info(" GRADIENT FLOW: SUCCESS!")
-                            else:
-                                metrics_logger.logger.warning("GRADIENT FLOW: FAILED!")
-                            gradient_verified = True
-                    
-                        model.log('michel_reg_loss', reg_loss, batch_size=getattr(batch, 'num_graphs', 1))
-                        
-                    except Exception as e:
-                        metrics_logger.logger.warning(f"Regularization error: {e}")
-                        total_loss = loss
+                if michel_reg is not None:
+                    reg_loss = michel_reg(batch)
+                    total_loss = loss + reg_loss
+                    reg_loss_val = reg_loss.item() if hasattr(reg_loss, 'item') else float(reg_loss)
                 else:
+                    reg_loss = torch.tensor(0.0, device=loss.device)
                     total_loss = loss
-                
-                # Extract loss values
+
+                model.log('michel_reg_loss', reg_loss, batch_size=getattr(batch, 'num_graphs', 1))
+                model.log('total_loss', total_loss, batch_size=getattr(batch, 'num_graphs', 1))
+
                 loss_val = loss.item() if hasattr(loss, 'item') else float(loss)
                 reg_loss_val = reg_loss.item() if hasattr(reg_loss, 'item') else float(reg_loss)
                 total_loss_val = total_loss.item() if hasattr(total_loss, 'item') else float(total_loss)
-                
-                # Track metrics
+
                 batch_losses.append(loss_val)
                 michel_losses.append(reg_loss_val)
-                
-                # Get current epoch
+
                 current_epoch = getattr(model.trainer, 'current_epoch', 0) if hasattr(model, 'trainer') else 0
-                
-                # Log metrics
+
                 metrics_logger.log_batch_metrics(
                     current_epoch, batch_idx, loss_val, reg_loss_val, total_loss_val, batch
                 )
-                
-                # Detailed logging
-                if batch_idx % args.log_interval == 0:
-                    latest = metrics_logger.batch_metrics[-1] if metrics_logger.batch_metrics else {}
-                    michel_pred = latest.get('michel_pred', 0)
-                    michel_gt = latest.get('michel_gt', 0)
-                    max_prob = latest.get('max_michel_prob', 0)
-                    avg_prob = latest.get('avg_michel_prob', 0)
-                    
-                    if args.enable_michel_reg:
-                        metrics_logger.logger.info(
-                            f"Epoch {current_epoch}, Batch {batch_idx}: "
-                            f"Loss={loss_val:.4f}, Michel reg={reg_loss_val:.6f}, "
-                            f"Michel pred/gt={michel_pred}/{michel_gt}, "
-                            f"Max/Avg prob={max_prob:.3f}/{avg_prob:.3f}"
-                        )
-                    else:
-                        metrics_logger.logger.info(
-                            f"Epoch {current_epoch}, Batch {batch_idx}: "
-                            f"Loss={loss_val:.4f}, Michel pred/gt={michel_pred}/{michel_gt}"
-                        )
-                
+
+                metrics_logger.update_epoch_metrics(frag_loss=0.0, energy_loss=reg_loss_val)
+                cleanup_batch_memory(batch)
+
+                if batch_idx % 10 == 0:
+                    cleanup_memory()
+
+                if len(batch_losses) > 100:
+                    batch_losses = batch_losses[-50:]
+                if len(michel_losses) > 100:
+                    michel_losses = michel_losses[-50:]
+
                 return total_loss
-                
+
             except Exception as e:
                 metrics_logger.logger.error(f"Training step failed: {e}")
+                cleanup_memory()
                 return torch.tensor(1.0, device=next(model.parameters()).device, requires_grad=True)
-        
-        def on_epoch_end():
-            """Epoch end callback"""
-            nonlocal epoch_start_time
-            
-            current_epoch = getattr(model.trainer, 'current_epoch', 0) if hasattr(model, 'trainer') else 0
-            epoch_time = time.time() - epoch_start_time
-            
-            avg_train_loss = np.mean(batch_losses) if batch_losses else 0
-            avg_michel_loss = np.mean(michel_losses) if michel_losses else 0
-            
-            metrics_logger.log_epoch_metrics(current_epoch, avg_train_loss, avg_michel_loss, epoch_time / 60)
-            
-            metrics_logger.logger.info(
-                f"📈 Epoch {current_epoch}: "
-                f"Avg Loss={avg_train_loss:.4f}, "
-                f"Avg Michel Reg={avg_michel_loss:.6f}, "
-                f"Time={epoch_time/60:.1f}min"
-            )
-            
-            # Reset for next epoch
-            batch_losses.clear()
-            michel_losses.clear()
-            epoch_start_time = time.time()
-            
-            # Memory cleanup
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-                gc.collect()
-        
-        # Replace methods
+
         model.training_step = enhanced_training_step
-        original_epoch_end = getattr(model, 'on_train_epoch_end', lambda: None)
-        model.on_train_epoch_end = lambda: (original_epoch_end(), on_epoch_end())
-        
-        # Setup checkpointing
+
         checkpoint_dir = experiment_dir / "checkpoints"
         checkpoint_callback = pl.callbacks.ModelCheckpoint(
             dirpath=checkpoint_dir,
@@ -804,98 +1564,162 @@ def train(args):
             mode='min',
             save_last=True
         )
-        
-        # Create trainer
+
         trainer = pl.Trainer(
             max_epochs=args.epochs,
             accelerator="gpu" if torch.cuda.is_available() else "cpu",
             devices=1,
-            callbacks=[checkpoint_callback],
+            callbacks=[checkpoint_callback, MemoryCleanupCallback(metrics_logger)],
             logger=False,
             enable_progress_bar=True,
-            log_every_n_steps=args.log_interval,
             deterministic=True
         )
-        
-        # Start training
-        metrics_logger.logger.info(f" Starting CLUSTERING training for {args.epochs} epochs")
+
+        metrics_logger.logger.info(f"Starting training for {args.epochs} epochs")
         start_time = time.time()
-        
+
         if args.resume_from_checkpoint:
             trainer.fit(model, nudata, ckpt_path=args.resume_from_checkpoint)
         else:
             trainer.fit(model, nudata)
-        
+
         total_time = time.time() - start_time
         metrics_logger.logger.info(f"Training completed in {total_time/3600:.2f} hours")
-        
-        # Save summary
+
+        metrics_logger.logger.info("Creating plots from training batches...")
+        energy_plot, cm_plot = metrics_logger.create_final_plots()
+
         model_info = {
-            'model_type': 'NuGraph3',
+            'model_type': f'NuGraph3_{"Baseline" if args.baseline else "MaxProb_AntiFrag"}',
+            'training_mode': 'baseline' if args.baseline else 'regularized_with_anti_fragmentation',
             'epochs_trained': args.epochs,
-            'michel_regularization': args.enable_michel_reg,
-            'michel_reg_lambda': args.michel_reg_lambda if args.enable_michel_reg else None,
+            'target_energy_mev': args.target_energy,
+            'regularization_lambda': 0.0 if args.baseline else args.michel_reg_lambda,
             'total_training_time_hours': total_time / 3600,
-            'gradient_flow_verified': metrics_logger.counters['gradient_verified'],
             'batch_size': args.batch_size,
             'learning_rate': args.learning_rate,
-            'clustering_method': 'Direct DBSCAN',
-            'instance_decoder_enabled': False
+            'approach': 'none' if args.baseline else 'max_probability_no_thresholds_anti_fragmentation',
+            'sigma': 10.0 if not args.baseline else 'not_applicable',
+            'high_energy_penalty': 100.0 if not args.baseline else 'not_applicable'
         }
-        
+
         final_summary = metrics_logger.save_final_summary(model_info)
-        
-        # Final summary
-        metrics_logger.logger.info(" FINAL DIRECT CLUSTERING TRAINING SUMMARY:")
-        metrics_logger.logger.info("=" * 60)
+
+        metrics_logger.logger.info("TRAINING SUMMARY (from training batches):")
+        metrics_logger.logger.info("=" * 50)
         physics_val = final_summary.get('physics_validation', {})
-        metrics_logger.logger.info(f" Gradient flow verified: {physics_val.get('gradient_flow_verified', False)}")
+        energy_analysis = final_summary.get('energy_analysis', {})
+
         metrics_logger.logger.info(f"Total Michel predicted: {physics_val.get('total_michel_predicted', 0)}")
-        metrics_logger.logger.info(f"Total Michel ground truth: {physics_val.get('total_michel_ground_truth', 0)}")
+        metrics_logger.logger.info(f"Total Michel ground truth: {physics_val.get('total_michel_gt', 0)}")
         metrics_logger.logger.info(f"Detection ratio: {physics_val.get('detection_ratio', 0):.3f}")
-        metrics_logger.logger.info("=" * 60)
-        
-        metrics_logger.logger.info(f" All outputs saved to: {experiment_dir}")
+
+        metrics_logger.logger.info("\nEnergy Analysis:")
+        metrics_logger.logger.info(f"True Michel clusters: {energy_analysis.get('true_michel_clusters', 0)}")
+        metrics_logger.logger.info(f"Predicted Michel clusters: {energy_analysis.get('predicted_michel_clusters', 0)}")
+        metrics_logger.logger.info(f"Validated Michel clusters: {energy_analysis.get('validated_michel_clusters', 0)}")
+
+        true_stats = energy_analysis.get('true_energy_stats', {})
+        pred_stats = energy_analysis.get('predicted_energy_stats', {})
+        val_stats = energy_analysis.get('validated_energy_stats', {})
+
+        if true_stats.get('mean', 0) > 0:
+            metrics_logger.logger.info(f"True Michel energy: {true_stats['mean']:.1f}±{true_stats['std']:.1f} MeV")
+        if pred_stats.get('mean', 0) > 0:
+            metrics_logger.logger.info(f"Predicted Michel energy: {pred_stats['mean']:.1f}±{pred_stats['std']:.1f} MeV")
+        if val_stats.get('mean', 0) > 0:
+            metrics_logger.logger.info(f"Validated Michel energy: {val_stats['mean']:.1f}±{val_stats['std']:.1f} MeV")
+
+        frag_analysis = final_summary.get('fragmentation_analysis', {})
+        metrics_logger.logger.info("\nFragmentation Analysis (from training):")
+        metrics_logger.logger.info(f"Average instances per true Michel particle: {frag_analysis.get('average_instances_per_particle', 0):.2f}")
+        metrics_logger.logger.info(f"Perfect clustering would be: 1.0")
+
+        frag_ratios = frag_analysis.get('fragmentation_ratios', {})
+        metrics_logger.logger.info("Fragmentation distribution:")
+        metrics_logger.logger.info(f"  1 instance (perfect): {frag_ratios.get('1_instance', 0)}")
+        metrics_logger.logger.info(f"  2 instances: {frag_ratios.get('2_instances', 0)}")
+        metrics_logger.logger.info(f"  3 instances: {frag_ratios.get('3_instances', 0)}")
+        metrics_logger.logger.info(f"  4+ instances: {frag_ratios.get('4+_instances', 0)}")
+
+        metrics_logger.logger.info("=" * 50)
+
+        if energy_plot:
+            metrics_logger.logger.info(f"Energy spectra plot: {energy_plot}")
+        if cm_plot:
+            metrics_logger.logger.info(f"Confusion matrix plot: {cm_plot}")
+
+        metrics_logger.logger.info(f"All outputs saved to: {experiment_dir}")
+
+        # NEW: Analyze full validation dataset
+        metrics_logger.logger.info("\nPerforming full dataset analysis...")
+        try:
+            full_analysis = analyze_full_dataset(
+                model,
+                nudata.val_dataloader(),
+                experiment_dir,
+                args.experiment_name
+            )
+
+            metrics_logger.logger.info("Full dataset analysis completed!")
+        except Exception as e:
+            metrics_logger.logger.error(f"Full dataset analysis failed: {e}")
+            import traceback
+            traceback.print_exc()
+
         return model, trainer
 
-        print(model)
-        
     except Exception as e:
-        print(f" Training failed: {e}")
+        print(f"Training failed: {e}")
         raise
 
+
 if __name__ == '__main__':
-    print("Michel Electron Training")
-    print("Instance Decoder CLUSTERING APPROACH:")
-    print("GROUP MICHEL HITS → SUM ENERGIES → APPLY 30 MeV PENALTY!")
-    
+    print("Michel Electron Training with Energy Analysis and Anti-Fragmentation")
+    print("=" * 60)
+
     try:
         args = configure()
-        
+
+        if args.baseline:
+            print("BASELINE MODE - No Energy Regularization")
+            print("Fragmentation will be tracked but NOT penalized")
+        else:
+            print("REGULARIZED MODE - Max Probability + Anti-Fragmentation")
+            print("Improvements:")
+            print("   - Target energy: 40 MeV")
+            print("   - Pure max probability approach")
+            print("   - Anti-fragmentation penalty ")
+            print("   - Impurity penalty for low-purity clusters")
+            print("   - Ground truth validation penalties")
+            print("   - Fragmentation metrics tracking")
+            print("   - Full dataset analysis after training")
+            print("   - Comprehensive bounds checking")
+            print("   - Three-way energy spectrum analysis")
+            print("   - Confusion matrix generation")
+            print("   - Strong penalty for clusters ≥100 MeV")
+
+        print("=" * 60)
         print(f"Experiment: {args.experiment_name}")
+        print(f"Target energy: {args.target_energy} MeV")
+        if not args.baseline:
+            print(f"Regularization: λ={args.michel_reg_lambda}")
+        else:
+            print("Regularization: DISABLED")
         print(f"Epochs: {args.epochs}")
-        print(f"Batch size: {args.batch_size}")
-        print(f"Gradient verification: {'ENABLED' if args.verify_gradients else 'Available'}")
-        print("=" * 70)
-        
-        # Train the model
+        print("=" * 60)
+
         model, trainer = train(args)
 
         if model is not None and trainer is not None:
-            print("CLUSTERING training completed successfully!")
-            print(f"Check results in: training_outputs/{args.experiment_name}/")
-            print("Key outputs:")
-            print("   - plots/training_progress_epoch_*.png")
-            print("   - metrics/batch_metrics.csv")
-            print("   - training_summary.json")
-            print("\n GRADIENT FLOW VERIFICATION:")
-        else:
-            print("Training failed - check logs for details")
-            
+            print("\n" + "=" * 60)
+            print("TRAINING COMPLETED SUCCESSFULLY!")
+            print("=" * 60)
+            print(f"Check results in: {args.output_dir}/{args.experiment_name}/")
+
     except KeyboardInterrupt:
-        print("\n  Training interrupted by user")
+        print("\nTraining interrupted by user")
     except Exception as e:
-        print(f" Training failed: {e}")
+        print(f"Training failed: {e}")
         import traceback
         traceback.print_exc()
-
