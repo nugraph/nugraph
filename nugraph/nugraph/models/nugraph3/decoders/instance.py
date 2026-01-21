@@ -39,9 +39,9 @@ class InstanceDecoder(nn.Module):
 
         # coordinate MLP
         self.coord_net = nn.Sequential(
-            nn.Linear(hit_features + instance_features, hidden),
+            nn.Linear(hit_features + instance_features, hit_features),
             nn.Mish(),
-            nn.Linear(hidden, instance_features),
+            nn.Linear(hit_features, instance_features),
         )
 
         self.dbscan = DBSCAN()
