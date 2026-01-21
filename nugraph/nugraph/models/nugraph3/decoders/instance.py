@@ -29,9 +29,20 @@ class InstanceDecoder(nn.Module):
         # temperature parameter
         self.temp = nn.Parameter(torch.tensor(0.))
 
-        # network
-        self.beta_net = nn.Linear(hit_features, 1)
-        self.coord_net = nn.Linear(hit_features, instance_features)
+        # beta MLP
+        self.beta_net = nn.Sequential(
+            nn.Linear(hit_features + 1, hit_features),
+            nn.Mish(),
+            nn.Linear(hit_features, 1),
+            nn.Sigmoid(),
+        )
+
+        # coordinate MLP
+        self.coord_net = nn.Sequential(
+            nn.Linear(hit_features + instance_features, hit_features),
+            nn.Mish(),
+            nn.Linear(hit_features, instance_features),
+        )
 
         self.dbscan = DBSCAN()
 
@@ -49,8 +60,9 @@ class InstanceDecoder(nn.Module):
         device = h.x.device
 
         # run network and add output to graph object
-        h.of = self.beta_net(h.x).squeeze(dim=-1).sigmoid()
-        h.ox = self.coord_net(h.x)
+        h.of = self.beta_net(torch.cat((h.x, h.of), dim=1)).squeeze(dim=-1)
+        h.ox = self.coord_net(torch.cat((h.x, h.ox), dim=1))
+
         if isinstance(data, Batch):
             # pylint: disable=protected-access
             data._slice_dict["hit"]["of"] = h.ptr
