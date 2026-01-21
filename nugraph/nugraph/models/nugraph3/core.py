@@ -95,7 +95,6 @@ class NuGraphCore(nn.Module):
         super().__init__()
 
         self.use_checkpointing = use_checkpointing
-        self.instance_features = instance_features
 
         # internal planar message-passing
         self.plane_net = NuGraphBlock(hit_features, hit_features,
@@ -118,19 +117,21 @@ class NuGraphCore(nn.Module):
         # message-passing from nexus nodes to planar nodes
         self.nexus_to_plane = NuGraphBlock(nexus_features, hit_features,
                                            hit_features)
-        
-        hidden = hit_features
 
-        self.beta_core_mlp = nn.Sequential(
-            nn.Linear(hit_features + 1, hidden),
+        # object condensation beta embedding
+        self.beta_net = nn.Sequential(
+            nn.Linear(hit_features + 1, hit_features),
             nn.Mish(),
-            nn.Linear(hidden, 1),
+            nn.Linear(hit_features, 1),
+            nn.Sigmoid(),
         )
 
-        self.coord_core_mlp = nn.Sequential(
-            nn.Linear(hit_features + instance_features, hidden),
+        # object condensation coordinate embedding
+        self.coord_net = nn.Sequential(
+            nn.Linear(hit_features + instance_features, hit_features),
             nn.Mish(),
-            nn.Linear(hidden, instance_features),
+            nn.Linear(hit_features, instance_features),
+            nn.Mish(),
         )
 
     def checkpoint(self, net: nn.Module, *args) -> TD:
@@ -153,43 +154,41 @@ class NuGraphCore(nn.Module):
         Args:
             data: Graph data object
         """
+
+        # define quick aliases for node stores
+        h, sp, evt = data["hit"], data["sp"], data["evt"]
+
         # message-passing in hits
-        data["hit"].x = self.checkpoint(
-            self.plane_net, data["hit"].x,
+        h.x = self.checkpoint(
+            self.plane_net, h.x,
             data["hit", "delaunay-planar", "hit"].edge_index)
 
         # message-passing from hits to nexus
-        data["sp"].x = self.checkpoint(
-            self.plane_to_nexus, (data["hit"].x, data["sp"].x),
+        sp.x = self.checkpoint(
+            self.plane_to_nexus, (h.x, sp.x),
             data["hit", "nexus", "sp"].edge_index)
 
         # message-passing from nexus to interaction
-        data["evt"].x = self.checkpoint(
-            self.nexus_to_interaction, (data["sp"].x, data["evt"].x),
+        evt.x = self.checkpoint(
+            self.nexus_to_interaction, (sp.x, evt.x),
             data["sp", "in", "evt"].edge_index)
 
         # message-passing from interaction to nexus
-        data["sp"].x = self.checkpoint(
-            self.interaction_to_nexus, (data["evt"].x, data["sp"].x),
+        sp.x = self.checkpoint(
+            self.interaction_to_nexus, (evt.x, sp.x),
             data["sp", "in", "evt"].edge_index[(1,0), :])
 
         # message-passing from nexus to hits
-        data["hit"].x = self.checkpoint(
-            self.nexus_to_plane, (data["sp"].x, data["hit"].x),
+        h.x = self.checkpoint(
+            self.nexus_to_plane, (sp.x, h.x),
             data["hit", "nexus", "sp"].edge_index[(1,0), :])
-
-        h = data["hit"]
 
         if not hasattr(h, "of") or not hasattr(h, "ox"):
             raise RuntimeError(
                 "NuGraphCore expected data['hit'].of and .ox to be set by Encoder."
             )
 
-        beta_prev = h.of.unsqueeze(-1)
-        coords_prev = h.ox
-
-        beta_in = torch.cat([beta_prev, h.x], dim=1)
-        coord_in = torch.cat([coords_prev, h.x], dim=1)
-
-        h.of = self.beta_core_mlp(beta_in).squeeze(-1).sigmoid()
-        h.ox = self.coord_core_mlp(coord_in)
+        h.of = self.checkpoint(
+            self.beta_net, torch.cat((h.of, h.x), dim=1))
+        h.ox = self.checkpoint(
+            self.coord_net, torch.cat((h.ox, h.x), dim=1))

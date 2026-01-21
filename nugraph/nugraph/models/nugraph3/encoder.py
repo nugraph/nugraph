@@ -18,15 +18,26 @@ class Encoder(torch.nn.Module):
                  planar_features: int,
                  nexus_features: int,
                  interaction_features: int,
-                 instance_features:int):
+                 instance_features: int):
         super().__init__()
+
         self.input_norm = InputNorm(in_features)
         self.planar_net = torch.nn.Linear(in_features, planar_features)
+
+        # object condensation beta encoder
+        self.beta_net = torch.nn.Sequential(
+            torch.nn.Linear(in_features, 1),
+            torch.nn.Sigmoid(),
+        )
+
+        # object condensation coordinate encoder
+        self.coord_net = torch.nn.Sequential(
+            torch.nn.Linear(in_features, instance_features),
+            torch.nn.Mish(),
+        )
+
         self.nexus_features = nexus_features
         self.interaction_features = interaction_features
-
-        self.beta_init_net = torch.nn.Linear(planar_features, 1)
-        self.coord_init_net = torch.nn.Linear(planar_features, instance_features)
 
     def forward(self, data: NuGraphData) -> None:
         """
@@ -35,17 +46,13 @@ class Encoder(torch.nn.Module):
         Args:
             data: Graph data object
         """
-        data["hit"].x = self.input_norm(data["hit"].x)
-        data["hit"].x = self.planar_net(data["hit"].x)
+        x_in = self.input_norm(data["hit"].x)
+        data["hit"].x = self.planar_net(x_in)
+        data["hit"].of = self.beta_net(x_in)
+        data["hit"].ox = self.coord_net(x_in)
         data["sp"].x = torch.zeros(data["sp"].num_nodes,
                                    self.nexus_features,
                                    device=data["hit"].x.device)
         data["evt"].x = torch.zeros(data["evt"].num_nodes,
                                     self.interaction_features,
                                     device=data["hit"].x.device)
-
-        beta_init = self.beta_init_net(data["hit"].x).squeeze(-1).sigmoid()        
-        coords_init = self.coord_init_net(data["hit"].x)                           
-
-        data["hit"].of = beta_init
-        data["hit"].ox = coords_init
