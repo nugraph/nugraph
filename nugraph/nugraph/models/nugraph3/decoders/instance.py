@@ -61,7 +61,7 @@ class InstanceDecoder(nn.Module):
 
         # run network and add output to graph object
         h.of = self.beta_net(torch.cat((h.x, h.of), dim=1)).squeeze(dim=-1)
-        h.ox = self.coord_net(torch.cat(h.x, h.ox), dim=1))
+        h.ox = self.coord_net(torch.cat((h.x, h.ox), dim=1))
 
         if isinstance(data, Batch):
             # pylint: disable=protected-access
