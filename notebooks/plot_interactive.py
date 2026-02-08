@@ -5,7 +5,7 @@
 # source /etc/profile.d/conda.sh
 # conda activate /net/projects2/fermi2526/conda/nugraph-25-10
 # Ensure that dash is installed (pip install dash)
-# Set settings below (data path and model checkpoint path)
+# Set settings below (data path, model checkpoint path, path to nugraph, path to pynuml)
 # Run this file: python /path/to/plot_interactive.py
 # Wait until you see 'Dash is running on http://0.0.0.0:8050/'
 # In a local terminal, run: ssh -N -L [local-port]:[compute-node]:8050 [user]@fe01.ds.uchicago.edu
@@ -14,13 +14,15 @@
 ##### Settings #####
 data_path = "/net/projects2/fermi2526/data/uboone-opendata-19be46d8.gnn.h5"
 checkpoint_path = "/net/projects2/fermi2526/logs/aidanjl1/first_test_batch_V10/checkpoints/epoch=24-step=155200.ckpt"
+nugraph_path = "/home/mlalwani/nugraph_dsifall/nugraph"
+pynuml_path = "/home/mlalwani/nugraph_dsifall/pynuml"
 
 ##### Start Message #####
 print("Program is running..")
 
 ##### Imports #####
-import sys
 import os
+import sys
 try:
     import dash
 except ImportError:
@@ -28,6 +30,8 @@ except ImportError:
     sys.exit()
 from dash import dcc, html, Input, Output
 import plotly.graph_objects as go
+sys.path.append(nugraph_path)
+sys.path.append(pynuml_path)
 print("Importing nugraph. This may take up to 10 minutes, especially the first time...")
 import nugraph as ng
 print("Nugraph imported.")
