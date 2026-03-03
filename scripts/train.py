@@ -21,7 +21,7 @@ def configure():
     parser = argparse.ArgumentParser()
     parser.add_argument('--device', type=int, default=None,
                         help="Index of GPU device to train with")
-    parser.add_argument('--logger', type=str, default="wandb",
+    parser.add_argument('--logger', type=str, default="tensorboard",
                         choices=("wandb", "tensorboard"),
                         help="Which logging method to use")
     parser.add_argument('--name', type=str, default=None,
@@ -67,6 +67,9 @@ def train(args):
             log_model=log_model,
             offline=args.offline
         )
+        warnings.warn(('The "wandb" logging option is deprecated, and will be '
+                       'removed in a future nugraph version! Please switch '
+                       'your workflow to use tensorboard logging.'))
     elif args.logger == "tensorboard":
         logdir = os.environ["NUGRAPH_LOG"]
         logger = pl.loggers.TensorBoardLogger(
