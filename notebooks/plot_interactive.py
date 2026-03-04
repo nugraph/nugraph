@@ -9,13 +9,13 @@
 # Run this file: python /path/to/plot_interactive.py
 # Wait until you see 'Dash is running on http://0.0.0.0:8050/'
 # In a local terminal, run: ssh -N -L [local-port]:[compute-node]:8050 [user]@fe01.ds.uchicago.edu
-# Navigate to http://localhost:8050 in your browser
+# Navigate to http://localhost:[local-port] in your browser
 
 ##### Settings #####
 data_path = "/net/projects2/fermi2526/data/uboone-opendata-19be46d8.gnn.h5"
-checkpoint_path = "/net/projects2/fermi2526/logs/aidanjl1/first_test_batch_V10/checkpoints/epoch=24-step=155200.ckpt"
-nugraph_path = "/home/mlalwani/nugraph_dsifall/nugraph"
-pynuml_path = "/home/mlalwani/nugraph_dsifall/pynuml"
+checkpoint_path = "/net/projects2/fermi2526/logs/mlalwani/postocloss_onegpu/checkpoints/epoch=21-step=136576.ckpt"
+nugraph_path = "/home/mlalwani/nugraph/nugraph"
+pynuml_path = "/home/mlalwani/nugraph/pynuml"
 
 ##### Start Message #####
 print("Program is running..")
