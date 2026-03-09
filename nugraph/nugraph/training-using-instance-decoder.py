@@ -17,6 +17,7 @@ from sklearn.metrics import confusion_matrix
 import gc
 import tqdm
 
+
 # Environment setup
 os.environ['WANDB_MODE'] = 'disabled'
 os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'max_split_size_mb:128,expandable_segments:True'
@@ -693,29 +694,49 @@ class ImprovedMichelRegularizer:
 def fix_batch_structure(batch):
     """Fix batch structure for all node types including sp"""
     try:
+        # Get a safe device reference
+        device = torch.device('cpu')
+        if 'hit' in batch.node_types:
+            hit_store = batch.get_node_store('hit')
+            if hasattr(hit_store, 'x') and hit_store.x is not None:
+                device = hit_store.x.device
+        
         for node_type in batch.node_types:
             node_store = batch.get_node_store(node_type)
             
-            if node_store.num_nodes == 0:
+            if node_store.num_nodes == 0 or node_store.num_nodes is None:
                 continue
-        
-            if node_type == 'sp' and (not hasattr(node_store, 'x') or node_store.x is None or node_store.x.size(1) == 0):
-                device = batch.get_node_store('hit').x.device
-                node_store.x = torch.zeros(node_store.num_nodes, 16, device=device)
-        
-            elif node_type == 'evt' and (not hasattr(node_store, 'x') or node_store.x is None or node_store.x.size(1) == 0):
-                device = batch.get_node_store('hit').x.device  
-                node_store.x = torch.zeros(node_store.num_nodes, 16, device=device)
             
-            elif node_type == 'particle-truth' and (not hasattr(node_store, 'x') or node_store.x is None or node_store.x.size(1) == 0):
-                device = batch.get_node_store('hit').x.device
-                node_store.x = torch.zeros(node_store.num_nodes, 8, device=device)
-        
+            # ALWAYS ensure x exists for ALL node types
+            if not hasattr(node_store, 'x') or node_store.x is None:
+                if node_type == 'sp':
+                    node_store.x = torch.zeros(node_store.num_nodes, 16, device=device)
+                elif node_type == 'evt':
+                    node_store.x = torch.zeros(node_store.num_nodes, 16, device=device)
+                elif node_type == 'particle-truth':
+                    node_store.x = torch.zeros(node_store.num_nodes, 8, device=device)
+                elif node_type == 'hit':
+                    # Hit should always have features, but just in case
+                    if node_store.num_nodes > 0:
+                        node_store.x = torch.zeros(node_store.num_nodes, 5, device=device)
+                else:
+                    # For any other node type, create minimal features
+                    node_store.x = torch.zeros(node_store.num_nodes, 1, device=device)
+            
+            # Handle empty x tensors
+            if hasattr(node_store, 'x') and node_store.x is not None and node_store.x.numel() == 0:
+                if node_type == 'sp':
+                    node_store.x = torch.zeros(node_store.num_nodes, 16, device=device)
+                elif node_type == 'evt':
+                    node_store.x = torch.zeros(node_store.num_nodes, 16, device=device)
+                elif node_type == 'particle-truth':
+                    node_store.x = torch.zeros(node_store.num_nodes, 8, device=device)
+            
+            # Fix slice_dict
             if hasattr(batch, '_slice_dict') and node_type not in batch._slice_dict:
                 if hasattr(node_store, 'ptr') and node_store.ptr is not None:
                     batch._slice_dict[node_type] = {'x': node_store.ptr}
                 else:
-                    device = batch.get_node_store('hit').x.device
                     if batch.num_graphs > 0:
                         step_size = max(1, node_store.num_nodes // batch.num_graphs)
                         node_store.ptr = torch.arange(0, node_store.num_nodes + step_size, step_size, 
@@ -725,14 +746,16 @@ def fix_batch_structure(batch):
                     else:
                         node_store.ptr = torch.tensor([0, node_store.num_nodes], device=device, dtype=torch.long)
                     batch._slice_dict[node_type] = {'x': node_store.ptr}
-        
+            
+            # Fix inc_dict
             if hasattr(batch, '_inc_dict') and node_type not in batch._inc_dict:
-                device = batch.get_node_store('hit').x.device
                 batch._inc_dict[node_type] = {'x': torch.zeros(batch.num_graphs, device=device, dtype=torch.long)}
                     
     except Exception as e:
         print(f"Batch fixing error: {e}")
-
+        import traceback
+        traceback.print_exc()
+    
     return batch
 
 
@@ -1366,12 +1389,20 @@ def train(args):
         from nugraph.models.nugraph3.nugraph3 import NuGraph3
 
         metrics_logger.logger.info(f'Loading data: {args.data_path}')
-        nudata = H5DataModule(args.data_path, batch_size=args.batch_size)
-        transform = NuGraph3.transform(nudata.planes)
-        nudata.transform = transform
+        nudata = H5DataModule(args.data_path, batch_size=args.batch_size, model=NuGraph3)
+        original_transform = NuGraph3.transform(nudata.planes)
+
+        def fixed_transform(data):
+            data = original_transform(data)
+            data = fix_batch_structure(data)
+            return data
+
+        nudata.transform = fixed_transform
 
         original_train_dataloader = nudata.train_dataloader
         original_val_dataloader = nudata.val_dataloader
+
+
 
         def fixed_train_dataloader():
             loader = original_train_dataloader()
@@ -1556,6 +1587,7 @@ def train(args):
         model.training_step = enhanced_training_step
 
         checkpoint_dir = experiment_dir / "checkpoints"
+        checkpoint_dir.mkdir(parents=True, exist_ok=True)
         checkpoint_callback = pl.callbacks.ModelCheckpoint(
             dirpath=checkpoint_dir,
             filename='{epoch}-{loss/train:.4f}',
