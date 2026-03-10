@@ -44,7 +44,7 @@ class InstanceDecoder(nn.Module):
             nn.Linear(hit_features, instance_features),
         )
 
-        self.dbscan = DBSCAN(eps=0.5, min_samples=5, metric="euclidean", algorithm="auto", leaf_size=30, p=None, n_jobs=None)
+        self.dbscan = DBSCAN(eps=0.3, min_samples=15)
 
     # pylint: disable=arguments-differ
     def forward(self, data: Data, stage: str = None) -> dict[str, Any]:
