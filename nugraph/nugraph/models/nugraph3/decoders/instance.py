@@ -6,7 +6,7 @@ from torch import nn
 from torchmetrics.functional.clustering import adjusted_rand_score
 from torch_geometric.data import Batch
 from torch_geometric.utils import cumsum, unbatch
-from ....util import ObjCondensationLoss
+from ....util import ObjCondensationLoss, RecallLoss
 from ..types import Data, N_IT, E_H_IT, N_IP, E_H_IP
 
 class InstanceDecoder(nn.Module):
@@ -70,11 +70,21 @@ class InstanceDecoder(nn.Module):
             data._inc_dict["hit"]["of"] = data._inc_dict["hit"]["x"]
             data._inc_dict["hit"]["ox"] = data._inc_dict["hit"]["x"]
 
+        # calculate semantic loss to input to object condensation particle loss
+        if hasattr(h, "x_semantic"):
+            x_semantic = h.x_semantic
+            y_semantic = h.y_semantic
+            semantic_loss_func = RecallLoss()
+            loss_semantic = semantic_loss_func(x_semantic, y_semantic)
+        else:
+            print("Skipping particle loss - not using semantic decoder head.")
+            loss_semantic = None
+
         # calculate loss
         loss = self.loss(h.ox, h.of, data.y_i(), h.y_semantic,
-                         data[N_IT].num_nodes, data[E_H_IT].edge_index)
+                         data[N_IT].num_nodes, data[E_H_IT].edge_index, loss_semantic)
         loss *= (-1 * self.temp).exp()
-        b, v = loss
+        b, v, p = loss
         loss = loss.sum() + self.temp
 
         # calculate metrics
