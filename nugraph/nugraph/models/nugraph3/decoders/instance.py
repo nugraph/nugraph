@@ -93,6 +93,8 @@ class InstanceDecoder(nn.Module):
             metrics[f"instance/loss-{stage}"] = loss
             metrics[f"instance/bkg-loss-{stage}"] = b
             metrics[f"instance/potential-loss-{stage}"] = v
+            if hasattr(h, "x_semantic"):
+                metrics[f"instance/particle-loss-{stage}"] = p
         
         # run only during validation
         if not self.training:
