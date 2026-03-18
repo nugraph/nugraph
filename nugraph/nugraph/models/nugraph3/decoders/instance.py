@@ -153,11 +153,8 @@ class InstanceDecoder(nn.Module):
             return x_ip, e_h_ip
 
         i = torch.empty(ox.size(0), dtype=torch.long, device=ox.device).fill_(-1)
-        # arr = ox[mask].detach()
-        
-        # CPU only version of DBSCAN
-        arr_np = ox[mask].detach().to(torch.float32).cpu().numpy()
-        labels = self.dbscan.fit_predict(arr_np)    
+        arr = ox[mask].detach().to(torch.float32).cpu().numpy()
+        labels = self.dbscan.fit_predict(arr)
         i[mask] = torch.from_numpy(labels).to(device=ox.device, dtype=torch.long)
         x_ip = torch.empty(i.max()+1, 0, dtype=torch.float, device=ox.device)
         mask = i > -1
