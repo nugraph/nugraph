@@ -2,11 +2,9 @@ name: numl
 channels:
   - conda-forge
   - nvidia
-  - rapidsai
   - nodefaults
 dependencies:
   - anywidget
-  - cuml
   - h5py=*=*mpich*
   - matplotlib
   - mpi4py
@@ -20,7 +18,7 @@ dependencies:
   - pytables
   - pytest
   - python-kaleido
-  - pytorch=2.5
+  - pytorch-gpu
   - pytorch-lightning
   - pytorch_geometric
   - pytorch_scatter
