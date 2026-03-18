@@ -1,4 +1,4 @@
-name: numl
+name: nugraph-cpu
 channels:
   - conda-forge
   - nvidia
@@ -18,7 +18,7 @@ dependencies:
   - pytables
   - pytest
   - python-kaleido
-  - pytorch-gpu
+  - pytorch-cpu
   - pytorch-lightning
   - pytorch_geometric
   - pytorch_scatter
