@@ -1,0 +1,32 @@
+name: nugraph-gpu
+channels:
+  - conda-forge
+  - nvidia
+  - nodefaults
+dependencies:
+  - anywidget
+  - h5py=*=*mpich*
+  - matplotlib
+  - mpi4py
+  - myst-parser
+  - numba
+  - numpy
+  - particle
+  - pip
+  - plotly
+  - pylint
+  - pytables
+  - pytest
+  - python-kaleido
+  - pytorch-gpu
+  - pytorch-lightning
+  - pytorch_geometric
+  - pytorch_scatter
+  - PyYAML
+  - scikit-learn
+  - seaborn
+  - sphinx_rtd_theme
+  - tensorboard
+  - torchmetrics
+  - uproot
+  - wandb

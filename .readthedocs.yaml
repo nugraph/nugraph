@@ -9,7 +9,7 @@ build:
     python: "mambaforge-latest"
 
 conda:
-  environment: numl.yaml
+  environment: nugraph-cpu.yaml
 
 sphinx:
   configuration: docs/conf.py
