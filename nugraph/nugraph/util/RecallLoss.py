@@ -10,7 +10,6 @@ class RecallLoss(torch.nn.Module):
     def __init__(self, num_classes: int, ignore_index: int = -1):
         super().__init__()
         self.ignore_index = ignore_index
-        self.epoch_accumulation = epoch_accumulation
         self.recall_metric = MulticlassRecall(
             num_classes=num_classes,
             average='none',
