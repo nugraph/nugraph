@@ -8,8 +8,10 @@ def configure():
                       help="input HDF5 file")
     args.add_argument("-o", "--outfile", type=str, required=True,
                       help="output HDF5 file pattern")
-    args.add_argument('--label-vertex', action='store_true', default=False,
+    args.add_argument('--label-vertex', action='store_true',
                       help='add true vertex label to graphs')
+    args.add_argument("--label-position", action="store_true",
+                      help="add true 3D hit position to graphs")
     return args.parse_args()  
 
 def process(args):
@@ -20,9 +22,10 @@ def process(args):
     # create graph processor
     processor = pynuml.process.HitGraphProducer(
             file=f,
-            semantic_labeller=pynuml.labels.SimpleLabels(),
+            semantic_labeller=pynuml.labels.StandardLabels(),
             event_labeller=pynuml.labels.FlavorLabels(),
-            label_vertex=args.label_vertex)
+            label_vertex=args.label_vertex,
+            label_position=args.label_position)
 
     # create output file stream
     out = pynuml.io.H5Out(args.outfile)

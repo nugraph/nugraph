@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-
 import os
 import argparse
 import pathlib
@@ -13,7 +12,6 @@ from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 import nugraph as ng
 
 torch.set_num_threads(4)
-
 warnings.filterwarnings('ignore', '.*TypedStorage is deprecated.*')
 
 Data = ng.data.H5DataModule
@@ -23,12 +21,17 @@ def configure():
     parser = argparse.ArgumentParser()
     parser.add_argument('--device', type=int, default=None,
                         help="Index of GPU device to train with")
+    parser.add_argument('--logger', type=str, default="tensorboard",
+                        choices=("wandb", "tensorboard"),
+                        help="Which logging method to use")
     parser.add_argument('--name', type=str, default=None,
                         help='Training instance name, for logging purposes')
     parser.add_argument('--version', type=str, default=None,
                         help='Training version name, for logging purposes')
     parser.add_argument("--project", type=str, default="nugraph3",
                         help="wandb project to log to")
+    parser.add_argument("--resume", type=str,
+                        help="model checkpoint file to resume training with")
     parser.add_argument("--offline", action="store_true",
                         help="write wandb logs offline")
     parser.add_argument('--profiler', type=str, default=None,
@@ -42,17 +45,41 @@ def train(args):
     torch.manual_seed(1)
 
     # Load dataset
-    nudata = Data(args.data_path, batch_size=args.batch_size, 
-                  shuffle=args.shuffle, balance_frac=args.balance_frac)
+    nudata = Data(args.data_path, batch_size=args.batch_size,
+                  model=Model, shuffle=args.shuffle,
+                  balance_frac=args.balance_frac, num_workers=args.num_workers)
 
-    model = Model.from_args(args, nudata)
+    if args.resume:
+        model = Model.load_from_checkpoint(args.resume)
+    else:
+        model = Model.from_args(args, nudata)
 
-    logdir = pathlib.Path(os.environ["NUGRAPH_LOG"])/args.name
-    logdir.mkdir(parents=True, exist_ok=True)
-    log_model = False if args.offline else "all"
-    logger = pl.loggers.WandbLogger(save_dir=logdir, project=args.project,
-                                    name=args.name, version=args.version,
-                                    log_model=log_model, offline=args.offline)
+    # Configure logger
+    if args.logger == "wandb":
+        logdir = pathlib.Path(os.environ["NUGRAPH_LOG"])/args.name
+        logdir.mkdir(parents=True, exist_ok=True)
+        log_model = False if args.offline else "all"
+        logger = pl.loggers.WandbLogger(
+            save_dir=logdir,
+            project=args.project,
+            name=args.name,
+            version=args.version,
+            log_model=log_model,
+            offline=args.offline
+        )
+        warnings.warn(('The "wandb" logging option is deprecated, and will be '
+                       'removed in a future nugraph version! Please switch '
+                       'your workflow to use tensorboard logging.'))
+    elif args.logger == "tensorboard":
+        logdir = os.environ["NUGRAPH_LOG"]
+        logger = pl.loggers.TensorBoardLogger(
+            save_dir=logdir,
+            name=args.name,
+            version=args.version,
+            default_hp_metric=False
+        )
+    else:
+        raise RuntimeError(f'Logger option "{args.logger}" not recognized!')
 
     # configure callbacks
     callbacks = []
@@ -61,23 +88,22 @@ def train(args):
     if isinstance(logger, pl.loggers.WandbLogger) and not args.offline:
         callbacks.append(ModelCheckpoint(monitor="loss/val", mode="min"))
 
-    # configure plugins
-    plugins = [
-        SLURMEnvironment(requeue_signal=signal.SIGUSR1),
-    ]
-
-    model = Model.from_args(args, nudata)
+    plugins = [ SLURMEnvironment(requeue_signal=signal.SIGUSR1) ]
 
     accelerator, devices = ng.util.configure_device(args.device)
-    trainer = pl.Trainer(accelerator=accelerator, devices=devices,
-                         max_epochs=args.epochs,
-                         limit_train_batches=args.limit_train_batches,
-                         limit_val_batches=args.limit_val_batches,
-                         logger=logger, profiler=args.profiler,
-                         callbacks=callbacks, plugins=plugins)
+    trainer = pl.Trainer(
+        accelerator=accelerator,
+        devices=devices,
+        max_epochs=args.epochs,
+        limit_train_batches=args.limit_train_batches,
+        limit_val_batches=args.limit_val_batches,
+        logger=logger,
+        profiler=args.profiler,
+        callbacks=callbacks,
+        plugins=plugins
+    )
 
-    trainer.fit(model, datamodule=nudata)
-    trainer.test(datamodule=nudata)
+    trainer.fit(model, datamodule=nudata, ckpt_path=args.resume)
 
 if __name__ == '__main__':
     args = configure()

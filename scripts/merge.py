@@ -39,7 +39,6 @@ def merge(args):
 
     # prepare dataset
     H5DataModule.generate_samples(args.file)
-    H5DataModule.generate_norm(args.file, 64)
 
 if __name__ == '__main__':
     args = configure()

@@ -44,8 +44,8 @@ def save(plot: pynuml.plot.GraphPlot, data: 'pyg.data.HeteroData',
 
 def plot(args):
 
-    nudata = Data(args.data_path,
-                  batch_size=args.batch_size)
+    nudata = Data(args.data_path, batch_size=args.batch_size,
+                  transform=Model.transform())
 
     if args.checkpoint:
         model = Model.load_from_checkpoint(args.checkpoint, map_location='cpu')

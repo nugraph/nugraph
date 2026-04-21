@@ -2,8 +2,7 @@
 import h5py
 import numpy as np
 import torch
-from torch_geometric.data import Batch, HeteroData
-from torch_geometric.utils import unbatch
+from torch_geometric.data import HeteroData
 
 N_IT = "particle-truth" # true instance node store
 N_IP = "particle" # predicted instance node store
@@ -31,14 +30,6 @@ class NuGraphData(HeteroData):
         i, j = self[E_H_IP].edge_index
         x_i[i] = j
         return x_i
-
-    def __inc__(self, key: str, value: torch.Tensor, *args, **kwargs) -> int:
-        """Increment tensor values"""
-        if key == "x_instance":
-            return self[N_IP].num_nodes
-        if key == "y_instance":
-            return self[N_IT].num_nodes
-        return super().__inc__(key, value, *args, **kwargs)
 
     def save(self, file: h5py.File, name: str) -> None:
         """Save NuGraph data object to HDF5 file
@@ -108,4 +99,13 @@ class NuGraphData(HeteroData):
                     data[store][attr] = torch.as_tensor(group[dataset][()])
             else: # multi-dimension array
                 data[store][attr] = torch.as_tensor(group[dataset][:])
+
+        # handle empty node tensors
+        for node_type in data.node_types:
+            if node_type == "metadata":
+                continue
+            n = data[node_type]
+            if n.num_nodes is not None and not hasattr(n, "x"):
+                n.x = torch.empty([n.num_nodes, 0])
+
         return data

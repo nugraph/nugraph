@@ -9,15 +9,13 @@ from torch.optim.lr_scheduler import OneCycleLR
 from pytorch_lightning import LightningModule
 
 from .types import Data
+from .transform import Transform
 from .encoder import Encoder
 from .core import NuGraphCore
-from .decoders import SemanticDecoder, FilterDecoder, EventDecoder, VertexDecoder, InstanceDecoder
+from .decoders import (SemanticDecoder, FilterDecoder, EventDecoder, VertexDecoder, InstanceDecoder,
+                       SpacepointDecoder)
 
 from ...data import H5DataModule
-
-if torch.cuda.is_available():
-    from rmm.allocators.torch import rmm_torch_allocator
-    torch.cuda.memory.change_current_allocator(rmm_torch_allocator)
 
 class NuGraph3(LightningModule):
     """
@@ -29,6 +27,7 @@ class NuGraph3(LightningModule):
         nexus_features: Number of nexus node features
         interaction_features: Number of interaction node features
         instance_features: Number of instance features
+        planes: Tuple of detector plane names
         semantic_classes: Tuple of semantic classes
         event_classes: Tuple of event classes
         num_iters: Number of message-passing iterations
@@ -36,6 +35,8 @@ class NuGraph3(LightningModule):
         semantic_head: Whether to enable semantic decoder
         filter_head: Whether to enable filter decoder
         vertex_head: Whether to enable vertex decoder
+        instance_head: Whether to enable instance decoder
+        spacepoint_head: Whether to enable spacepoint decoder
         use_checkpointing: Whether to use checkpointing
         lr: Learning rate
     """
@@ -44,7 +45,8 @@ class NuGraph3(LightningModule):
                  hit_features: int = 128,
                  nexus_features: int = 32,
                  interaction_features: int = 32,
-                 instance_features: int = 32,
+                 instance_features: int = 8,
+                 planes: tuple[str] = ("u","v","y"),
                  semantic_classes: tuple[str] = ('MIP','HIP','shower','michel','diffuse'),
                  event_classes: tuple[str] = ('numu','nue','nc'),
                  num_iters: int = 5,
@@ -52,8 +54,8 @@ class NuGraph3(LightningModule):
                  semantic_head: bool = True,
                  filter_head: bool = True,
                  vertex_head: bool = False,
-                 s_b: float = 1.0,
                  instance_head: bool = False,
+                 spacepoint_head: bool = False,
                  use_checkpointing: bool = False,
                  lr: float = 0.001):
         super().__init__()
@@ -71,11 +73,12 @@ class NuGraph3(LightningModule):
         self.lr = lr
 
         self.encoder = Encoder(in_features, hit_features,
-                               nexus_features, interaction_features)
+                               nexus_features, interaction_features, instance_features)
 
         self.core_net = NuGraphCore(hit_features,
                                     nexus_features,
                                     interaction_features,
+                                    instance_features,
                                     use_checkpointing)
 
         self.decoders = []
@@ -97,14 +100,17 @@ class NuGraph3(LightningModule):
             self.decoders.append(self.vertex_decoder)
 
         if instance_head:
-            self.instance_decoder = InstanceDecoder(hit_features, instance_features, s_b)
+            self.instance_decoder = InstanceDecoder(hit_features, instance_features)
             self.decoders.append(self.instance_decoder)
+
+        if spacepoint_head:
+            self.spacepoint_decoder = SpacepointDecoder(hit_features, len(planes))
+            self.decoders.append(self.spacepoint_decoder)
 
         if not self.decoders:
             raise RuntimeError('At least one decoder head must be enabled!')
 
-    def forward(self, data: Data,
-                stage: str = None):
+    def forward(self, data: Data, stage: str = None): # pylint: disable=arguments-differ
         """
         NuGraph3 forward function
 
@@ -135,6 +141,10 @@ class NuGraph3(LightningModule):
         self.log('loss/train', loss, batch_size=batch.num_graphs, prog_bar=True)
         self.log_dict(metrics, batch_size=batch.num_graphs)
         return loss
+
+    def on_train_epoch_end(self) -> None:
+        # stop updating running average for feature norm
+        self.encoder.input_norm.update = False
 
     def validation_step(self,
                         batch,
@@ -176,6 +186,16 @@ class NuGraph3(LightningModule):
         return [optimizer], {'scheduler': onecycle, 'interval': 'step'}
 
     @staticmethod
+    def transform(planes: tuple[str]) -> Transform:
+        """
+        Return data transform for NuGraph3 model
+        
+        Args:
+            planes: tuple of detector plane names
+        """
+        return Transform(planes)
+
+    @staticmethod
     def add_model_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         """
         Add argparse argument group for NuGraph3 model
@@ -194,7 +214,7 @@ class NuGraph3(LightningModule):
                            help='Hidden dimensionality of nexus convolutions')
         model.add_argument('--interaction-feats', type=int, default=32,
                            help='Hidden dimensionality of interaction layer')
-        model.add_argument('--instance-feats', type=int, default=32,
+        model.add_argument('--instance-feats', type=int, default=8,
                            help='Hidden dimensionality of object condensation')
         model.add_argument('--event', action='store_true',
                            help='Enable event classification head')
@@ -206,8 +226,8 @@ class NuGraph3(LightningModule):
                            help='Enable instance segmentation head')
         model.add_argument('--vertex', action='store_true',
                            help='Enable vertex regression head')
-        model.add_argument("--s-b", type=float, default=1.0,
-                           help="Background suppression hyperparameter for object condensation")
+        model.add_argument("--spacepoint", action="store_true",
+                           help="Enable spacepoint prediction head")
         model.add_argument('--no-checkpointing', action='store_false',
                            dest="use_checkpointing",
                            help='Disable checkpointing during training')
@@ -232,6 +252,7 @@ class NuGraph3(LightningModule):
             nexus_features=args.nexus_feats,
             interaction_features=args.interaction_feats,
             instance_features=args.instance_feats,
+            planes=nudata.planes,
             semantic_classes=nudata.semantic_classes,
             event_classes=nudata.event_classes,
             num_iters=args.num_iters,
@@ -239,7 +260,7 @@ class NuGraph3(LightningModule):
             semantic_head=args.semantic,
             filter_head=args.filter,
             vertex_head=args.vertex,
-            s_b=args.s_b,
             instance_head=args.instance,
+            spacepoint_head=args.spacepoint,
             use_checkpointing=args.use_checkpointing,
             lr=args.learning_rate)
