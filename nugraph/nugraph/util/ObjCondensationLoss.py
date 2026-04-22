@@ -10,7 +10,8 @@ class ObjCondensationLoss(torch.nn.Module):
         self.s_b = s_b
         self.q_min = q_min
 
-    def forward(self, x: T, f: T, y_i: T, y_s: T, n_true: int, e_true: T, loss_s) -> T:
+    def forward(self, x: T, f: T, y_i: T, y_s: T, n_true: int, e_true: T,
+                l_p: T) -> T:
 
         device = x.device
         dtype = x.dtype
@@ -48,11 +49,11 @@ class ObjCondensationLoss(torch.nn.Module):
         v = ((v * q[centers]).sum(dim=1) * q).sum() / n_hit
 
         # calculate particle loss using semantic loss
-        if loss_s is None:
+        if l_p is None:
             p = torch.tensor(0., dtype=dtype, device=device)
         else:
             n_i = bkg_mask.float()
             xi = (1 - n_i) * f.atanh().square()
-            p = (loss_s * xi).sum() / (xi.sum())
+            p = (l_p * xi).sum() / (xi.sum())
 
         return torch.stack([b, v, p])
