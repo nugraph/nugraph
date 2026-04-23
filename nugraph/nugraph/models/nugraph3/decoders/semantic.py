@@ -26,7 +26,7 @@ class SemanticDecoder(nn.Module):
         super().__init__()
 
         # loss function
-        self.loss = RecallLoss()
+        self.loss = RecallLoss(num_classes=len(semantic_classes))
 
         # temperature parameter
         self.temp = nn.Parameter(torch.tensor(0.))
