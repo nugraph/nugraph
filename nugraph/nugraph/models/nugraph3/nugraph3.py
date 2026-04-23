@@ -56,6 +56,7 @@ class NuGraph3(LightningModule):
                  vertex_head: bool = False,
                  instance_head: bool = False,
                  spacepoint_head: bool = False,
+                 particle_loss: bool = False,
                  use_checkpointing: bool = False,
                  lr: float = 0.001):
         super().__init__()
@@ -100,7 +101,8 @@ class NuGraph3(LightningModule):
             self.decoders.append(self.vertex_decoder)
 
         if instance_head:
-            self.instance_decoder = InstanceDecoder(hit_features, instance_features)
+            self.instance_decoder = InstanceDecoder(hit_features, instance_features,
+                                                    particle_loss)
             self.decoders.append(self.instance_decoder)
 
         if spacepoint_head:
@@ -228,6 +230,8 @@ class NuGraph3(LightningModule):
                            help='Enable vertex regression head')
         model.add_argument("--spacepoint", action="store_true",
                            help="Enable spacepoint prediction head")
+        model.add_argument("--particle-loss", action="store_true",
+                           help="Enable object condensation particle loss term")
         model.add_argument('--no-checkpointing', action='store_false',
                            dest="use_checkpointing",
                            help='Disable checkpointing during training')
@@ -262,5 +266,6 @@ class NuGraph3(LightningModule):
             vertex_head=args.vertex,
             instance_head=args.instance,
             spacepoint_head=args.spacepoint,
+            particle_loss=args.particle_loss,
             use_checkpointing=args.use_checkpointing,
             lr=args.learning_rate)
