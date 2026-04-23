@@ -18,8 +18,6 @@ class RecallLoss(torch.nn.Module):
         )
 
     def forward(self, input: Tensor, target: Tensor) -> Tensor:
-        target = target.clone()
-        target[target > 4] = -1
 
         self.recall_metric = self.recall_metric.to(input.device)
         self.recall_metric.update(input, target)
