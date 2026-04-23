@@ -8,7 +8,7 @@ runs:
     uses: conda-incubator/setup-miniconda@v3
     with:
       miniforge-version: latest
-      activate-environment: numl
+      activate-environment: nugraph-cpu
       auto-update-conda: true
       auto-activate-base: false
 
@@ -24,7 +24,7 @@ runs:
       key:
         conda-${{ runner.os }}--${{ runner.arch }}--${{
         steps.get-date.outputs.today }}-${{
-        hashFiles('numl.yaml') }}-${{ env.CACHE_NUMBER
+        hashFiles('nugraph-cpu.yaml') }}-${{ env.CACHE_NUMBER
         }}
     env:
       CACHE_NUMBER: 0
@@ -34,5 +34,5 @@ runs:
     shell: bash
     run: |
       mamba list
-      mamba env update -n numl -f numl.yaml
+      mamba env update -n nugraph-cpu -f nugraph-cpu.yaml
     if: steps.cache.outputs.cache-hit != 'true'

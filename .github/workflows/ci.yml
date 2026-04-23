@@ -36,7 +36,7 @@ jobs:
       uses: conda-incubator/setup-miniconda@v3
       with:
         miniforge-version: latest
-        activate-environment: numl
+        activate-environment: nugraph-cpu
         auto-activate-base: false
     - name: getting date
       id: get-date
@@ -48,7 +48,7 @@ jobs:
         key:
           conda-${{ runner.os }}--${{ runner.arch }}--${{
           steps.get-date.outputs.today }}-${{
-          hashFiles('numl.yaml') }}-${{ env.CACHE_NUMBER
+          hashFiles('nugraph-cpu.yaml') }}-${{ env.CACHE_NUMBER
           }}
       env:
         CACHE_NUMBER: 0
@@ -76,7 +76,7 @@ jobs:
       uses: conda-incubator/setup-miniconda@v3
       with:
         miniforge-version: latest
-        activate-environment: numl
+        activate-environment: nugraph-cpu
         auto-activate-base: false
     - name: getting date
       id: get-date
@@ -88,7 +88,7 @@ jobs:
         key:
           conda-${{ runner.os }}--${{ runner.arch }}--${{
           steps.get-date.outputs.today }}-${{
-          hashFiles('numl.yaml') }}-${{ env.CACHE_NUMBER
+          hashFiles('nugraph-cpu.yaml') }}-${{ env.CACHE_NUMBER
           }}
       env:
         CACHE_NUMBER: 0
