@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-
 import os
 import argparse
 import pathlib
@@ -13,7 +12,6 @@ from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 import nugraph as ng
 
 torch.set_num_threads(4)
-
 warnings.filterwarnings('ignore', '.*TypedStorage is deprecated.*')
 
 Data = ng.data.H5DataModule
@@ -23,7 +21,7 @@ def configure():
     parser = argparse.ArgumentParser()
     parser.add_argument('--device', type=int, default=None,
                         help="Index of GPU device to train with")
-    parser.add_argument('--logger', type=str, default="wandb",
+    parser.add_argument('--logger', type=str, default="tensorboard",
                         choices=("wandb", "tensorboard"),
                         help="Which logging method to use")
     parser.add_argument('--name', type=str, default=None,
@@ -61,15 +59,27 @@ def train(args):
         logdir = pathlib.Path(os.environ["NUGRAPH_LOG"])/args.name
         logdir.mkdir(parents=True, exist_ok=True)
         log_model = False if args.offline else "all"
-        logger = pl.loggers.WandbLogger(save_dir=logdir, project=args.project,
-                                        name=args.name, version=args.version,
-                                        log_model=log_model, offline=args.offline)
+        logger = pl.loggers.WandbLogger(
+            save_dir=logdir,
+            project=args.project,
+            name=args.name,
+            version=args.version,
+            log_model=log_model,
+            offline=args.offline
+        )
+        warnings.warn(('The "wandb" logging option is deprecated, and will be '
+                       'removed in a future nugraph version! Please switch '
+                       'your workflow to use tensorboard logging.'))
     elif args.logger == "tensorboard":
         logdir = os.environ["NUGRAPH_LOG"]
-        logger = pl.loggers.TensorBoardLogger(save_dir=logdir, name=args.name,
-                                              version=args.version, default_hp_metric=False)
+        logger = pl.loggers.TensorBoardLogger(
+            save_dir=logdir,
+            name=args.name,
+            version=args.version,
+            default_hp_metric=False
+        )
     else:
-        raise RuntimeError(f"Logger option \"{args.logger}\" not recognized!")
+        raise RuntimeError(f'Logger option "{args.logger}" not recognized!')
 
     # configure callbacks
     callbacks = []
@@ -78,18 +88,20 @@ def train(args):
     if isinstance(logger, pl.loggers.WandbLogger) and not args.offline:
         callbacks.append(ModelCheckpoint(monitor="loss/val", mode="min"))
 
-    # configure plugins
-    plugins = [
-        SLURMEnvironment(requeue_signal=signal.SIGUSR1),
-    ]
+    plugins = [ SLURMEnvironment(requeue_signal=signal.SIGUSR1) ]
 
     accelerator, devices = ng.util.configure_device(args.device)
-    trainer = pl.Trainer(accelerator=accelerator, devices=devices,
-                         max_epochs=args.epochs,
-                         limit_train_batches=args.limit_train_batches,
-                         limit_val_batches=args.limit_val_batches,
-                         logger=logger, profiler=args.profiler,
-                         callbacks=callbacks, plugins=plugins)
+    trainer = pl.Trainer(
+        accelerator=accelerator,
+        devices=devices,
+        max_epochs=args.epochs,
+        limit_train_batches=args.limit_train_batches,
+        limit_val_batches=args.limit_val_batches,
+        logger=logger,
+        profiler=args.profiler,
+        callbacks=callbacks,
+        plugins=plugins
+    )
 
     trainer.fit(model, datamodule=nudata, ckpt_path=args.resume)
 

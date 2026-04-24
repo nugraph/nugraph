@@ -4,28 +4,36 @@ The nugraph ecosystem consists of two packages, pynuml and nugraph, both of whic
 
 ## Installing dependencies with conda
 
-A conda environment YAML containing all pynuml and nugraph dependencies is available in the main branch of the nugraph repo [here](https://github.com/nugraph/nugraph/blob/main/numl.yaml). This file can be accessed by cloning the nugraph repository, as described below, or downloading it directly by running
+Conda environment YAMLs containing all pynuml and nugraph dependencies are available in the main branch of the nugraph repo, either with GPU support ([here](https://github.com/nugraph/nugraph/blob/main/nugraph-gpu.yaml)) or for CPU only ([here](https://github.com/nugraph/nugraph/nugraph/blob/main/nugraph-cpu.yaml")).
+
+```{admonition} Installing a CPU environment
+:class: note
+
+These instructions assume you wish to install a nugraph environment with GPU support. If you wish to install a CPU-only environment, simply substitute `nugraph-cpu` for `nugraph-gpu` in the following instructions.
+```
+
+The environment file can be accessed by cloning the nugraph repository, as described below, or downloading directly by running
 
 ```bash
-wget https://raw.githubusercontent.com/nugraph/nugraph/refs/heads/main/numl.yaml
+wget https://raw.githubusercontent.com/nugraph/nugraph/refs/heads/main/nugraph-gpu.yaml
 ```
 
 or
 
 ```bash
-curl -L -O https://raw.githubusercontent.com/nugraph/nugraph/refs/heads/main/numl.yaml
+curl -L -O https://raw.githubusercontent.com/nugraph/nugraph/refs/heads/main/nugraph-gpu.yaml
 ```
 
 If conda is not already installed, we recommend installing [miniforge](https://github.com/conda-forge/miniforge). Once conda is available, installing the dependencies should be as simple as
 
 ```bash
-conda env create -f numl.yaml
+conda env create -f nugraph-gpu.yaml
 ```
 
 after which the environment can be activated by running
 
 ```bash
-conda activate numl
+conda activate nugraph-gpu
 ```
 
 ```{admonition} A note on the conda environment
