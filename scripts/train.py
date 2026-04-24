@@ -10,12 +10,6 @@ import torch
 import pytorch_lightning as pl
 from pytorch_lightning.plugins.environments import SLURMEnvironment
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
-
-import sys
-sys.path.append(f"{os.environ['HOME']}/nugraph/pynuml")
-sys.path.append(f"{os.environ['HOME']}/nugraph/nugraph")
-os.environ["NUGRAPH_DIR"] = f"{os.environ['HOME']}/nugraph"
-os.environ["NUGRAPH_LOG"] = f"{os.environ['HOME']}/logs"
 import nugraph as ng
 
 torch.set_num_threads(4)
