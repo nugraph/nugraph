@@ -140,8 +140,8 @@ class NuGraph3(LightningModule):
                       batch: Data,
                       batch_idx: int) -> float:
         loss, metrics = self(batch, 'train')
-        self.log('loss/train', loss, batch_size=batch.num_graphs, prog_bar=True)
-        self.log_dict(metrics, batch_size=batch.num_graphs)
+        self.log('loss/train', loss, batch_size=batch.num_graphs, prog_bar=True, sync_dist=True)
+        self.log_dict(metrics, batch_size=batch.num_graphs, sync_dist=True)
         return loss
 
     def on_train_epoch_end(self) -> None:
@@ -152,8 +152,8 @@ class NuGraph3(LightningModule):
                         batch,
                         batch_idx: int) -> None:
         loss, metrics = self(batch, 'val')
-        self.log('loss/val', loss, batch_size=batch.num_graphs)
-        self.log_dict(metrics, batch_size=batch.num_graphs)
+        self.log('loss/val', loss, batch_size=batch.num_graphs, sync_dist=True)
+        self.log_dict(metrics, batch_size=batch.num_graphs, sync_dist=True)
 
     def on_validation_epoch_end(self) -> None:
         epoch = self.trainer.current_epoch + 1
@@ -164,8 +164,8 @@ class NuGraph3(LightningModule):
                   batch,
                   batch_idx: int = 0) -> None:
         loss, metrics = self(batch, 'test')
-        self.log('loss/test', loss, batch_size=batch.num_graphs)
-        self.log_dict(metrics, batch_size=batch.num_graphs)
+        self.log('loss/test', loss, batch_size=batch.num_graphs, sync_dist=True)
+        self.log_dict(metrics, batch_size=batch.num_graphs, sync_dist=True)
 
     def on_test_epoch_end(self) -> None:
         epoch = self.trainer.current_epoch + 1
