@@ -26,9 +26,7 @@ class RecallLoss(torch.nn.Module):
 
         ce = F.cross_entropy(input, target, reduction='none',
                              ignore_index=self.ignore_index)
-        mask = target != self.ignore_index
-        loss = torch.where(mask, weight[target.clamp(min=0)] * ce,
-                           torch.zeros_like(ce))
+        loss = weight[target] * ce
 
         # Sync total non-ignored count across GPUs
         n_valid = mask.sum().float()
@@ -37,6 +35,3 @@ class RecallLoss(torch.nn.Module):
             n_valid = n_valid / dist.get_world_size()
 
         return loss[mask].sum() / n_valid
-
-    def reset(self):
-        self.recall_metric.reset()
