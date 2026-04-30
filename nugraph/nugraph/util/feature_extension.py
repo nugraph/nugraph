@@ -10,10 +10,26 @@ class FeatureExtension(BaseTransform):
 
     def __call__(self, data: "pyg.data.HeteroData") -> "pyg.data.HeteroData":
 
-        for p in self.planes:
+        if "hit" in data.node_types:
+            data['hit'].x = cat((data['hit'].x, zeros(data['hit'].x.shape[0],4)), dim=-1)
+        
+        for i, p in enumerate(self.planes):
+
+            if "hit" in data.node_types:
+                idx = (data["hit"].plane == i).nonzero().squeeze(dim=1)
+                pos = data["hit"]["pos"][idx]
+                edge = data['hit', 'delaunay-planar', 'hit']
+                x = data['hit'].x[idx]
+            else:
+                idx = torch.ones(data[p].x.shape[0])
+                pos = data.collect("pos")[p]
+                edge = data[p, 'plane', p]
+                x = cat((data[p].x, torch.zeros(data[p].x.shape[0],4)), dim=-1)
+            
             ## Adding delta wire an delta time (dwire/dtime doesn't work; some infs)
             # Extracting wire and time information
-            wt_coords = stack((data.collect("pos")[p][:, 0], data.collect("pos")[p][:, 1]), dim=1) # [wire, time]
+            wt_coords = stack((pos[:, 0], pos[:, 1]), dim=1) # [wire, time]
+            #print(wt_coords)
 
             # Calculating pairwise euclidean distances of nodes in the wire vs time space
             dist_table = norm(wt_coords[:, None, :] - wt_coords[None, :, :], dim=-1)
@@ -30,13 +46,13 @@ class FeatureExtension(BaseTransform):
             dtime = (2*wt_coords[:, 1] - wt_coords[idxs_2closest_nodes[:,1], 1] - wt_coords[idxs_2closest_nodes[:,0], 1]).view(-1,1)
 
             ## Adding node degree
-            nodes_degree = torch.unique(data[p, 'plane', p].edge_index[0], sorted=True, return_counts=True)[1].view(-1,1)
-            nodes_degree = log(nodes_degree) # Should I use log(nodes_degree) instead?
+            nodes_degree = torch.unique(edge.edge_index[0], sorted=True, return_counts=True)[1].view(-1,1)
+            nodes_degree = log(nodes_degree[idx])
 
             ## Adding shortest edge length
             min_dist = dists_2closest_nodes[:,0].view(-1,1) # 'dists_2closest_nodes' is sorted in ascending order
 
             # Extending the original node feature matrix with the new features
-            data[p].x = cat((data[p].x, dwire, dtime, nodes_degree, min_dist), dim=-1)
+            x[:,-4:] = cat((dwire, dtime, nodes_degree, min_dist), dim=-1)
 
         return data

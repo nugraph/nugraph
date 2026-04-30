@@ -10,8 +10,10 @@ import tqdm
 import torch
 from torch_geometric.loader import DataLoader
 from pytorch_lightning import LightningDataModule
+from torch_geometric.transforms import Compose
 
 from ..data import NuGraphDataset, BalanceSampler
+from ..util import FeatureExtension
 
 DEFAULT_DATA = ("$NUGRAPH_DATA/uboone-opendata/"
                 "uboone-opendata-19be46d89d0f22f5a78641d724c1fedd.gnn.h5")
@@ -24,7 +26,8 @@ class NuGraphDataModule(LightningDataModule):
                  batch_size: int = 64,
                  num_workers: int = 5,
                  shuffle: str = 'random',
-                 balance_frac: float = 0.1):
+                 balance_frac: float = 0.1,
+                 featext: bool = False):
         super().__init__()
 
         # for this HDF5 dataloader, worker processes slow things down
@@ -41,6 +44,7 @@ class NuGraphDataModule(LightningDataModule):
             sys.exit()
         self.shuffle = shuffle
         self.balance_frac = balance_frac
+        self.featext = featext
 
         with h5py.File(self.filename) as f:
 
@@ -88,7 +92,14 @@ class NuGraphDataModule(LightningDataModule):
                        "Call \"generate_samples\" to create it."))
                 sys.exit()
 
-        transform = model.transform(self.planes) if model else None
+
+        if model:
+            if self.featext:
+                transform = Compose((model.transform(planes=self.planes),FeatureExtension(self.planes)))
+            else:
+                transform = model.transform(planes=self.planes)
+        else:
+            None
 
         self.train_dataset = NuGraphDataset(self.filename, train_samples, transform)
         self.val_dataset = NuGraphDataset(self.filename, val_samples, transform)
@@ -178,4 +189,6 @@ class NuGraphDataModule(LightningDataModule):
                           help='Dataset shuffling scheme to use')
         data.add_argument('--balance-frac', type=float, default=0.1,
                           help='Fraction of dataset to use for workload balancing')
+        data.add_argument('--featext', action='store_true', default=False,
+                          help='Enable extended features')
         return parser
