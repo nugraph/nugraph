@@ -1,6 +1,6 @@
 """Loss functions, data transforms and general utilities"""
 from .confusion_matrix_logger import ConfusionMatrixLogger
-from .RecallLoss import RecallLoss
+from .recall_loss import RecallLoss
 from .LogCoshLoss import LogCoshLoss
 from .ObjCondensationLoss import ObjCondensationLoss
 from .position_features import PositionFeatures
