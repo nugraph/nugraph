@@ -75,10 +75,7 @@ class InstanceDecoder(nn.Module):
         # calculate semantic loss to input to object condensation particle loss
         loss_semantic = None
         if (self.particle_loss):
-            x_semantic = h.x_semantic
-            y_semantic = h.y_semantic
-            semantic_loss_func = RecallLoss()
-            loss_semantic = semantic_loss_func(x_semantic, y_semantic)
+            loss_semantic = data.hit_loss()
 
         # calculate loss
         loss = self.loss(h.ox, h.of, data.y_i(), h.y_semantic,

@@ -26,7 +26,8 @@ class SemanticDecoder(nn.Module):
         super().__init__()
 
         # loss function
-        self.loss = RecallLoss(num_classes=len(semantic_classes))
+        self.loss = RecallLoss(num_classes=len(semantic_classes),
+                               reduction="none")
 
         # temperature parameter
         self.temp = nn.Parameter(torch.tensor(0.))
@@ -57,19 +58,23 @@ class SemanticDecoder(nn.Module):
             stage: Stage name (train/val/test)
         """
 
+        h = data["hit"]
+
         # run network and add output to graph object
-        data["hit"].x_semantic = self.net(data["hit"].x)
+        h.x_semantic = self.net(h.x)
         if isinstance(data, Batch):
             # pylint: disable=protected-access
-            data._slice_dict["hit"]["x_semantic"] = data["hit"].ptr
-            inc = torch.zeros(data.num_graphs, device=data["hit"].x.device)
+            data._slice_dict["hit"]["x_semantic"] = h.ptr
+            inc = torch.zeros(data.num_graphs, device=h.x.device)
             data._inc_dict["hit"]["x_semantic"] = inc
 
         # calculate loss
-        x = data["hit"].x_semantic
-        y = data["hit"].y_semantic
+        x = h.x_semantic
+        y = h.y_semantic
+        h.loss_semantic = self.loss(x, y).unsqueeze(dim=1)
+
         w = 2 * (-1 * self.temp).exp()
-        loss = w * self.loss(x, y) + self.temp
+        loss = w * h.loss_semantic.sum() + self.temp
 
         # calculate metrics
         metrics = {}
@@ -84,7 +89,7 @@ class SemanticDecoder(nn.Module):
             self.cm_precision.update(x, y)
 
         # apply softmax to prediction
-        data["hit"].x_semantic = data["hit"].x_semantic.softmax(dim=1)
+        h.x_semantic = h.x_semantic.softmax(dim=1)
 
         return loss, metrics
 
