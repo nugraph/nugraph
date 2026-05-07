@@ -83,14 +83,14 @@ class NuGraphCore(nn.Module):
     Args:
         hit_features: Number of features in planar embedding
         nexus_features: Number of features in nexus embedding
-        interaction_features: Number of features in interaction embedding
+        objcon_features: Number of features in object condensation embedding
         use_checkpointing: Whether to use checkpointing
     """
     def __init__(self,
                  hit_features: int,
                  nexus_features: int,
                  interaction_features: int,
-                 instance_features: int,
+                 objcon_features: int,
                  use_checkpointing: bool = True):
         super().__init__()
 
@@ -118,26 +118,24 @@ class NuGraphCore(nn.Module):
         self.nexus_to_plane = NuGraphBlock(nexus_features, hit_features,
                                            hit_features)
 
-        # widen MLP for instance embedding generation
-        hidden = 3 * hit_features
-
-        # deeper, wider object condensation beta embedding
+        # object condensation beta embedding
         self.beta_net = nn.Sequential(
-            nn.Linear(hit_features + 1, hidden),
+            nn.Linear(hit_features + objcon_features, objcon_features),
             nn.Mish(),
-            nn.Linear(hidden, hidden),
+            nn.Linear(objcon_features, objcon_features),
             nn.Mish(),
-            nn.Linear(hidden, 1),
-            nn.Sigmoid(),
+            nn.Linear(objcon_features, objcon_features),
+            nn.Mish(),
         )
 
         # deeper, wider object condensation coordinate embedding
         self.coord_net = nn.Sequential(
-            nn.Linear(hit_features + instance_features, hidden),
+            nn.Linear(hit_features + objcon_features, objcon_features),
             nn.Mish(),
-            nn.Linear(hidden, hidden),
+            nn.Linear(objcon_features, objcon_features),
             nn.Mish(),
-            nn.Linear(hidden, instance_features),
+            nn.Linear(objcon_features, objcon_features),
+            nn.Mish()
         )
 
     def checkpoint(self, net: nn.Module, *args) -> TD:

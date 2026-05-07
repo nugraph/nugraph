@@ -17,10 +17,10 @@ class InstanceDecoder(nn.Module):
     coordinates for each hit.
 
     Args:
-        hit_features: Number of hit node features
+        objcon_features: Number of object condensation features
         instance_features: Number of instance features
     """
-    def __init__(self, hit_features: int, instance_features: int,
+    def __init__(self, objcon_features: int, instance_features: int,
                  particle_loss: bool = False):
         super().__init__()
 
@@ -30,20 +30,14 @@ class InstanceDecoder(nn.Module):
         # temperature parameter
         self.temp = nn.Parameter(torch.tensor(0.))
 
-        # beta MLP
+        # beta decoder
         self.beta_net = nn.Sequential(
-            nn.Linear(hit_features + 1, hit_features),
-            nn.Mish(),
-            nn.Linear(hit_features, 1),
+            nn.Linear(objcon_features, 1),
             nn.Sigmoid(),
         )
 
-        # coordinate MLP
-        self.coord_net = nn.Sequential(
-            nn.Linear(hit_features + instance_features, hit_features),
-            nn.Mish(),
-            nn.Linear(hit_features, instance_features),
-        )
+        # coordinate decoder
+        self.coord_net = nn.Linear(objcon_features, instance_features)
 
         self.dbscan = DBSCAN(eps=0.3, min_samples=15)
         self.particle_loss = particle_loss
@@ -62,8 +56,8 @@ class InstanceDecoder(nn.Module):
         device = h.x.device
 
         # run network and add output to graph object
-        h.of = self.beta_net(torch.cat((h.x, h.of), dim=1)).squeeze(dim=-1)
-        h.ox = self.coord_net(torch.cat((h.x, h.ox), dim=1))
+        h.of = self.beta_net(h.of).squeeze(dim=-1)
+        h.ox = self.coord_net(h.ox)
 
         if isinstance(data, Batch):
             # pylint: disable=protected-access

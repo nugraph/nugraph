@@ -26,6 +26,7 @@ class NuGraph3(LightningModule):
         hit_features: Number of hit node features
         nexus_features: Number of nexus node features
         interaction_features: Number of interaction node features
+        objcon_features: Number of object condensation features
         instance_features: Number of instance features
         planes: Tuple of detector plane names
         semantic_classes: Tuple of semantic classes
@@ -45,6 +46,7 @@ class NuGraph3(LightningModule):
                  hit_features: int = 128,
                  nexus_features: int = 32,
                  interaction_features: int = 32,
+                 objcon_features: int = 384,
                  instance_features: int = 8,
                  planes: tuple[str] = ("u","v","y"),
                  semantic_classes: tuple[str] = ('MIP','HIP','shower','michel','diffuse'),
@@ -74,12 +76,12 @@ class NuGraph3(LightningModule):
         self.lr = lr
 
         self.encoder = Encoder(in_features, hit_features,
-                               nexus_features, interaction_features, instance_features)
+                               nexus_features, interaction_features, objcon_features)
 
         self.core_net = NuGraphCore(hit_features,
                                     nexus_features,
                                     interaction_features,
-                                    instance_features,
+                                    objcon_features,
                                     use_checkpointing)
 
         self.decoders = []
@@ -101,7 +103,7 @@ class NuGraph3(LightningModule):
             self.decoders.append(self.vertex_decoder)
 
         if instance_head:
-            self.instance_decoder = InstanceDecoder(hit_features, instance_features,
+            self.instance_decoder = InstanceDecoder(objcon_features, instance_features,
                                                     particle_loss)
             self.decoders.append(self.instance_decoder)
 
@@ -216,8 +218,10 @@ class NuGraph3(LightningModule):
                            help='Hidden dimensionality of nexus convolutions')
         model.add_argument('--interaction-feats', type=int, default=32,
                            help='Hidden dimensionality of interaction layer')
-        model.add_argument('--instance-feats', type=int, default=8,
+        model.add_argument('--objcon-feats', type=int, default=384,
                            help='Hidden dimensionality of object condensation')
+        model.add_argument('--instance-feats', type=int, default=8,
+                           help='Size of clustering embedding')
         model.add_argument('--event', action='store_true',
                            help='Enable event classification head')
         model.add_argument('--semantic', action='store_true',
@@ -255,6 +259,7 @@ class NuGraph3(LightningModule):
             hit_features=args.hit_feats,
             nexus_features=args.nexus_feats,
             interaction_features=args.interaction_feats,
+            objcon_features=args.objcon_feats,
             instance_features=args.instance_feats,
             planes=nudata.planes,
             semantic_classes=nudata.semantic_classes,
