@@ -7,7 +7,6 @@ import warnings
 
 import torch
 import pytorch_lightning as pl
-from pytorch_lightning.plugins.environments import SLURMEnvironment
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 import nugraph as ng
 
@@ -88,8 +87,6 @@ def train(args):
     if isinstance(logger, pl.loggers.WandbLogger) and not args.offline:
         callbacks.append(ModelCheckpoint(monitor="loss/val", mode="min"))
 
-    plugins = [ SLURMEnvironment(requeue_signal=signal.SIGUSR1) ]
-
     accelerator, devices = ng.util.configure_device(args.device)
     trainer = pl.Trainer(
         accelerator=accelerator,
@@ -100,7 +97,6 @@ def train(args):
         logger=logger,
         profiler=args.profiler,
         callbacks=callbacks,
-        plugins=plugins
     )
 
     trainer.fit(model, datamodule=nudata, ckpt_path=args.resume)
