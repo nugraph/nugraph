@@ -40,8 +40,8 @@ class SemanticDecoder(nn.Module):
         self.recall = tm.Recall(**metric_args)
         self.precision = tm.Precision(**metric_args)
         self.f1 = tm.F1Score(**metric_args)
-        self.cm_logger = ConfusionMatrixLogger(semantic_classes)
         self.cm = tm.ConfusionMatrix(**metric_args)
+        self.cm_logger = ConfusionMatrixLogger(semantic_classes)
 
         # network
         self.net = nn.Linear(hit_features, len(semantic_classes))
@@ -99,20 +99,4 @@ class SemanticDecoder(nn.Module):
             epoch: Training epoch index
         """
 
-        # compute confusion matrices
-        cm = self.cm.compute().cpu()
-        cm_recall = cm / cm.sum(dim=1)[:, None]
-        cm_recall[~cm_recall.isfinite()] = 0
-        cm_precision = cm / cm.sum(dim=0)[None, :]
-        cm_precision[~cm_precision.isfinite()] = 0
-        cm_f1 = 2 * cm / cm.sum(dim=1).outer(cm.sum(dim=0))
-        cm_f1[~cm_f1.isfinite()] = 0
-        self.cm.reset()
-
-        # log confusion matrices
-        self.cm_logger.log(f"semantic/recall-matrix-{stage}",
-                           cm_recall, logger, epoch)
-        self.cm_logger.log(f"semantic/precision-matrix-{stage}",
-                           cm_precision, logger, epoch)
-        self.cm_logger.log(f"semantic/f1-matrix-{stage}",
-                           cm_f1, logger, epoch)
+        self.cm_logger.log("semantic", stage, self.cm, logger, epoch)
