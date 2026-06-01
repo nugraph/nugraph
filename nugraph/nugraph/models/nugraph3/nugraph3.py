@@ -12,7 +12,7 @@ from .types import Data
 from .transform import Transform
 from .encoder import Encoder
 from .core import NuGraphCore
-from .decoders import (SemanticDecoder, FilterDecoder, MichelFilterDecoder, EventDecoder, VertexDecoder, InstanceDecoder,
+from .decoders import (SemanticDecoder, FilterDecoder, MichelDecoder, EventDecoder, VertexDecoder, InstanceDecoder,
                        SpacepointDecoder)
 
 from ...data import H5DataModule
@@ -52,8 +52,8 @@ class NuGraph3(LightningModule):
                  num_iters: int = 5,
                  event_head: bool = False,
                  semantic_head: bool = True,
-                 filter_head: bool = True, #Default True
-                 michel_filter_head: bool = False,
+                 filter_head: bool = True,
+                 michel_head: bool = False,
                  vertex_head: bool = False,
                  instance_head: bool = False,
                  spacepoint_head: bool = False,
@@ -97,10 +97,9 @@ class NuGraph3(LightningModule):
             self.filter_decoder = FilterDecoder(hit_features,)
             self.decoders.append(self.filter_decoder)
             
-        # Stopping Michel
-        if michel_filter_head:
-            self.michel_filter_decoder = MichelFilterDecoder(hit_features,)
-            self.decoders.append(self.michel_filter_decoder)
+        if michel_head:
+            self.michel_decoder = MichelDecoder(hit_features,)
+            self.decoders.append(self.michel_decoder)
 
         if vertex_head:
             self.vertex_decoder = VertexDecoder(interaction_features)
@@ -245,7 +244,7 @@ class NuGraph3(LightningModule):
                            help='Maximum number of epochs to train for')
         model.add_argument('--learning-rate', type=float, default=0.001,
                            help='Max learning rate during training')
-        model.add_argument('--michel-filter', action='store_true',
+        model.add_argument('--michel', action='store_true',
                            help='Enable Michel electron filter decoder')
         return parser
 
@@ -271,7 +270,7 @@ class NuGraph3(LightningModule):
             event_head=args.event,
             semantic_head=args.semantic,
             filter_head=args.filter,
-            michel_filter_head=args.michel_filter,
+            michel_head=args.michel,
             vertex_head=args.vertex,
             instance_head=args.instance,
             spacepoint_head=args.spacepoint,

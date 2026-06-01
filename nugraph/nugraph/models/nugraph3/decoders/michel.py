@@ -11,7 +11,7 @@ from nugraph.util import ConfusionMatrixLogger
 from ..types import Data
 
 
-class MichelFilterDecoder(nn.Module):
+class MichelDecoder(nn.Module):
     """
     NuGraph3 Michel filter decoder.
 
@@ -32,18 +32,18 @@ class MichelFilterDecoder(nn.Module):
         # temperature parameter
         self.temp = nn.Parameter(torch.tensor(0.0))
 
-        # Store Michel semantic class index
+        # store michel semantic class index
         self.michel_label = michel_label
 
-        # Metrics
+        # metrics
         metric_args = {"task": "binary"}
         self.recall = tm.Recall(**metric_args)
         self.precision = tm.Precision(**metric_args)
-        self.cm_logger = ConfusionMatrixLogger(("non_michel", "michel"))
-        self.cm_recall = tm.ConfusionMatrix(normalize="true", **metric_args)
-        self.cm_precision = tm.ConfusionMatrix(normalize="pred", **metric_args)
+        self.f1 = tm.F1Score(**metric_args)
+        self.cm = tm.ConfusionMatrix(**metric_args)
+        self.cm_logger = ConfusionMatrixLogger(("background", "michel"))
 
-        # Network: one logit per hit
+        # network
         self.net = nn.Linear(hit_features, 1)
 
     def forward(self, data: Data, stage: str = None) -> dict[str, Any]:
@@ -53,37 +53,33 @@ class MichelFilterDecoder(nn.Module):
 
         h = data["hit"]
 
-        # One raw logit per hit
+        # calculate loss
         x = self.net(h.x).squeeze(dim=-1)
-
-        # Use existing semantic labels
         y = (h.y_semantic == self.michel_label).float()
-
-        # Loss weighting, following the default filter style
         w = 2 * (-1 * self.temp).exp()
         loss = w * self.loss(x, y) + self.temp
 
         metrics = {}
 
         if stage:
-            metrics[f"michel-filter/loss-{stage}"] = loss
-            metrics[f"michel-filter/recall-{stage}"] = self.recall(x, y)
-            metrics[f"michel-filter/precision-{stage}"] = self.precision(x, y)
+            metrics[f"michel/loss-{stage}"] = loss
+            metrics[f"michel/recall-{stage}"] = self.recall(x, y)
+            metrics[f"michel/precision-{stage}"] = self.precision(x, y)
+            metrics[f"michel/f1-{stage}"] = self.f1(x, y)
 
         if stage == "train":
-            metrics["temperature/michel-filter"] = self.temp
+            metrics["temperature/michel"] = self.temp
 
         if stage in ["val", "test"]:
-            self.cm_recall.update(x, y)
-            self.cm_precision.update(x, y)
+            self.cm.update(x, y)
 
         # Store Michel probability on all hits
-        h.x_michel_filter = x.sigmoid()
+        h.x_michel = x.sigmoid()
 
         if isinstance(data, Batch):
-            data._slice_dict["hit"]["x_michel_filter"] = h.ptr
+            data._slice_dict["hit"]["x_michel"] = h.ptr
             inc = torch.zeros(data.num_graphs, device=h.x.device)
-            data._inc_dict["hit"]["x_michel_filter"] = inc
+            data._inc_dict["hit"]["x_michel"] = inc
 
         return loss, metrics
 
@@ -96,17 +92,4 @@ class MichelFilterDecoder(nn.Module):
         """
         End-of-epoch callback for confusion matrix logging.
         """
-
-        self.cm_logger.log(
-            f"michel-filter/recall-matrix-{stage}",
-            self.cm_recall,
-            logger,
-            epoch,
-        )
-
-        self.cm_logger.log(
-            f"michel-filter/precision-matrix-{stage}",
-            self.cm_precision,
-            logger,
-            epoch,
-        )
+        self.cm_logger.log("michel", stage, self.cm, logger, epoch)
