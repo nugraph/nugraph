@@ -125,7 +125,7 @@ class SemanticDecoder(DecoderBase):
         }
 
         super().__init__('semantic', planes, semantic_classes,
-                         RecallLoss(), 2., 0., metric_args)
+                         RecallLoss(num_classes=len(semantic_classes)), 2., 0., metric_args)
 
         self.net = torch.nn.ModuleDict()
         for p in planes:

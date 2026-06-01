@@ -88,7 +88,10 @@ def train(args):
     if isinstance(logger, pl.loggers.WandbLogger) and not args.offline:
         callbacks.append(ModelCheckpoint(monitor="loss/val", mode="min"))
 
-    plugins = [ SLURMEnvironment(requeue_signal=signal.SIGUSR1) ]
+    # configure plugins
+    plugins = [
+        SLURMEnvironment(),
+    ]
 
     accelerator, devices = ng.util.configure_device(args.device)
     trainer = pl.Trainer(
@@ -100,7 +103,7 @@ def train(args):
         logger=logger,
         profiler=args.profiler,
         callbacks=callbacks,
-        plugins=plugins
+        plugins=plugins,
     )
 
     trainer.fit(model, datamodule=nudata, ckpt_path=args.resume)

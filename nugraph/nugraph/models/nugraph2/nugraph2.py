@@ -161,8 +161,8 @@ class NuGraph2(LightningModule): # pylint: disable=too-many-instance-attributes
         for decoder in self.decoders:
             loss, metrics = decoder.loss(batch, 'train')
             total_loss += loss
-            self.log_dict(metrics, batch_size=batch.num_graphs)
-        self.log('loss/train', total_loss, batch_size=batch.num_graphs, prog_bar=True)
+            self.log_dict(metrics, batch_size=batch.num_graphs, sync_dist=True)
+        self.log('loss/train', total_loss, batch_size=batch.num_graphs, prog_bar=True, sync_dist=True)
         return total_loss
 
     def validation_step(self, batch) -> None: # pylint: disable=arguments-differ
@@ -171,8 +171,8 @@ class NuGraph2(LightningModule): # pylint: disable=too-many-instance-attributes
         for decoder in self.decoders:
             loss, metrics = decoder.loss(batch, 'val')
             total_loss += loss
-            self.log_dict(metrics, batch_size=batch.num_graphs)
-        self.log('loss/val', total_loss, batch_size=batch.num_graphs)
+            self.log_dict(metrics, batch_size=batch.num_graphs, sync_dist=True)
+        self.log('loss/val', total_loss, batch_size=batch.num_graphs, sync_dist=True)
 
     def on_validation_epoch_end(self) -> None:
         epoch = self.trainer.current_epoch + 1
@@ -185,8 +185,8 @@ class NuGraph2(LightningModule): # pylint: disable=too-many-instance-attributes
         for decoder in self.decoders:
             loss, metrics = decoder.loss(batch, 'test')
             total_loss += loss
-            self.log_dict(metrics, batch_size=batch.num_graphs)
-        self.log('loss/test', total_loss, batch_size=batch.num_graphs)
+            self.log_dict(metrics, batch_size=batch.num_graphs, sync_dist=True)
+        self.log('loss/test', total_loss, batch_size=batch.num_graphs, sync_dist=True)
 
     def on_test_epoch_end(self) -> None:
         epoch = self.trainer.current_epoch + 1
