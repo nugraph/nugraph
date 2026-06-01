@@ -39,7 +39,6 @@ class MichelFilterDecoder(nn.Module):
         metric_args = {"task": "binary"}
         self.recall = tm.Recall(**metric_args)
         self.precision = tm.Precision(**metric_args)
-        #self.cm_logger = ConfusionMatrixLogger(("noise", "signal"))
         self.cm_logger = ConfusionMatrixLogger(("non_michel", "michel"))
         self.cm_recall = tm.ConfusionMatrix(normalize="true", **metric_args)
         self.cm_precision = tm.ConfusionMatrix(normalize="pred", **metric_args)
@@ -52,54 +51,38 @@ class MichelFilterDecoder(nn.Module):
         Forward pass for Michel filter decoder.
         """
 
+        h = data["hit"]
+
         # One raw logit per hit
-        x = self.net(data["hit"].x).squeeze(dim=-1)
+        x = self.net(h.x).squeeze(dim=-1)
 
         # Use existing semantic labels
-        semantic = data["hit"].y_semantic
-
-        # Ignore unlabeled / invalid hits
-        mask = semantic != -1
-
-        # Binary target:
-        #   1 = Michel semantic hit
-        #   0 = non-Michel semantic hit
-        target = (semantic == self.michel_label).float()
-
-        x_masked = x[mask]
-        y = target[mask]
+        y = (h.y_semantic == self.michel_label).float()
 
         # Loss weighting, following the default filter style
         w = 2 * (-1 * self.temp).exp()
-
-        if mask.any():
-            loss = w * self.loss(x_masked, y) + self.temp
-        else:
-            # Safe zero loss if a batch somehow has no valid labels
-            loss = x.sum() * 0.0
+        loss = w * self.loss(x, y) + self.temp
 
         metrics = {}
 
         if stage:
-            metrics[f"michel_filter/loss-{stage}"] = loss
-
-        if stage and mask.any():
-            metrics[f"michel_filter/recall-{stage}"] = self.recall(x_masked, y)
-            metrics[f"michel_filter/precision-{stage}"] = self.precision(x_masked, y)
+            metrics[f"michel-filter/loss-{stage}"] = loss
+            metrics[f"michel-filter/recall-{stage}"] = self.recall(x, y)
+            metrics[f"michel-filter/precision-{stage}"] = self.precision(x, y)
 
         if stage == "train":
-            metrics["temperature/michel_filter"] = self.temp
+            metrics["temperature/michel-filter"] = self.temp
 
-        if stage in ["val", "test"] and mask.any():
-            self.cm_recall.update(x_masked, y)
-            self.cm_precision.update(x_masked, y)
+        if stage in ["val", "test"]:
+            self.cm_recall.update(x, y)
+            self.cm_precision.update(x, y)
 
         # Store Michel probability on all hits
-        data["hit"].x_michel_filter = x.sigmoid()
+        h.x_michel_filter = x.sigmoid()
 
         if isinstance(data, Batch):
-            data._slice_dict["hit"]["x_michel_filter"] = data["hit"].ptr
-            inc = torch.zeros(data.num_graphs, device=data["hit"].x.device)
+            data._slice_dict["hit"]["x_michel_filter"] = h.ptr
+            inc = torch.zeros(data.num_graphs, device=h.x.device)
             data._inc_dict["hit"]["x_michel_filter"] = inc
 
         return loss, metrics
@@ -115,14 +98,14 @@ class MichelFilterDecoder(nn.Module):
         """
 
         self.cm_logger.log(
-            f"michel_filter/recall-matrix-{stage}",
+            f"michel-filter/recall-matrix-{stage}",
             self.cm_recall,
             logger,
             epoch,
         )
 
         self.cm_logger.log(
-            f"michel_filter/precision-matrix-{stage}",
+            f"michel-filter/precision-matrix-{stage}",
             self.cm_precision,
             logger,
             epoch,
