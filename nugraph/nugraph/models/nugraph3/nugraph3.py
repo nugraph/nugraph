@@ -41,11 +41,11 @@ class NuGraph3(LightningModule):
         lr: Learning rate
     """
     def __init__(self,
-                 in_features: int = 8, #def 4
+                 in_features: int = 4,
                  hit_features: int = 128,
                  nexus_features: int = 32,
                  interaction_features: int = 32,
-                 instance_features: int = 8, #def 8
+                 instance_features: int = 8,
                  planes: tuple[str] = ("u","v","y"),
                  semantic_classes: tuple[str] = ('MIP','HIP','shower','michel','diffuse'),
                  event_classes: tuple[str] = ('numu','nue','nc'),
@@ -96,7 +96,7 @@ class NuGraph3(LightningModule):
         if filter_head:
             self.filter_decoder = FilterDecoder(hit_features,)
             self.decoders.append(self.filter_decoder)
-            
+
         if michel_head:
             self.michel_decoder = MichelDecoder(hit_features,)
             self.decoders.append(self.michel_decoder)
@@ -277,4 +277,3 @@ class NuGraph3(LightningModule):
             particle_loss=args.particle_loss,
             use_checkpointing=args.use_checkpointing,
             lr=args.learning_rate)
-
