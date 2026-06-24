@@ -4,7 +4,6 @@ import warnings
 
 import torch.cuda
 from torch.optim import AdamW
-from torch.optim.lr_scheduler import OneCycleLR
 
 from pytorch_lightning import LightningModule
 
@@ -186,11 +185,7 @@ class NuGraph3(LightningModule):
     def configure_optimizers(self) -> tuple:
         optimizer = AdamW(self.parameters(),
                           lr=self.lr)
-        onecycle = OneCycleLR(
-                optimizer,
-                max_lr=self.lr,
-                total_steps=self.trainer.estimated_stepping_batches)
-        return [optimizer], {'scheduler': onecycle, 'interval': 'step'}
+        return [optimizer]
 
     @staticmethod
     def transform(planes: tuple[str]) -> Transform:
