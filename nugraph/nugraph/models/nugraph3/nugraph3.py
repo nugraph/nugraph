@@ -135,6 +135,8 @@ class NuGraph3(LightningModule):
         total_metrics = {}
         for decoder in self.decoders:
             loss, metrics = decoder(data, stage)
+            if self.training and not loss.isfinite():
+                raise RuntimeError(f"invalid loss value {loss} from {decoder.__name__}")
             total_loss += loss
             total_metrics.update(metrics)
 
