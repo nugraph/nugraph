@@ -245,7 +245,7 @@ class NuGraph3(LightningModule):
                            help='Maximum number of epochs to train for')
         model.add_argument('--learning-rate', type=float, default=0.001,
                            help='Max learning rate during training')
-        model.add_argument('--no-lr-scheduler', action='store_false',
+        model.add_argument('--no-lr-scheduler', action='store_true',
                            dest="no_one_cycle_sched",
                            help='Disable OneCycleLR scheduler')
         return parser
