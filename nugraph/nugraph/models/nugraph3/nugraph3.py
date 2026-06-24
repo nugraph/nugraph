@@ -39,6 +39,7 @@ class NuGraph3(LightningModule):
         spacepoint_head: Whether to enable spacepoint decoder
         use_checkpointing: Whether to use checkpointing
         lr: Learning rate
+        no_one_cycle_sched: Whether to disable the OneCycleLR scheduler
     """
     def __init__(self,
                  in_features: int = 4,
@@ -57,7 +58,8 @@ class NuGraph3(LightningModule):
                  instance_head: bool = False,
                  spacepoint_head: bool = False,
                  use_checkpointing: bool = False,
-                 lr: float = 0.001):
+                 lr: float = 0.001,
+                 no_one_cycle_sched: bool = False):
         super().__init__()
 
         warnings.filterwarnings("ignore", ".*NaN values found in confusion matrix.*")
@@ -71,6 +73,7 @@ class NuGraph3(LightningModule):
         self.event_classes = event_classes
         self.num_iters = num_iters
         self.lr = lr
+        self.no_one_cycle_sched = no_one_cycle_sched
 
         self.encoder = Encoder(in_features, hit_features,
                                nexus_features, interaction_features, instance_features)
@@ -179,11 +182,14 @@ class NuGraph3(LightningModule):
     def configure_optimizers(self) -> tuple:
         optimizer = AdamW(self.parameters(),
                           lr=self.lr)
-        onecycle = OneCycleLR(
-                optimizer,
-                max_lr=self.lr,
-                total_steps=self.trainer.estimated_stepping_batches)
-        return [optimizer], {'scheduler': onecycle, 'interval': 'step'}
+        if self.no_one_cycle_sched:
+            return optimizer
+        else:
+            onecycle = OneCycleLR(
+                       optimizer,
+                       max_lr=self.lr,
+                       total_steps=self.trainer.estimated_stepping_batches)
+            return [optimizer], {'scheduler': onecycle, 'interval': 'step'}
 
     @staticmethod
     def transform(planes: tuple[str]) -> Transform:
@@ -235,6 +241,9 @@ class NuGraph3(LightningModule):
                            help='Maximum number of epochs to train for')
         model.add_argument('--learning-rate', type=float, default=0.001,
                            help='Max learning rate during training')
+        model.add_argument('--no-lr-scheduler', action='store_false',
+                           dest="no_one_cycle_sched",
+                           help='Disable OneCycleLR scheduler')
         return parser
 
     @classmethod
@@ -263,4 +272,5 @@ class NuGraph3(LightningModule):
             instance_head=args.instance,
             spacepoint_head=args.spacepoint,
             use_checkpointing=args.use_checkpointing,
-            lr=args.learning_rate)
+            lr=args.learning_rate,
+            no_one_cycle_sched=args.no_one_cycle_sched)
