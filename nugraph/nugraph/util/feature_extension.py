@@ -12,7 +12,7 @@ class FeatureExtension(BaseTransform):
         super().__init__()
         self.planes = planes
 
-    def __call__(self, data: "pyg.data.HeteroData") -> "pyg.data.HeteroData":
+    def forward(self, data: "pyg.data.HeteroData") -> "pyg.data.HeteroData":
 
         if "hit" in data.node_types:
             data['hit'].x = torch.cat((data['hit'].x, torch.zeros(data['hit'].x.shape[0],4)),
