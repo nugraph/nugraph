@@ -9,8 +9,8 @@ import tqdm
 
 import torch
 from torch_geometric.loader import DataLoader
-from pytorch_lightning import LightningDataModule
 from torch_geometric.transforms import Compose
+from pytorch_lightning import LightningDataModule
 
 from ..data import NuGraphDataset, BalanceSampler
 from ..util import FeatureExtension
@@ -92,14 +92,12 @@ class NuGraphDataModule(LightningDataModule):
                        "Call \"generate_samples\" to create it."))
                 sys.exit()
 
-
+        transform = []
         if model:
-            if self.featext:
-                transform = Compose((model.transform(planes=self.planes),FeatureExtension(self.planes)))
-            else:
-                transform = model.transform(planes=self.planes)
-        else:
-            None
+            transform.append(model.transform(planes=self.planes))
+        if self.featext:
+            transform.append(FeatureExtension(planes=self.planes))
+        transform = Compose(transform) if transform else None
 
         self.train_dataset = NuGraphDataset(self.filename, train_samples, transform)
         self.val_dataset = NuGraphDataset(self.filename, val_samples, transform)
