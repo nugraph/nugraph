@@ -1,18 +1,28 @@
-'''
-This transform adds a set of extended features to planar nodes
-'''
+"""Transform to add set of extended features to planar nodes"""
 import torch
 from torch_geometric.transforms import BaseTransform
 
 class FeatureExtension(BaseTransform):
     """
-    This class takes the planar node data and adds extra features by appending elements to x
+    Transform to add additional values to planar feature tensor
+
+    Args:
+        planes: Tuple of detector plane names
     """
     def __init__(self, planes: list[str]):
         super().__init__()
         self.planes = planes
 
     def forward(self, data: "pyg.data.HeteroData") -> "pyg.data.HeteroData":
+        """
+        FeatureExtension forward function
+
+        This function appends additional features to the planar node
+        embedding.
+
+        Args:
+            data: Graph data object
+        """
 
         if "hit" in data.node_types:
             data['hit'].x = torch.cat((data['hit'].x, torch.zeros(data['hit'].x.shape[0],4)),
@@ -40,7 +50,7 @@ class FeatureExtension(BaseTransform):
             dist_table.fill_diagonal_(float('inf'))
 
             # Find a (n_nodes, 2) matrix containing the distances and
-            # indexes of the two closest nodes to each node
+            # indices of the two closest nodes to each node
             dists_2closest_nodes, idxs_2closest_nodes = torch.topk(dist_table, 2, dim=1,
                                                                    largest=False, sorted=True)
 
