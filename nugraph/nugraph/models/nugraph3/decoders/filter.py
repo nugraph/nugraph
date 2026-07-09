@@ -33,9 +33,9 @@ class FilterDecoder(nn.Module):
         metric_args = {"task": "binary"}
         self.recall = tm.Recall(**metric_args)
         self.precision = tm.Precision(**metric_args)
+        self.f1 = tm.F1Score(**metric_args)
+        self.cm = tm.ConfusionMatrix(**metric_args)
         self.cm_logger = ConfusionMatrixLogger(("noise", "signal"))
-        self.cm_recall = tm.ConfusionMatrix(normalize="true", **metric_args)
-        self.cm_precision = tm.ConfusionMatrix(normalize="pred", **metric_args)
 
         # network
         self.net = nn.Linear(hit_features, 1)
@@ -61,11 +61,11 @@ class FilterDecoder(nn.Module):
             metrics[f"filter/loss-{stage}"] = loss
             metrics[f"filter/recall-{stage}"] = self.recall(x, y)
             metrics[f"filter/precision-{stage}"] = self.precision(x, y)
+            metrics[f"filter/f1-{stage}"] = self.f1(x, y)
         if stage == "train":
             metrics["temperature/filter"] = self.temp
         if stage in ["val", "test"]:
-            self.cm_recall.update(x, y)
-            self.cm_precision.update(x, y)
+            self.cm.update(x, y)
 
         # run network and add output to graph object
         data["hit"].x_filter = x.sigmoid()
@@ -87,7 +87,4 @@ class FilterDecoder(nn.Module):
             stage: Training stage
             epoch: Training epoch index
         """
-        self.cm_logger.log(f"filter/recall-matrix-{stage}",
-                           self.cm_recall, logger, epoch)
-        self.cm_logger.log(f"filter/precision-matrix-{stage}",
-                           self.cm_precision, logger, epoch)
+        self.cm_logger.log("filter", stage, self.cm, logger, epoch)

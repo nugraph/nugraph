@@ -4,7 +4,6 @@ import warnings
 
 import torch.cuda
 from torch.optim import AdamW
-from torch.optim.lr_scheduler import OneCycleLR
 
 from pytorch_lightning import LightningModule
 
@@ -12,7 +11,7 @@ from .types import Data
 from .transform import Transform
 from .encoder import Encoder
 from .core import NuGraphCore
-from .decoders import (SemanticDecoder, FilterDecoder, MichelFilterDecoder, EventDecoder, VertexDecoder, InstanceDecoder,
+from .decoders import (SemanticDecoder, FilterDecoder, MichelDecoder, EventDecoder, VertexDecoder, InstanceDecoder,
                        SpacepointDecoder)
 
 from ...data import H5DataModule
@@ -41,19 +40,19 @@ class NuGraph3(LightningModule):
         lr: Learning rate
     """
     def __init__(self,
-                 in_features: int = 8, #def 4
+                 in_features: int = 4,
                  hit_features: int = 128,
                  nexus_features: int = 32,
                  interaction_features: int = 32,
-                 instance_features: int = 8, #def 8
+                 instance_features: int = 8,
                  planes: tuple[str] = ("u","v","y"),
                  semantic_classes: tuple[str] = ('MIP','HIP','shower','michel','diffuse'),
                  event_classes: tuple[str] = ('numu','nue','nc'),
                  num_iters: int = 5,
                  event_head: bool = False,
                  semantic_head: bool = True,
-                 filter_head: bool = True, #Default True
-                 michel_filter_head: bool = False,
+                 filter_head: bool = True,
+                 michel_head: bool = False,
                  vertex_head: bool = False,
                  instance_head: bool = False,
                  spacepoint_head: bool = False,
@@ -96,11 +95,10 @@ class NuGraph3(LightningModule):
         if filter_head:
             self.filter_decoder = FilterDecoder(hit_features,)
             self.decoders.append(self.filter_decoder)
-            
-        # Stopping Michel
-        if michel_filter_head:
-            self.michel_filter_decoder = MichelFilterDecoder(hit_features,)
-            self.decoders.append(self.michel_filter_decoder)
+
+        if michel_head:
+            self.michel_decoder = MichelDecoder(hit_features,)
+            self.decoders.append(self.michel_decoder)
 
         if vertex_head:
             self.vertex_decoder = VertexDecoder(interaction_features)
@@ -137,6 +135,8 @@ class NuGraph3(LightningModule):
         total_metrics = {}
         for decoder in self.decoders:
             loss, metrics = decoder(data, stage)
+            if self.training and not loss.isfinite():
+                raise RuntimeError(f"invalid loss value {loss} from {decoder.__name__}")
             total_loss += loss
             total_metrics.update(metrics)
 
@@ -146,8 +146,8 @@ class NuGraph3(LightningModule):
                       batch: Data,
                       batch_idx: int) -> float:
         loss, metrics = self(batch, 'train')
-        self.log('loss/train', loss, batch_size=batch.num_graphs, prog_bar=True)
-        self.log_dict(metrics, batch_size=batch.num_graphs)
+        self.log('loss/train', loss, batch_size=batch.num_graphs, prog_bar=True, sync_dist=True)
+        self.log_dict(metrics, batch_size=batch.num_graphs, sync_dist=True)
         return loss
 
     def on_train_epoch_end(self) -> None:
@@ -158,8 +158,8 @@ class NuGraph3(LightningModule):
                         batch,
                         batch_idx: int) -> None:
         loss, metrics = self(batch, 'val')
-        self.log('loss/val', loss, batch_size=batch.num_graphs)
-        self.log_dict(metrics, batch_size=batch.num_graphs)
+        self.log('loss/val', loss, batch_size=batch.num_graphs, sync_dist=True)
+        self.log_dict(metrics, batch_size=batch.num_graphs, sync_dist=True)
 
     def on_validation_epoch_end(self) -> None:
         epoch = self.trainer.current_epoch + 1
@@ -170,8 +170,8 @@ class NuGraph3(LightningModule):
                   batch,
                   batch_idx: int = 0) -> None:
         loss, metrics = self(batch, 'test')
-        self.log('loss/test', loss, batch_size=batch.num_graphs)
-        self.log_dict(metrics, batch_size=batch.num_graphs)
+        self.log('loss/test', loss, batch_size=batch.num_graphs, sync_dist=True)
+        self.log_dict(metrics, batch_size=batch.num_graphs, sync_dist=True)
 
     def on_test_epoch_end(self) -> None:
         epoch = self.trainer.current_epoch + 1
@@ -187,11 +187,7 @@ class NuGraph3(LightningModule):
     def configure_optimizers(self) -> tuple:
         optimizer = AdamW(self.parameters(),
                           lr=self.lr)
-        onecycle = OneCycleLR(
-                optimizer,
-                max_lr=self.lr,
-                total_steps=self.trainer.estimated_stepping_batches)
-        return [optimizer], {'scheduler': onecycle, 'interval': 'step'}
+        return [optimizer]
 
     @staticmethod
     def transform(planes: tuple[str]) -> Transform:
@@ -245,7 +241,7 @@ class NuGraph3(LightningModule):
                            help='Maximum number of epochs to train for')
         model.add_argument('--learning-rate', type=float, default=0.001,
                            help='Max learning rate during training')
-        model.add_argument('--michel-filter', action='store_true',
+        model.add_argument('--michel', action='store_true',
                            help='Enable Michel electron filter decoder')
         return parser
 
@@ -271,11 +267,10 @@ class NuGraph3(LightningModule):
             event_head=args.event,
             semantic_head=args.semantic,
             filter_head=args.filter,
-            michel_filter_head=args.michel_filter,
+            michel_head=args.michel,
             vertex_head=args.vertex,
             instance_head=args.instance,
             spacepoint_head=args.spacepoint,
             particle_loss=args.particle_loss,
             use_checkpointing=args.use_checkpointing,
             lr=args.learning_rate)
-

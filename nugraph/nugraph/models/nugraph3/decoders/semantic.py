@@ -26,7 +26,7 @@ class SemanticDecoder(nn.Module):
         super().__init__()
 
         # loss function
-        self.loss = RecallLoss()
+        self.loss = RecallLoss(num_classes=len(semantic_classes))
 
         # temperature parameter
         self.temp = nn.Parameter(torch.tensor(0.))
@@ -39,9 +39,9 @@ class SemanticDecoder(nn.Module):
         }
         self.recall = tm.Recall(**metric_args)
         self.precision = tm.Precision(**metric_args)
+        self.f1 = tm.F1Score(**metric_args)
+        self.cm = tm.ConfusionMatrix(**metric_args)
         self.cm_logger = ConfusionMatrixLogger(semantic_classes)
-        self.cm_recall = tm.ConfusionMatrix(normalize="true", **metric_args)
-        self.cm_precision = tm.ConfusionMatrix(normalize="pred", **metric_args)
 
         # network
         self.net = nn.Linear(hit_features, len(semantic_classes))
@@ -77,11 +77,11 @@ class SemanticDecoder(nn.Module):
             metrics[f"semantic/loss-{stage}"] = loss
             metrics[f"semantic/recall-{stage}"] = self.recall(x, y)
             metrics[f"semantic/precision-{stage}"] = self.precision(x, y)
+            metrics[f"semantic/f1-{stage}"] = self.f1(x, y)
         if stage == "train":
             metrics["temperature/semantic"] = self.temp
         if stage in ["val", "test"]:
-            self.cm_recall.update(x, y)
-            self.cm_precision.update(x, y)
+            self.cm.update(x, y)
 
         # apply softmax to prediction
         data["hit"].x_semantic = data["hit"].x_semantic.softmax(dim=1)
@@ -98,8 +98,5 @@ class SemanticDecoder(nn.Module):
             stage: Training stage
             epoch: Training epoch index
         """
-        self.cm_logger.log(f"semantic/recall-matrix-{stage}",
-                           self.cm_recall, logger, epoch)
-        self.cm_logger.log(f"semantic/precision-matrix-{stage}",
-                           self.cm_precision, logger, epoch)
 
+        self.cm_logger.log("semantic", stage, self.cm, logger, epoch)

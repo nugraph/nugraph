@@ -118,20 +118,26 @@ class NuGraphCore(nn.Module):
         self.nexus_to_plane = NuGraphBlock(nexus_features, hit_features,
                                            hit_features)
 
-        # object condensation beta embedding
+        # widen MLP for instance embedding generation
+        hidden = 3 * hit_features
+
+        # deeper, wider object condensation beta embedding
         self.beta_net = nn.Sequential(
-            nn.Linear(hit_features + 1, hit_features),
+            nn.Linear(hit_features + 1, hidden),
             nn.Mish(),
-            nn.Linear(hit_features, 1),
+            nn.Linear(hidden, hidden),
+            nn.Mish(),
+            nn.Linear(hidden, 1),
             nn.Sigmoid(),
         )
 
-        # object condensation coordinate embedding
+        # deeper, wider object condensation coordinate embedding
         self.coord_net = nn.Sequential(
-            nn.Linear(hit_features + instance_features, hit_features),
+            nn.Linear(hit_features + instance_features, hidden),
             nn.Mish(),
-            nn.Linear(hit_features, instance_features),
+            nn.Linear(hidden, hidden),
             nn.Mish(),
+            nn.Linear(hidden, instance_features),
         )
 
     def checkpoint(self, net: nn.Module, *args) -> TD:
