@@ -100,7 +100,9 @@ def train(args):
         logger=logger,
         profiler=args.profiler,
         callbacks=callbacks,
-        plugins=plugins
+        plugins=plugins,
+        precision="bf16-mixed",
+        benchmark=True
     )
 
     trainer.fit(model, datamodule=nudata, ckpt_path=args.resume)
