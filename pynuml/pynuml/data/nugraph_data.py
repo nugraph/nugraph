@@ -31,6 +31,18 @@ class NuGraphData(HeteroData):
         x_i[i] = j
         return x_i
 
+    def hit_loss(self, reset: bool = True) -> torch.Tensor:
+        """Return loss values for each hit"""
+        attrs = []
+        for attr in self["hit"].node_attrs():
+            if "loss_" in attr:
+                attrs.append(attr)
+        loss = torch.cat([getattr(self["hit"], attr) for attr in attrs], dim=1)
+        if reset:
+            for attr in attrs:
+                delattr(self["hit"], attr)
+        return loss
+
     def save(self, file: h5py.File, name: str) -> None:
         """Save NuGraph data object to HDF5 file
 
