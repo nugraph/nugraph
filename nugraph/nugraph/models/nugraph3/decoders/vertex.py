@@ -41,7 +41,7 @@ class VertexDecoder(nn.Module):
         # run network and calculate loss
         x = self.net(data["evt"].x)
         y = data["evt"].y_vtx
-        w = (-1 * self.temp).exp()
+        w = (-1 * self.temp).clamp(max=80.).exp()
         loss = w * self.loss(x, y) + self.temp
 
         # add inference output to graph object

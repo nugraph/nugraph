@@ -52,7 +52,7 @@ class FilterDecoder(nn.Module):
         # calculate loss
         x = self.net(data["hit"].x).squeeze(dim=-1)
         y = (data["hit"].y_semantic != -1).float()
-        w = 2 * (-1 * self.temp).exp()
+        w = 2 * (-1 * self.temp).clamp(max=80.).exp()
         loss = w * self.loss(x, y) + self.temp
 
         # calculate metrics

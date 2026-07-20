@@ -36,6 +36,9 @@ def configure():
                         help="write wandb logs offline")
     parser.add_argument('--profiler', type=str, default=None,
                         help='Enable requested profiler')
+    parser.add_argument('--precision', type=str, default='32',
+                        choices=('32', 'bf16-mixed'),
+                        help='Precision for training (default: 32, or bf16-mixed for AMP)')
     parser = Data.add_data_args(parser)
     parser = Model.add_model_args(parser)
     return parser.parse_args()

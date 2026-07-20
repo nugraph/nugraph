@@ -37,9 +37,10 @@ class RecallLoss(torch.nn.Module):
             x: Predicted class labels
             y: True class labels
         """
-        self.recall_metric = self.recall_metric.to(x.device)
+        if self.recall_metric.device != x.device:
+            self.recall_metric = self.recall_metric.to(x.device)
         self.recall_metric.update(x, y)
-        weight = 1 - self.recall_metric.compute()
+        weight = (1 - self.recall_metric.compute()).to(dtype=x.dtype)
         self.recall_metric.reset()
 
         ce = F.cross_entropy(x, y, reduction="none",

@@ -73,7 +73,7 @@ class SemanticDecoder(nn.Module):
         y = h.y_semantic
         h.loss_semantic = self.loss(x, y).unsqueeze(dim=1)
 
-        w = 2 * (-1 * self.temp).exp()
+        w = 2 * (-1 * self.temp).clamp(max=80.).exp()
         loss = w * h.loss_semantic.sum() + self.temp
 
         # calculate metrics

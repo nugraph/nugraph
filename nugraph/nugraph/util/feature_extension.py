@@ -64,7 +64,7 @@ class FeatureExtension(BaseTransform):
             # Adding node degree
             nodes_degree = torch.unique(edge.edge_index[0], sorted=True,
                                         return_counts=True)[1].view(-1,1)
-            extended_vars.append(torch.log(nodes_degree[idx]))
+            extended_vars.append(torch.log(nodes_degree[idx].clamp(min=1)))
 
             # Adding shortest edge length ('dists_2closest_nodes' is sorted in ascending order)
             extended_vars.append(dists_2closest_nodes[:,0].view(-1,1))

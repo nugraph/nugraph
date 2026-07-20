@@ -81,7 +81,7 @@ class InstanceDecoder(nn.Module):
         loss = self.loss(h.ox, h.of, data.y_i(), h.y_semantic,
                          data[N_IT].num_nodes, data[E_H_IT].edge_index,
                          loss_semantic)
-        loss *= (-1 * self.temp).exp()
+        loss *= (-1 * self.temp).clamp(max=80.).exp()
         b, v, p = loss
         loss = loss.sum() + self.temp
 
@@ -158,7 +158,7 @@ class InstanceDecoder(nn.Module):
 
         # if there are no signal hits to cluster, skip dbscan and return empty tensors
         if not mask.sum():
-            x_ip = torch.empty(0, 0, dtype=torch.float, device=ox.device)
+            x_ip = torch.empty(0, 0, dtype=ox.dtype, device=ox.device)
             e_h_ip = torch.empty(2, 0, dtype=torch.long, device=ox.device)
             return x_ip, e_h_ip
 
@@ -166,7 +166,7 @@ class InstanceDecoder(nn.Module):
         arr = ox[mask].detach().to(torch.float32).cpu().numpy()
         labels = self.dbscan.fit_predict(arr)
         i[mask] = torch.from_numpy(labels).to(device=ox.device, dtype=torch.long)
-        x_ip = torch.empty(i.max()+1, 0, dtype=torch.float, device=ox.device)
+        x_ip = torch.empty(i.max()+1, 0, dtype=ox.dtype, device=ox.device)
         mask = i > -1
         e_h_ip = torch.stack((torch.nonzero(mask).squeeze(1), i[mask])).long()
         return x_ip, e_h_ip
