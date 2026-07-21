@@ -45,8 +45,8 @@ class FeatureExtension(BaseTransform):
             # Extracting wire and time information
             wt_coords = torch.stack((pos[:, 0], pos[:, 1]), dim=1) # [wire, time]
 
-            # Calculating pairwise euclidean distances of nodes in the wire vs time space
-            dist_table = torch.norm(wt_coords[:, None, :] - wt_coords[None, :, :], dim=-1)
+            # Pairwise euclidean distances in wire-time space
+            dist_table = torch.cdist(wt_coords, wt_coords)
             dist_table.fill_diagonal_(float('inf'))
 
             # Find a (n_nodes, 2) matrix containing the distances and

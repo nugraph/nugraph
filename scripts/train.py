@@ -12,6 +12,7 @@ from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 import nugraph as ng
 
 torch.set_num_threads(4)
+torch.set_float32_matmul_precision('high')
 warnings.filterwarnings('ignore', '.*TypedStorage is deprecated.*')
 
 Data = ng.data.H5DataModule
@@ -99,8 +100,8 @@ def train(args):
 
     accelerator, devices = ng.util.configure_device(args.device)
     trainer = pl.Trainer(
-        accelerator=accelerator,
-        devices=devices,
+        accelerator="gpu",#accelerator,
+        devices=[0],#devices,
         max_epochs=args.epochs,
         limit_train_batches=args.limit_train_batches,
         limit_val_batches=args.limit_val_batches,
