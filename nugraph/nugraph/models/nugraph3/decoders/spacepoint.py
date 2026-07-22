@@ -42,7 +42,7 @@ class SpacepointDecoder(torch.nn.Module):
         h = data["hit"]
         device = h.x.device
 
-        h.x_position = torch.empty((h.num_nodes, 3), device=device, dtype=torch.float)
+        h.x_position = torch.empty((h.num_nodes, 3), device=device, dtype=h.x.dtype)
         for i, net in enumerate(self.net):
             mask = h.plane == i
             h.x_position[mask] = net(h.x[mask])

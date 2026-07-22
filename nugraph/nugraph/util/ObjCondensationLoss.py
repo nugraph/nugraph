@@ -22,7 +22,8 @@ class ObjCondensationLoss(torch.nn.Module):
         """Calculate potential loss term"""
         device = x.device
         n_hit = x.size(0)
-        q = f.atanh().square() + self.q_min
+        # clamp in float32: bf16 rounds values >= ~0.992 to exactly 1.0, making atanh(1)=inf
+        q = f.float().clamp(-0.99999, 0.99999).atanh().square() + self.q_min
         m_ik = torch.zeros(n_hit, n_true, dtype=torch.bool, device=device)
         m_ik[e_h, e_p] = True
         v_a = torch.cdist(x, x[centers], p=2)
@@ -33,13 +34,15 @@ class ObjCondensationLoss(torch.nn.Module):
 
     def l_p(self, f: T, bkg_mask: T, l_p: T) -> T:
         """Calculate particle loss term"""
+        dtype = f.dtype
+        device = f.device
         if l_p is None:
-            dtype = f.dtype
-            device = f.device
             p = torch.tensor(0., dtype=dtype, device=device)
         else:
-            xi = f[~bkg_mask].atanh().square()
-            p = (l_p[~bkg_mask] * xi[:, None]).sum() / (xi.sum())
+            # clamp in float32: same bf16 atanh saturation guard as in l_v
+            xi = f[~bkg_mask].float().clamp(-0.99999, 0.99999).atanh().square()
+            xi_sum = xi.sum()
+            p = (l_p[~bkg_mask] * xi[:, None]).sum() / xi_sum if xi_sum > 0 else torch.tensor(0., dtype=dtype, device=device)
         return p
 
     def forward(self, x: T, f: T, y_i: T, y_s: T, n_true: int, e_true: T,
