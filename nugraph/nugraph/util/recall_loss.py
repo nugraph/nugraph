@@ -37,8 +37,7 @@ class RecallLoss(torch.nn.Module):
             x: Predicted class labels
             y: True class labels
         """
-        if self.recall_metric.device != x.device:
-            self.recall_metric = self.recall_metric.to(x.device)
+        self.recall_metric = self.recall_metric.to(x.device)
         self.recall_metric.update(x, y)
         weight = (1 - self.recall_metric.compute()).to(dtype=x.dtype)
         self.recall_metric.reset()
