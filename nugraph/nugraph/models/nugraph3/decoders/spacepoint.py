@@ -56,7 +56,7 @@ class SpacepointDecoder(torch.nn.Module):
         mask = h.y_semantic != -1
         x = h.x_position[mask]
         y = h.y_position[mask]
-        loss = (-1 * self.temp).clamp(max=80.).exp() * self.loss(x, y) + self.temp
+        loss = (-1 * self.temp).exp() * self.loss(x, y) + self.temp
 
         # calculate metrics
         metrics = {}
