@@ -12,6 +12,7 @@ from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 import nugraph as ng
 
 torch.set_num_threads(4)
+torch.set_float32_matmul_precision('high')
 warnings.filterwarnings('ignore', '.*TypedStorage is deprecated.*')
 
 Data = ng.data.H5DataModule
@@ -36,6 +37,9 @@ def configure():
                         help="write wandb logs offline")
     parser.add_argument('--profiler', type=str, default=None,
                         help='Enable requested profiler')
+    parser.add_argument('--precision', type=str, default='32',
+                        choices=('32', 'bf16-mixed'),
+                        help='Precision for training (default: 32, or bf16-mixed for AMP)')
     parser = Data.add_data_args(parser)
     parser = Model.add_model_args(parser)
     return parser.parse_args()
