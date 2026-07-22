@@ -100,8 +100,8 @@ def train(args):
 
     accelerator, devices = ng.util.configure_device(args.device)
     trainer = pl.Trainer(
-        accelerator="gpu",#accelerator,
-        devices=[0],#devices,
+        accelerator=accelerator,
+        devices=devices,
         max_epochs=args.epochs,
         limit_train_batches=args.limit_train_batches,
         limit_val_batches=args.limit_val_batches,
