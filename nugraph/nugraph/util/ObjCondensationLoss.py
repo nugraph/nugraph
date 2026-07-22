@@ -25,7 +25,7 @@ class ObjCondensationLoss(torch.nn.Module):
         q = f.atanh().square() + self.q_min
         m_ik = torch.zeros(n_hit, n_true, dtype=torch.bool, device=device)
         m_ik[e_h, e_p] = True
-        dist = (x[:, None, :] - x[centers][None, :, :]).square().sum(dim=2)
+        dist = torch.cdist(x, x[centers])
         v = torch.where(m_ik, dist, (1 - dist).clamp(0))
         v = ((v * q[centers]).sum(dim=1) * q).sum() / n_hit
         return v
