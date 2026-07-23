@@ -1,0 +1,5 @@
+[MAIN]
+ignore=
+    docs,
+    notebooks,
+    scripts,
