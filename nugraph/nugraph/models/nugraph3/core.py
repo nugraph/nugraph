@@ -57,7 +57,7 @@ class NuGraphBlock(MessagePassing): # pylint: disable=abstract-method
             x_i: Edge features from target nodes
             x_j: Edge features from source nodes
         """
-        return self.edge_net(torch.cat((x_i, x_j), dim=1).detach()) * x_j
+        return self.edge_net(torch.cat((x_i, x_j), dim=1)) * x_j
 
     def update(self, aggr_out: T, x: T) -> T: # pylint: disable=arguments-differ
         """

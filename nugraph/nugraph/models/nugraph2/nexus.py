@@ -42,8 +42,8 @@ class NexusDown(MessagePassing): # pylint: disable=abstract-method
     def forward(self, x: T, edge_index: T, n: T) -> T: # pylint: disable=arguments-differ
         return self.propagate(edge_index=edge_index, x=x, n=n)
 
-    def message(self, x_i: T, n_j: T) -> T: # pylint: disable=arguments-differ
-        return self.edge_net(torch.cat((x_i, n_j), dim=-1).detach()) * n_j
+    def message(self, x_i: T, n_j: T) -> T:
+        return self.edge_net(torch.cat((x_i, n_j), dim=-1)) * n_j
 
     def update(self, aggr_out: T, x: T) -> T: # pylint: disable=arguments-differ
         return self.node_net(torch.cat((x, aggr_out), dim=-1))
