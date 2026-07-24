@@ -44,7 +44,7 @@ class MessagePassing2D(MessagePassing): # pylint: disable=abstract-method
     def forward(self, x: T, edge_index: T): # pylint: disable=arguments-differ
         return self.propagate(edge_index, x=x, size=None)
 
-    def message(self, x_i: T, x_j: T) -> T:
+    def message(self, x_i: T, x_j: T): # pylint: disable=arguments-differ
         return self.edge_net(torch.cat((x_i, x_j), dim=-1)) * x_j
 
     def update(self, aggr_out: T, x: T): # pylint: disable=arguments-differ
