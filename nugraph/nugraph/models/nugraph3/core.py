@@ -97,48 +97,49 @@ class NuGraphCore(nn.Module):
         self.use_checkpointing = use_checkpointing
 
         # internal planar message-passing
-        self.plane_net = NuGraphBlock(hit_features, hit_features,
-                                      hit_features)
+        self.plane_net = torch.compile(NuGraphBlock(hit_features, hit_features,
+                                                    hit_features), dynamic=True)
 
         # message-passing from planar nodes to nexus nodes
-        self.plane_to_nexus = NuGraphBlock(hit_features, nexus_features,
-                                           nexus_features)
+        self.plane_to_nexus = torch.compile(NuGraphBlock(hit_features, nexus_features,
+                                                         nexus_features), dynamic=True)
 
         # message-passing from nexus nodes to interaction nodes
-        self.nexus_to_interaction = NuGraphBlock(nexus_features,
-                                                 interaction_features,
-                                                 interaction_features)
+        self.nexus_to_interaction = torch.compile(NuGraphBlock(nexus_features,
+                                                               interaction_features,
+                                                               interaction_features),
+                                                  dynamic=True)
 
         # message-passing from interaction nodes to nexus nodes
-        self.interaction_to_nexus = NuGraphBlock(interaction_features,
-                                                 nexus_features,
-                                                 nexus_features)
+        self.interaction_to_nexus = torch.compile(NuGraphBlock(interaction_features,
+                                                               nexus_features,
+                                                               nexus_features), dynamic=True)
 
         # message-passing from nexus nodes to planar nodes
-        self.nexus_to_plane = NuGraphBlock(nexus_features, hit_features,
-                                           hit_features)
+        self.nexus_to_plane = torch.compile(NuGraphBlock(nexus_features, hit_features,
+                                                         hit_features), dynamic=True)
 
         # widen MLP for instance embedding generation
         hidden = 3 * hit_features
 
         # deeper, wider object condensation beta embedding
-        self.beta_net = nn.Sequential(
+        self.beta_net = torch.compile(nn.Sequential(
             nn.Linear(hit_features + 1, hidden),
             nn.Mish(),
             nn.Linear(hidden, hidden),
             nn.Mish(),
             nn.Linear(hidden, 1),
             nn.Sigmoid(),
-        )
+        ), dynamic=True)
 
         # deeper, wider object condensation coordinate embedding
-        self.coord_net = nn.Sequential(
+        self.coord_net = torch.compile(nn.Sequential(
             nn.Linear(hit_features + instance_features, hidden),
             nn.Mish(),
             nn.Linear(hidden, hidden),
             nn.Mish(),
             nn.Linear(hidden, instance_features),
-        )
+        ), dynamic=True)
 
     def checkpoint(self, net: nn.Module, *args) -> TD:
         """
