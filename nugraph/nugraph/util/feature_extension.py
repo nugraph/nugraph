@@ -36,7 +36,7 @@ class FeatureExtension(BaseTransform):
                 edge = data['hit', 'delaunay-planar', 'hit']
                 x = data['hit'].x[idx]
             else:
-                idx = torch.ones(data[p].x.shape[0])
+                idx = torch.ones(data[p].x.shape[0], dtype=torch.long)
                 pos = data.collect("pos")[p]
                 edge = data[p, 'plane', p]
                 x = torch.cat((data[p].x, torch.zeros(data[p].x.shape[0],4)), dim=-1)
@@ -69,7 +69,12 @@ class FeatureExtension(BaseTransform):
             # Adding shortest edge length ('dists_2closest_nodes' is sorted in ascending order)
             extended_vars.append(dists_2closest_nodes[:,0].view(-1,1))
 
-            # Extending the original node feature matrix with the new features
+            # Write extended features back to the data object; x is a copy
+            # (fancy indexing), so explicit assignment is required in both branches
             x[:,-4:] = torch.cat(extended_vars, dim=-1)
+            if "hit" in data.node_types:
+                data['hit'].x[idx] = x
+            else:
+                data[p].x = x
 
         return data
