@@ -100,7 +100,7 @@ class DecoderBase(torch.nn.Module, ABC):
             epoch: Epoch number
         """
         for name, cm in self.cm.items():
-            self.cm_logger.log(f"{name}-{stage}", cm, logger, epoch)
+            self.cm_logger.log(f"{name}-{stage}", cm=cm, logger=logger, epoch=epoch, stage=stage)
 
 class SemanticDecoder(DecoderBase):
     """
@@ -144,6 +144,7 @@ class SemanticDecoder(DecoderBase):
     def arrange(self, data: NuGraphData) -> tuple[T, T]:
         x = torch.cat([data[p].x_semantic for p in self.planes], dim=0)
         y = torch.cat([data[p].y_semantic for p in self.planes], dim=0)
+        y[y >= len(self.classes)] = -1
         return x, y
 
 class FilterDecoder(DecoderBase):

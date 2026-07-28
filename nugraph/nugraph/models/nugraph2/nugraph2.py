@@ -208,14 +208,16 @@ class NuGraph2(LightningModule): # pylint: disable=too-many-instance-attributes
         return [optimizer], {'scheduler': onecycle, 'interval': 'step'}
 
     @staticmethod
-    def transform(planes: tuple[str]) -> Transform:
+    def transform(planes: tuple[str], norm: dict | None = None) -> Transform:
         """
         Return data transform for NuGraph2 model
 
         Args:
             planes: tuple of detector plane names
+            norm: optional dict mapping plane name to [2, num_features] tensor
+                  (row 0 = mean, row 1 = std) for pre-computed feature normalization
         """
-        return Transform(planes)
+        return Transform(planes, norm=norm)
 
     @staticmethod
     def add_model_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:

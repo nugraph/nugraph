@@ -16,10 +16,15 @@ torch.set_float32_matmul_precision('high')
 warnings.filterwarnings('ignore', '.*TypedStorage is deprecated.*')
 
 Data = ng.data.H5DataModule
-Model = ng.models.NuGraph3
 
 def configure():
+    # select model class before adding model-specific args
+    ng2 = '--nugraph2' in __import__('sys').argv
+    Model = ng.models.NuGraph2 if ng2 else ng.models.NuGraph3
+
     parser = argparse.ArgumentParser()
+    parser.add_argument('--nugraph2', action='store_true', default=False,
+                        help='Train NuGraph2 instead of NuGraph3 (default)')
     parser.add_argument('--device', type=int, default=None,
                         help="Index of GPU device to train with")
     parser.add_argument('--logger', type=str, default="tensorboard",
@@ -42,9 +47,9 @@ def configure():
                         help='Precision for training (default: 32, or bf16-mixed for AMP)')
     parser = Data.add_data_args(parser)
     parser = Model.add_model_args(parser)
-    return parser.parse_args()
+    return parser.parse_args(), Model
 
-def train(args):
+def train(args, Model):
 
     torch.manual_seed(1)
 
@@ -114,5 +119,5 @@ def train(args):
     trainer.fit(model, datamodule=nudata, ckpt_path=args.resume)
 
 if __name__ == '__main__':
-    args = configure()
-    train(args)
+    args, Model = configure()
+    train(args, Model)

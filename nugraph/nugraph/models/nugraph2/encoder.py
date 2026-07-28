@@ -2,7 +2,6 @@
 import torch
 
 from .linear import ClassLinear
-from ...util import InputNorm
 
 T = torch.Tensor
 
@@ -29,7 +28,6 @@ class Encoder(torch.nn.Module):
         self.net = torch.nn.ModuleDict()
         for p in planes:
             self.net[p] = torch.nn.Sequential(
-                InputNorm(in_features),
                 ClassLinear(in_features, node_features, self.num_classes),
                 torch.nn.Tanh())
 
