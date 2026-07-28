@@ -64,7 +64,7 @@ class ObjCondensationLoss(torch.nn.Module):
         f_centers, centers = scatter_max(f[e_h], e_p, out=f_centers)
         centers = e_h[centers]
 
-        bkg_mask = (y_i == -1) & (y_s >= 0)
+        bkg_mask = (y_i == -1)
 
         # calculate loss terms
         b = self.l_b(f, f_centers, bkg_mask, n_true)
