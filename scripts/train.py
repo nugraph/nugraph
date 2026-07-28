@@ -14,6 +14,7 @@ import nugraph as ng
 torch.set_num_threads(4)
 torch.set_float32_matmul_precision('high')
 warnings.filterwarnings('ignore', '.*TypedStorage is deprecated.*')
+warnings.filterwarnings("ignore", "Unable to accurately infer 'num_nodes'*")
 
 Data = ng.data.H5DataModule
 Model = ng.models.NuGraph3
