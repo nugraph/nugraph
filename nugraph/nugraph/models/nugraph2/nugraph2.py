@@ -14,6 +14,7 @@ from .decoders import SemanticDecoder, FilterDecoder
 from .transform import Transform
 
 from ...data import H5DataModule
+from ...util import InputNorm
 
 T = torch.Tensor
 TD = dict[str, T]
@@ -168,6 +169,11 @@ class NuGraph2(LightningModule): # pylint: disable=too-many-instance-attributes
         self.log('loss/train', total_loss, batch_size=batch.num_graphs, prog_bar=True, sync_dist=True)
         return total_loss
 
+    def on_train_epoch_end(self) -> None:
+        for module in self.modules():
+            if isinstance(module, InputNorm):
+                module.update = False
+
     def validation_step(self, batch) -> None: # pylint: disable=arguments-differ
         self.step(batch)
         total_loss = 0.
@@ -208,16 +214,14 @@ class NuGraph2(LightningModule): # pylint: disable=too-many-instance-attributes
         return [optimizer], {'scheduler': onecycle, 'interval': 'step'}
 
     @staticmethod
-    def transform(planes: tuple[str], norm: dict | None = None) -> Transform:
+    def transform(planes: tuple[str]) -> Transform:
         """
         Return data transform for NuGraph2 model
 
         Args:
             planes: tuple of detector plane names
-            norm: optional dict mapping plane name to [2, num_features] tensor
-                  (row 0 = mean, row 1 = std) for pre-computed feature normalization
         """
-        return Transform(planes, norm=norm)
+        return Transform(planes)
 
     @staticmethod
     def add_model_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:

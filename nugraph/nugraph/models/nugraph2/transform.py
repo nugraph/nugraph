@@ -4,7 +4,6 @@ from torch_geometric.transforms import BaseTransform
 from torch_geometric.utils import subgraph, bipartite_subgraph
 
 from pynuml.data import NuGraphData
-from ...util import FeatureNorm
 
 class Transform(BaseTransform):
     """
@@ -12,13 +11,10 @@ class Transform(BaseTransform):
 
     Args:
         planes: Tuple of detector plane names
-        norm: Optional dict mapping plane name to [2, num_features] tensor
-              (row 0 = mean, row 1 = std) for pre-computed feature normalization
     """
-    def __init__(self, planes: tuple[str], norm: dict[str, torch.Tensor] | None = None):
+    def __init__(self, planes: tuple[str]):
         super().__init__()
         self.planes = planes
-        self.feature_norm = FeatureNorm(planes, norm) if norm is not None else None
 
     def forward(self, data: NuGraphData) -> NuGraphData:
         """
@@ -64,9 +60,5 @@ class Transform(BaseTransform):
         for pname in self.planes:
             p = data[pname]
             p.x = torch.cat((p.pos, p.x), dim=-1)
-
-        # apply pre-computed feature normalization if available
-        if self.feature_norm is not None:
-            data = self.feature_norm(data)
 
         return data

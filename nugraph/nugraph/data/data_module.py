@@ -94,13 +94,7 @@ class NuGraphDataModule(LightningDataModule):
 
         transform = []
         if model:
-            # load pre-computed feature normalization if present in the file
-            with h5py.File(self.filename) as f:
-                if 'norm' in f:
-                    norm = {p: torch.tensor(f[f'norm/{p}'][()]) for p in self.planes}
-                else:
-                    norm = None
-            transform.append(model.transform(planes=self.planes, norm=norm))
+            transform.append(model.transform(planes=self.planes))
         if self.featext:
             transform.append(FeatureExtension(planes=self.planes))
         transform = Compose(transform) if transform else None
