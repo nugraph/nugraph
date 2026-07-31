@@ -6,7 +6,7 @@ from torch import nn
 from torchmetrics.functional.clustering import adjusted_rand_score
 from torch_geometric.data import Batch
 from torch_geometric.utils import cumsum, unbatch
-from ....util import ObjCondensationLoss, RecallLoss
+from ....util import ObjConLoss, RecallLoss
 from ..types import Data, N_IT, E_H_IT, N_IP, E_H_IP
 
 class InstanceDecoder(nn.Module):
@@ -25,7 +25,7 @@ class InstanceDecoder(nn.Module):
         super().__init__()
 
         # loss function
-        self.loss = ObjCondensationLoss()
+        self.loss = ObjConLoss()
 
         # temperature parameter
         self.temp = nn.Parameter(torch.tensor(0.))

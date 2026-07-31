@@ -4,7 +4,7 @@ from torch_scatter import scatter_max
 
 T = torch.Tensor
 
-class ObjCondensationLoss(torch.nn.Module):
+class ObjConLoss(torch.nn.Module):
     def __init__(self, s_b: float = 1.0, q_min: float = 0.5):
         super().__init__()
         self.s_b = s_b
