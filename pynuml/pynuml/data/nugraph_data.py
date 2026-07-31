@@ -1,4 +1,5 @@
 """NuGraph data object"""
+import warnings
 import h5py
 import numpy as np
 import torch
@@ -117,7 +118,10 @@ class NuGraphData(HeteroData):
             if node_type == "metadata":
                 continue
             n = data[node_type]
-            if n.num_nodes is not None and not hasattr(n, "x"):
-                n.x = torch.empty([n.num_nodes, 0])
+
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", "Unable to accurately infer 'num_nodes'*")
+                if n.num_nodes is not None and not hasattr(n, "x"):
+                    n.x = torch.empty([n.num_nodes, 0])
 
         return data
