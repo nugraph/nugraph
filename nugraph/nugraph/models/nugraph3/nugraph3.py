@@ -197,7 +197,7 @@ class NuGraph3(LightningModule):
     def transform(planes: tuple[str]) -> Transform:
         """
         Return data transform for NuGraph3 model
-        
+
         Args:
             planes: tuple of detector plane names
         """

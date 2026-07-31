@@ -14,6 +14,7 @@ from .decoders import SemanticDecoder, FilterDecoder
 from .transform import Transform
 
 from ...data import H5DataModule
+from ...util import InputNorm
 
 T = torch.Tensor
 TD = dict[str, T]
@@ -64,17 +65,19 @@ class NuGraph2(LightningModule): # pylint: disable=too-many-instance-attributes
                                planes,
                                semantic_classes)
 
-        self.plane_net = PlaneNet(in_features,
-                                  planar_features,
-                                  len(semantic_classes),
-                                  planes,
-                                  checkpoint=checkpoint)
+        self.plane_net = torch.compile(PlaneNet(in_features,
+                                               planar_features,
+                                               len(semantic_classes),
+                                               planes,
+                                               checkpoint=checkpoint),
+                                      dynamic=True)
 
-        self.nexus_net = NexusNet(planar_features,
-                                  nexus_features,
-                                  len(semantic_classes),
-                                  planes,
-                                  checkpoint=checkpoint)
+        self.nexus_net = torch.compile(NexusNet(planar_features,
+                                                nexus_features,
+                                                len(semantic_classes),
+                                                planes,
+                                                checkpoint=checkpoint),
+                                       dynamic=True)
 
         self.decoders = []
 
@@ -98,11 +101,12 @@ class NuGraph2(LightningModule): # pylint: disable=too-many-instance-attributes
     def forward(self, x: TD, edge_index_plane: TD, edge_index_nexus: TD, # pylint: disable=arguments-differ,too-many-arguments,too-many-positional-arguments
                 nexus: T, batch: TD) -> TD:
         m = self.encoder(x)
+        # shortcut tensors: x[p] is constant across iterations, precompute once
+        s = {p: x[p].detach().unsqueeze(1).expand(-1, len(self.semantic_classes), -1)
+             for p in self.planes}
         for _ in range(self.num_iters):
-            # shortcut connect features
             for p in self.planes:
-                s = x[p].detach().unsqueeze(1).expand(-1, m[p].size(1), -1)
-                m[p] = torch.cat((m[p], s), dim=-1)
+                m[p] = torch.cat((m[p], s[p]), dim=-1)
             self.plane_net(m, edge_index_plane)
             self.nexus_net(m, edge_index_nexus, nexus)
         ret = {}
@@ -165,6 +169,11 @@ class NuGraph2(LightningModule): # pylint: disable=too-many-instance-attributes
         self.log('loss/train', total_loss, batch_size=batch.num_graphs, prog_bar=True, sync_dist=True)
         return total_loss
 
+    def on_train_epoch_end(self) -> None:
+        for module in self.modules():
+            if isinstance(module, InputNorm):
+                module.update = False
+
     def validation_step(self, batch) -> None: # pylint: disable=arguments-differ
         self.step(batch)
         total_loss = 0.
@@ -208,7 +217,7 @@ class NuGraph2(LightningModule): # pylint: disable=too-many-instance-attributes
     def transform(planes: tuple[str]) -> Transform:
         """
         Return data transform for NuGraph2 model
-        
+
         Args:
             planes: tuple of detector plane names
         """

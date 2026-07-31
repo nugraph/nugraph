@@ -24,7 +24,7 @@ class NuGraphDataModule(LightningDataModule):
                  data_path: str = "auto",
                  model: type[torch.nn.Module] = None,
                  batch_size: int = 64,
-                 num_workers: int = 10,
+                 num_workers: int = 8,
                  shuffle: str = 'random',
                  balance_frac: float = 0.1,
                  featext: bool = False):
@@ -177,7 +177,7 @@ class NuGraphDataModule(LightningDataModule):
                           help='Location of input data file')
         data.add_argument('--batch-size', type=int, default=64,
                           help='Size of each batch of graphs')
-        data.add_argument('--num-workers', type=int, default=5,
+        data.add_argument('--num-workers', type=int, default=8,
                           help='Number of data loader worker processes')
         data.add_argument('--limit_train_batches', type=int, default=None,
                           help='Max number of training batches to be used')
