@@ -46,6 +46,7 @@ class HitGraphProducer(ProcessorBase):
             groups['edep_table'] = []
         if self.event_labeller:
             groups['event_table'] = ['is_cc', 'nu_pdg']
+            #groups['event_table'] = []
         if self.label_vertex:
             keys = ['nu_vtx_corr','nu_vtx_wire_pos','nu_vtx_wire_time']
             if 'event_table' in groups:
@@ -69,21 +70,45 @@ class HitGraphProducer(ProcessorBase):
 
         if self.event_labeller or self.label_vertex:
             event = evt['event_table'].squeeze()
+            #event = evt['particle_table'].squeeze()
 
         # support different generations of event HDF5 format
-        hits = evt['hit_table']
+        # hits = evt['hit_table']
+        # if "local_plane" in hits.columns:
+        #     plane_key, proj_key, drift_key = "local_plane", "local_wire", "local_time"
+        # else:
+        #     plane_key, proj_key, drift_key = "view", "proj", "drift"
+
+        # spacepoints = evt['spacepoint_table'].reset_index(drop=True)
+        # support different generations of event HDF5 format
+        ### Checking missing spacepoint and continue
+        hits = evt["hit_table"]
+        
         if "local_plane" in hits.columns:
-            plane_key, proj_key, drift_key = "local_plane", "local_wire", "local_time"
+            plane_key, proj_key, drift_key = (
+                "local_plane",
+                "local_wire",
+                "local_time",
+            )
         else:
-            plane_key, proj_key, drift_key = "view", "proj", "drift"
+            plane_key, proj_key, drift_key = (
+                "view",
+                "proj",
+                "drift",
+            )
+        
+        # Fail clearly when the event has no spacepoint-table entries.
+        # This prevents the later, confusing numpy.object_ conversion error.
+        spacepoints = evt["spacepoint_table"].reset_index(drop=True)
 
-        spacepoints = evt['spacepoint_table'].reset_index(drop=True)
-
-        # discard any events with pathologically large hit integrals
-        # this is a hotfix that should be removed once the dataset is fixed
-        if hits.integral.max() > 1e6:
-            print('found event with pathologically large hit integral, skipping')
+        if spacepoints.empty:
+            print(
+                f"Skipping event {evt.name}: "
+                "no spacepoint_table entries.",
+                flush=True,
+            )
             return evt.name, None
+        ### Finish spacepoint checking
 
         # handle energy depositions
         if self.semantic_labeller:
@@ -121,16 +146,28 @@ class HitGraphProducer(ProcessorBase):
             planehits = hits[hits[plane_key]==i]
             nhits = planehits.filter_label.sum() if self.semantic_labeller else planehits.shape[0]
             if nhits < self.lower_bound:
+                print(
+                    f"Skipping event {evt.name}: plane {self.planes[i]} "
+                    f"has only {int(nhits)} simulated hits; "
+                    f"minimum required is {self.lower_bound}.",
+                    flush=True,
+                )
                 return evt.name, None
 
         # get labels for each particle
         if self.semantic_labeller:
 
+            #try:
+            #    particles = self.semantic_labeller(evt['particle_table'])
+            #except:
+                #print("exception occurred during particle labelling for event", name)
+                #return evt.name, None
             try:
                 particles = self.semantic_labeller(evt['particle_table'])
-            except:
-                print("exception occurred during particle labelling for event", name)
-                return evt.name, None
+            except Exception as exc:
+                raise RuntimeError(
+                    f'Particle labelling failed for event {evt.name}'
+                ) from exc
 
             try:
                 hits = hits.merge(particles, on='g4_id', how='left')
@@ -235,6 +272,7 @@ class HitGraphProducer(ProcessorBase):
         if self.event_labeller:
             # pylint: disable=possibly-used-before-assignment
             data['evt'].y = torch.tensor(self.event_labeller(event)).long().reshape([1])
+            #data['evt'].y = torch.tensor([-1]).long().reshape([1])
 
         # 3D vertex truth
         if self.label_vertex:
