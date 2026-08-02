@@ -15,7 +15,8 @@ class PositionFeatures(BaseTransform):
         super().__init__()
         self.planes = planes
 
-    def __call__(self, data: NuGraphData) -> NuGraphData:
+    #def __call__(self, data: NuGraphData) -> NuGraphData:
+    def forward(self, data: NuGraphData) -> NuGraphData:
         """
         Apply transform to concatenate node position onto node feature tensor
 

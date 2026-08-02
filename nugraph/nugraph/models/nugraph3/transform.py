@@ -84,9 +84,14 @@ class Transform(BaseTransform):
             del data["hit"].c
 
         # ensure event truth labels have correct format
+        #evt = data["evt"]
+        #if not evt.y.ndim:
+        #    evt.y = evt.y.reshape([1])
+        # Particle-gun samples may have an event node but no event label.
         evt = data["evt"]
-        if not evt.y.ndim:
-            evt.y = evt.y.reshape([1])
+        if "y" in evt:
+            if evt.y.ndim == 0:
+                evt.y = evt.y.reshape([1])
 
         # concatenate position tensor onto node features
         h = data["hit"]
