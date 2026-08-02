@@ -8,7 +8,7 @@ from pynuml.data import NuGraphData
 class Transform(BaseTransform):
     """
     NuGraph2 data transform
-    
+
     Args:
         planes: Tuple of detector plane names
     """
