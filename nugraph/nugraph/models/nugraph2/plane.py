@@ -1,5 +1,4 @@
 """NuGraph2 planar module"""
-from typing import Any, Callable
 import torch
 from torch_geometric.nn import MessagePassing
 from .linear import ClassLinear
@@ -80,7 +79,7 @@ class PlaneNet(torch.nn.Module):
                                            num_classes,
                                            aggr)
 
-    def ckpt(self, fn: Callable, *args) -> Any:
+    def ckpt(self, fn: MessagePassing2D, x: T, edge_index: T) -> T:
         """
         NuGraph2 planar module checkpointing function
 
@@ -88,10 +87,10 @@ class PlaneNet(torch.nn.Module):
             fn: Module to checkpoint
             args: Module arguments
         """
-        if self.checkpoint and self.training:
-            return torch.utils.checkpoint.checkpoint(fn, *args, use_reentrant=False)
+        if not torch.jit.is_scripting() and self.checkpoint and self.training:
+            return torch.utils.checkpoint.checkpoint(fn, x, edge_index, use_reentrant=False)
 
-        return fn(*args)
+        return fn.forward(x, edge_index)
 
     def forward(self, x: dict[str, T], edge_index: dict[str, T]) -> None:
         """
@@ -101,5 +100,5 @@ class PlaneNet(torch.nn.Module):
             x: Planar embedding tensor dictionary
             edge_index: Edge indices within each plane
         """
-        for p in self.net:
-            x[p] = self.ckpt(self.net[p], x[p], edge_index[p])
+        for p, net in self.net.items():
+            x[p] = self.ckpt(net, x[p], edge_index[p])

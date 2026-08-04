@@ -42,7 +42,7 @@ class Encoder(torch.nn.Module):
             x: Planar input tensor dictionary
         """
         ret = {}
-        for p, net in self.net.items():
-            x[p] = self.input_norm[p](x[p])
+        for (p, norm), (_, net) in zip(self.input_norm.items(), self.net.items()):
+            x[p] = norm(x[p])
             ret[p] = net(x[p].unsqueeze(1).expand(-1, self.num_classes, -1))
         return ret

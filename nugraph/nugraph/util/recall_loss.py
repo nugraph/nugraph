@@ -29,6 +29,7 @@ class RecallLoss(torch.nn.Module):
             sync_on_compute=True  # syncs TP/FN counts across GPUs before computing recall
         )
 
+    @torch.jit.unused
     def forward(self, x: Tensor, y: Tensor) -> Tensor:
         """
         RecallLoss forward pass

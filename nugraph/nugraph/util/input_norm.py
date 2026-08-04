@@ -45,9 +45,10 @@ class InputNorm(torch.nn.Module):
             d2 = v2 + (mean - m2).square()
             var = ((n1*d1) + (n2*d2)) / n
 
-            self.norm["count"] = P(n, requires_grad=False)
-            self.norm["mean"] = P(mean, requires_grad=False)
-            self.norm["var"] = P(var, requires_grad=False)
+            self.norm["count"].copy_(n)
+            self.norm["mean"].copy_(mean)
+            self.norm["var"].copy_(var)
+
 
         # return normalized tensor
         return (x - self.norm["mean"][None, :]) / (self.norm["var"][None, :] + 1e-5).sqrt()

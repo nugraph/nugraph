@@ -1,5 +1,4 @@
 """NuGraph2 nexus module"""
-from typing import Any, Callable
 import torch
 from torch_geometric.nn import MessagePassing, SimpleConv
 from .linear import ClassLinear
@@ -90,19 +89,6 @@ class NexusNet(torch.nn.Module):
                                            num_classes,
                                            aggr)
 
-    def ckpt(self, fn: Callable, *args) -> Any:
-        """
-        NuGraph2 nexus module checkpointing function
-
-        Args:
-            fn: Module to checkpoint
-            args: Module arguments
-        """
-        if self.checkpoint and self.training:
-            return torch.utils.checkpoint.checkpoint(fn, *args, use_reentrant=False)
-
-        return fn(*args)
-
     def forward(self, x: dict[str, T], edge_index: dict[str, T], nexus: T) -> None:
         """
         NuGraph2 nexus module forward pass
@@ -114,13 +100,20 @@ class NexusNet(torch.nn.Module):
         """
 
         # project up to nexus space
-        n = [None] * len(self.nexus_down)
+        n: list[T] = [torch.empty(0)] * len(self.nexus_down)
         for i, p in enumerate(self.nexus_down):
             n[i] = self.nexus_up(x=(x[p], nexus), edge_index=edge_index[p])
 
-        # convolve in nexus space
-        n = self.ckpt(self.nexus_net, torch.cat(n, dim=-1))
+        # convolve in nexus space; torch.jit.is_scripting() guard makes checkpoint branch dead code at compile time
+        x_cat = torch.cat(n, dim=-1)
+        if not torch.jit.is_scripting() and self.checkpoint and self.training:
+            n_cat = torch.utils.checkpoint.checkpoint(self.nexus_net, x_cat, use_reentrant=False)
+        else:
+            n_cat = self.nexus_net(x_cat)
 
         # project back down to planes
-        for p in self.nexus_down:
-            x[p] = self.ckpt(self.nexus_down[p], x[p], edge_index[p], n)
+        for p, net in self.nexus_down.items():
+            if not torch.jit.is_scripting() and self.checkpoint and self.training:
+                x[p] = torch.utils.checkpoint.checkpoint(net, x[p], edge_index[p], n_cat, use_reentrant=False)
+            else:
+                x[p] = net.forward(x[p], edge_index[p], n_cat)
