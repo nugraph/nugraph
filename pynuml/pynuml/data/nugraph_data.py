@@ -1,4 +1,5 @@
 """NuGraph data object"""
+import warnings
 import h5py
 import numpy as np
 import torch
@@ -30,6 +31,18 @@ class NuGraphData(HeteroData):
         i, j = self[E_H_IP].edge_index
         x_i[i] = j
         return x_i
+
+    def hit_loss(self, reset: bool = True) -> torch.Tensor:
+        """Return loss values for each hit"""
+        attrs = []
+        for attr in self["hit"].node_attrs():
+            if "loss_" in attr:
+                attrs.append(attr)
+        loss = torch.cat([getattr(self["hit"], attr) for attr in attrs], dim=1)
+        if reset:
+            for attr in attrs:
+                delattr(self["hit"], attr)
+        return loss
 
     def save(self, file: h5py.File, name: str) -> None:
         """Save NuGraph data object to HDF5 file
@@ -105,7 +118,10 @@ class NuGraphData(HeteroData):
             if node_type == "metadata":
                 continue
             n = data[node_type]
-            if n.num_nodes is not None and not hasattr(n, "x"):
-                n.x = torch.empty([n.num_nodes, 0])
+
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", "Unable to accurately infer 'num_nodes'*")
+                if n.num_nodes is not None and not hasattr(n, "x"):
+                    n.x = torch.empty([n.num_nodes, 0])
 
         return data

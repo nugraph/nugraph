@@ -6,7 +6,7 @@ from torch import nn
 from torchmetrics.functional.clustering import adjusted_rand_score
 from torch_geometric.data import Batch
 from torch_geometric.utils import cumsum, unbatch
-from ....util import ObjCondensationLoss, RecallLoss
+from ....util import ObjConLoss, RecallLoss
 from ..types import Data, N_IT, E_H_IT, N_IP, E_H_IP
 
 class InstanceDecoder(nn.Module):
@@ -25,7 +25,7 @@ class InstanceDecoder(nn.Module):
         super().__init__()
 
         # loss function
-        self.loss = ObjCondensationLoss()
+        self.loss = ObjConLoss()
 
         # temperature parameter
         self.temp = nn.Parameter(torch.tensor(0.))
@@ -69,10 +69,7 @@ class InstanceDecoder(nn.Module):
         # calculate semantic loss to input to object condensation particle loss
         loss_semantic = None
         if (self.particle_loss):
-            x_semantic = h.x_semantic
-            y_semantic = h.y_semantic
-            semantic_loss_func = RecallLoss()
-            loss_semantic = semantic_loss_func(x_semantic, y_semantic)
+            loss_semantic = data.hit_loss()
 
         # calculate loss
         loss = self.loss(h.ox, h.of, data.y_i(), h.y_semantic,
@@ -155,7 +152,7 @@ class InstanceDecoder(nn.Module):
 
         # if there are no signal hits to cluster, skip dbscan and return empty tensors
         if not mask.sum():
-            x_ip = torch.empty(0, 0, dtype=torch.float, device=ox.device)
+            x_ip = torch.empty(0, 0, dtype=ox.dtype, device=ox.device)
             e_h_ip = torch.empty(2, 0, dtype=torch.long, device=ox.device)
             return x_ip, e_h_ip
 
@@ -163,7 +160,7 @@ class InstanceDecoder(nn.Module):
         arr = ox[mask].detach().to(torch.float32).cpu().numpy()
         labels = self.dbscan.fit_predict(arr)
         i[mask] = torch.from_numpy(labels).to(device=ox.device, dtype=torch.long)
-        x_ip = torch.empty(i.max()+1, 0, dtype=torch.float, device=ox.device)
+        x_ip = torch.empty(i.max()+1, 0, dtype=ox.dtype, device=ox.device)
         mask = i > -1
         e_h_ip = torch.stack((torch.nonzero(mask).squeeze(1), i[mask])).long()
         return x_ip, e_h_ip

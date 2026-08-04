@@ -9,9 +9,11 @@ import tqdm
 
 import torch
 from torch_geometric.loader import DataLoader
+from torch_geometric.transforms import Compose
 from pytorch_lightning import LightningDataModule
 
 from ..data import NuGraphDataset, BalanceSampler
+from ..util import FeatureExtension
 
 DEFAULT_DATA = ("$NUGRAPH_DATA/uboone-opendata/"
                 "uboone-opendata-19be46d89d0f22f5a78641d724c1fedd.gnn.h5")
@@ -22,9 +24,10 @@ class NuGraphDataModule(LightningDataModule):
                  data_path: str = "auto",
                  model: type[torch.nn.Module] = None,
                  batch_size: int = 64,
-                 num_workers: int = 5,
+                 num_workers: int = 8,
                  shuffle: str = 'random',
-                 balance_frac: float = 0.1):
+                 balance_frac: float = 0.1,
+                 featext: bool = False):
         super().__init__()
 
         # for this HDF5 dataloader, worker processes slow things down
@@ -41,6 +44,7 @@ class NuGraphDataModule(LightningDataModule):
             sys.exit()
         self.shuffle = shuffle
         self.balance_frac = balance_frac
+        self.featext = featext
 
         with h5py.File(self.filename) as f:
 
@@ -88,7 +92,12 @@ class NuGraphDataModule(LightningDataModule):
                        "Call \"generate_samples\" to create it."))
                 sys.exit()
 
-        transform = model.transform(self.planes) if model else None
+        transform = []
+        if model:
+            transform.append(model.transform(planes=self.planes))
+        if self.featext:
+            transform.append(FeatureExtension(planes=self.planes))
+        transform = Compose(transform) if transform else None
 
         self.train_dataset = NuGraphDataset(self.filename, train_samples, transform)
         self.val_dataset = NuGraphDataset(self.filename, val_samples, transform)
@@ -155,11 +164,11 @@ class NuGraphDataModule(LightningDataModule):
 
     def val_dataloader(self) -> DataLoader:
         return DataLoader(self.val_dataset, num_workers=self.num_workers,
-                          batch_size=self.batch_size)
+                          batch_size=self.batch_size, pin_memory=True)
 
     def test_dataloader(self) -> DataLoader:
         return DataLoader(self.test_dataset, num_workers=self.num_workers,
-                          batch_size=self.batch_size)
+                          batch_size=self.batch_size, pin_memory=True)
 
     @staticmethod
     def add_data_args(parser: ArgumentParser) -> ArgumentParser:
@@ -168,7 +177,7 @@ class NuGraphDataModule(LightningDataModule):
                           help='Location of input data file')
         data.add_argument('--batch-size', type=int, default=64,
                           help='Size of each batch of graphs')
-        data.add_argument('--num-workers', type=int, default=5,
+        data.add_argument('--num-workers', type=int, default=8,
                           help='Number of data loader worker processes')
         data.add_argument('--limit_train_batches', type=int, default=None,
                           help='Max number of training batches to be used')
@@ -178,4 +187,6 @@ class NuGraphDataModule(LightningDataModule):
                           help='Dataset shuffling scheme to use')
         data.add_argument('--balance-frac', type=float, default=0.1,
                           help='Fraction of dataset to use for workload balancing')
+        data.add_argument('--featext', action='store_true', default=False,
+                          help='Enable extended features')
         return parser

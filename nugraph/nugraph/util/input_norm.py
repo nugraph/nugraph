@@ -35,8 +35,9 @@ class InputNorm(torch.nn.Module):
 
             n1, m1, v1 = self.norm["count"], self.norm["mean"], self.norm["var"]
             n2 = x.shape[0]
-            m2 = x.mean(dim=0)
-            v2 = x.var(dim=0)
+            # compute stats in float32 to avoid bf16 precision loss in running averages
+            m2 = x.float().mean(dim=0)
+            v2 = x.float().var(dim=0)
 
             n = n1 + n2
             mean = ((n1*m1) + (n2*m2)) / n

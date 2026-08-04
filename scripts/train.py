@@ -12,13 +12,19 @@ from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 import nugraph as ng
 
 torch.set_num_threads(4)
+torch.set_float32_matmul_precision('high')
 warnings.filterwarnings('ignore', '.*TypedStorage is deprecated.*')
 
 Data = ng.data.H5DataModule
-Model = ng.models.NuGraph3
 
 def configure():
+    # select model class before adding model-specific args
+    ng2 = '--nugraph2' in __import__('sys').argv
+    Model = ng.models.NuGraph2 if ng2 else ng.models.NuGraph3
+
     parser = argparse.ArgumentParser()
+    parser.add_argument('--nugraph2', action='store_true', default=False,
+                        help='Train NuGraph2 instead of NuGraph3 (default)')
     parser.add_argument('--device', type=int, default=None,
                         help="Index of GPU device to train with")
     parser.add_argument('--logger', type=str, default="tensorboard",
@@ -36,18 +42,22 @@ def configure():
                         help="write wandb logs offline")
     parser.add_argument('--profiler', type=str, default=None,
                         help='Enable requested profiler')
+    parser.add_argument('--precision', type=str, default='32',
+                        choices=('32', 'bf16-mixed'),
+                        help='Precision for training (default: 32, or bf16-mixed for AMP)')
     parser = Data.add_data_args(parser)
     parser = Model.add_model_args(parser)
-    return parser.parse_args()
+    return parser.parse_args(), Model
 
-def train(args):
+def train(args, Model):
 
     torch.manual_seed(1)
 
     # Load dataset
     nudata = Data(args.data_path, batch_size=args.batch_size,
                   model=Model, shuffle=args.shuffle,
-                  balance_frac=args.balance_frac, num_workers=args.num_workers)
+                  balance_frac=args.balance_frac, num_workers=args.num_workers,
+                  featext=args.featext)
 
     if args.resume:
         model = Model.load_from_checkpoint(args.resume)
@@ -88,7 +98,10 @@ def train(args):
     if isinstance(logger, pl.loggers.WandbLogger) and not args.offline:
         callbacks.append(ModelCheckpoint(monitor="loss/val", mode="min"))
 
-    plugins = [ SLURMEnvironment(requeue_signal=signal.SIGUSR1) ]
+    # configure plugins
+    plugins = [
+        SLURMEnvironment(),
+    ]
 
     accelerator, devices = ng.util.configure_device(args.device)
     trainer = pl.Trainer(
@@ -100,11 +113,11 @@ def train(args):
         logger=logger,
         profiler=args.profiler,
         callbacks=callbacks,
-        plugins=plugins
+        plugins=plugins,
     )
 
     trainer.fit(model, datamodule=nudata, ckpt_path=args.resume)
 
 if __name__ == '__main__':
-    args = configure()
-    train(args)
+    args, Model = configure()
+    train(args, Model)
