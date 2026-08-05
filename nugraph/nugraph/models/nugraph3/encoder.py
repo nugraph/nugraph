@@ -18,7 +18,8 @@ class Encoder(torch.nn.Module):
                  planar_features: int,
                  nexus_features: int,
                  interaction_features: int,
-                 instance_features: int):
+                 instance_features: int,
+                 edge_features_scale: float = 0.0):
         super().__init__()
 
         self.input_norm = InputNorm(in_features)
@@ -38,6 +39,10 @@ class Encoder(torch.nn.Module):
 
         self.nexus_features = nexus_features
         self.interaction_features = interaction_features
+        # pre-compute edge latent dimensions per edge type to match NuGraphBlock
+        self.edge_features_pp = int(edge_features_scale * planar_features)
+        self.edge_features_pn = int(edge_features_scale * min(planar_features, nexus_features))
+        self.edge_features_ni = int(edge_features_scale * min(nexus_features, interaction_features))
 
     def forward(self, data: NuGraphData) -> None:
         """
@@ -56,3 +61,13 @@ class Encoder(torch.nn.Module):
         data["evt"].x = torch.zeros(data["evt"].num_nodes,
                                     self.interaction_features,
                                     device=data["hit"].x.device)
+        dev = data["hit"].x.device
+        if self.edge_features_pp > 0:
+            e = data["hit", "delaunay-planar", "hit"]
+            e.edge_attr = torch.zeros(e.edge_index.shape[1], self.edge_features_pp, device=dev)
+        if self.edge_features_pn > 0:
+            e = data["hit", "nexus", "sp"]
+            e.edge_attr = torch.zeros(e.edge_index.shape[1], self.edge_features_pn, device=dev)
+        if self.edge_features_ni > 0:
+            e = data["sp", "in", "evt"]
+            e.edge_attr = torch.zeros(e.edge_index.shape[1], self.edge_features_ni, device=dev)

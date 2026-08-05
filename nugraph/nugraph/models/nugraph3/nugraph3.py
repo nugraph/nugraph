@@ -37,6 +37,9 @@ class NuGraph3(LightningModule):
         vertex_head: Whether to enable vertex decoder
         instance_head: Whether to enable instance decoder
         spacepoint_head: Whether to enable spacepoint decoder
+        edge_features_scale: Scale factor for edge latent space dimension (0.0 = disabled)
+        identity_msg_net: Use raw source features as message content (no msg_net MLP)
+        identity_edge_update_net: Store attention scalar as edge embedding (no update MLP)
         use_checkpointing: Whether to use checkpointing
         lr: Learning rate
         no_one_cycle_sched: Whether to disable the OneCycleLR scheduler
@@ -58,6 +61,9 @@ class NuGraph3(LightningModule):
                  instance_head: bool = False,
                  spacepoint_head: bool = False,
                  particle_loss: bool = False,
+                 edge_features_scale: float = 0.0,
+                 identity_msg_net: bool = False,
+                 identity_edge_update_net: bool = False,
                  use_checkpointing: bool = False,
                  lr: float = 0.001,
                  no_one_cycle_sched: bool = False):
@@ -77,13 +83,17 @@ class NuGraph3(LightningModule):
         self.no_one_cycle_sched = no_one_cycle_sched
 
         self.encoder = Encoder(in_features, hit_features,
-                               nexus_features, interaction_features, instance_features)
+                               nexus_features, interaction_features, instance_features,
+                               edge_features_scale=edge_features_scale)
 
         self.core_net = NuGraphCore(hit_features,
                                     nexus_features,
                                     interaction_features,
                                     instance_features,
-                                    use_checkpointing)
+                                    edge_features_scale=edge_features_scale,
+                                    identity_msg_net=identity_msg_net,
+                                    identity_edge_update_net=identity_edge_update_net,
+                                    use_checkpointing=use_checkpointing)
 
         self.decoders = []
 
@@ -238,6 +248,19 @@ class NuGraph3(LightningModule):
                            help="Enable spacepoint prediction head")
         model.add_argument("--particle-loss", action="store_true",
                            help="Enable object condensation particle loss term")
+        model.add_argument('--edge-feats-scale', type=float, default=0.0,
+                           dest="edge_features_scale",
+                           help='Scale factor for edge latent space dimension, '
+                                'computed per block as int(scale * min(src, tgt)). '
+                                '0.0 disables edge latent state (default)')
+        model.add_argument('--identity-msg-net', action='store_true',
+                           dest="identity_msg_net",
+                           help='Use raw source features as message content (no msg_net MLP)')
+        model.add_argument('--identity-edge-update-net', action='store_true',
+                           dest="identity_edge_update_net",
+                           help='Store attention scalar as edge embedding instead of '
+                                'using a learned update MLP (requires --edge-feats-scale '
+                                'that yields edge_features=1)')
         model.add_argument('--no-checkpointing', action='store_false',
                            dest="use_checkpointing",
                            help='Disable checkpointing during training')
@@ -276,6 +299,9 @@ class NuGraph3(LightningModule):
             instance_head=args.instance,
             spacepoint_head=args.spacepoint,
             particle_loss=args.particle_loss,
+            edge_features_scale=args.edge_features_scale,
+            identity_msg_net=args.identity_msg_net,
+            identity_edge_update_net=args.identity_edge_update_net,
             use_checkpointing=args.use_checkpointing,
             lr=args.learning_rate,
             no_one_cycle_sched=args.no_one_cycle_sched)
