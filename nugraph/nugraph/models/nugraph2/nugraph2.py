@@ -1,6 +1,7 @@
 """NuGraph2 network architecture module"""
 import argparse
 import warnings
+import copy
 
 import torch
 from pytorch_lightning import LightningModule
@@ -18,6 +19,48 @@ from ...util import InputNorm
 
 T = torch.Tensor
 TD = dict[str, T]
+
+class NuGraph2InferenceModule(torch.nn.Module):
+    """
+    Thin TorchScript-compatible wrapper around NuGraph2 for inference export.
+
+    Holds unwrapped (non-compiled) submodules and exposes a forward method
+    that can be scripted with torch.jit.script. Decoder calls are hardcoded
+    to avoid ABC/torchmetrics scripting issues.
+    """
+    planes: list[str]
+    semantic_classes: list[str]
+
+    def __init__(self, encoder, plane_net, nexus_net,
+                 semantic_decoder, filter_decoder,
+                 planes: list[str], semantic_classes: list[str], num_iters: int):
+        super().__init__()
+        self.encoder = encoder
+        self.plane_net = plane_net
+        self.nexus_net = nexus_net
+        self.semantic_decoder = semantic_decoder
+        self.filter_decoder = filter_decoder
+        self.planes = planes
+        self.semantic_classes = semantic_classes
+        self.num_iters: int = num_iters
+
+    def forward(self, x: dict[str, torch.Tensor],
+                edge_index_plane: dict[str, torch.Tensor],
+                edge_index_nexus: dict[str, torch.Tensor],
+                nexus: torch.Tensor,
+                batch: dict[str, torch.Tensor]) -> dict[str, dict[str, torch.Tensor]]:
+        m = self.encoder(x)
+        s = {p: x[p].detach().unsqueeze(1).expand(-1, len(self.semantic_classes), -1)
+             for p in self.planes}
+        for _ in range(self.num_iters):
+            for p in self.planes:
+                m[p] = torch.cat((m[p], s[p]), dim=-1)
+            self.plane_net(m, edge_index_plane)
+            self.nexus_net(m, edge_index_nexus, nexus)
+        ret: dict[str, dict[str, torch.Tensor]] = {}
+        ret.update(self.semantic_decoder(m, batch))
+        ret.update(self.filter_decoder(m, batch))
+        return ret
 
 class NuGraph2(LightningModule): # pylint: disable=too-many-instance-attributes
     """
@@ -212,6 +255,36 @@ class NuGraph2(LightningModule): # pylint: disable=too-many-instance-attributes
                 optimizer, max_lr=self.lr,
                 total_steps=self.trainer.estimated_stepping_batches)
         return [optimizer], {'scheduler': onecycle, 'interval': 'step'}
+
+    def export(self) -> torch.jit.ScriptModule:
+        """
+        Export a TorchScript-compatible module for inference.
+
+        Unwraps torch.compile, freezes InputNorm statistics, and returns
+        a scripted NuGraph2InferenceModule ready for torch.jit.save.
+        """
+
+        semantic_decoder = copy.deepcopy(self.semantic_decoder)
+        filter_decoder = copy.deepcopy(self.filter_decoder)
+
+        for decoder in (semantic_decoder, filter_decoder):
+            del decoder.recall
+            del decoder.precision
+            del decoder.cm
+            del decoder.cm_logger
+            del decoder.loss_func
+
+        m = NuGraph2InferenceModule(
+            encoder=self.encoder,
+            plane_net=self.plane_net._orig_mod,
+            nexus_net=self.nexus_net._orig_mod,
+            semantic_decoder=semantic_decoder,
+            filter_decoder=filter_decoder,
+            planes=list(self.planes),
+            semantic_classes=list(self.semantic_classes),
+            num_iters=self.num_iters)
+        m.eval()
+        return torch.jit.script(m)
 
     @staticmethod
     def transform(planes: tuple[str]) -> Transform:
