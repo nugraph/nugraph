@@ -17,11 +17,12 @@ class InstanceDecoder(nn.Module):
     coordinates for each hit.
 
     Args:
-        objcon_features: Number of object condensation features
+        beta_features: Number of object condensation beta features
+        coord_features: Number of object condensation coordinate features
         instance_features: Number of instance features
     """
-    def __init__(self, objcon_features: int, instance_features: int,
-                 particle_loss: bool = False):
+    def __init__(self, beta_features: int, coord_features: int,
+                 instance_features: int, particle_loss: bool = False):
         super().__init__()
 
         # loss function
@@ -32,12 +33,18 @@ class InstanceDecoder(nn.Module):
 
         # beta decoder
         self.beta_net = nn.Sequential(
-            nn.Linear(objcon_features, 1),
+            nn.Linear(beta_features, beta_features),
+            nn.Mish(),
+            nn.Linear(beta_features, 1),
             nn.Sigmoid(),
         )
 
         # coordinate decoder
-        self.coord_net = nn.Linear(objcon_features, instance_features)
+        self.coord_net = nn.Sequential(
+            nn.Linear(coord_features, coord_features),
+            nn.Mish(),
+            nn.Linear(coord_features, instance_features),
+        )
 
         self.dbscan = DBSCAN(eps=0.3, min_samples=15)
         self.particle_loss = particle_loss

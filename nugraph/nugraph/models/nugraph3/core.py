@@ -83,14 +83,17 @@ class NuGraphCore(nn.Module):
     Args:
         hit_features: Number of features in planar embedding
         nexus_features: Number of features in nexus embedding
-        objcon_features: Number of features in object condensation embedding
+        interaction_features: Number of features in interaction embedding
+        beta_features: Number of features in object condensation beta embedding
+        coord_features: Number of features in object condensation coordinate embedding
         use_checkpointing: Whether to use checkpointing
     """
     def __init__(self,
                  hit_features: int,
                  nexus_features: int,
                  interaction_features: int,
-                 objcon_features: int,
+                 beta_features: int,
+                 coord_features: int,
                  use_checkpointing: bool = True):
         super().__init__()
 
@@ -120,21 +123,21 @@ class NuGraphCore(nn.Module):
 
         # object condensation beta embedding
         self.beta_net = nn.Sequential(
-            nn.Linear(hit_features + objcon_features, objcon_features),
+            nn.Linear(hit_features + beta_features, beta_features),
             nn.Mish(),
-            nn.Linear(objcon_features, objcon_features),
+            nn.Linear(beta_features, beta_features),
             nn.Mish(),
-            nn.Linear(objcon_features, objcon_features),
+            nn.Linear(beta_features, beta_features),
             nn.Mish(),
         )
 
         # deeper, wider object condensation coordinate embedding
         self.coord_net = nn.Sequential(
-            nn.Linear(hit_features + objcon_features, objcon_features),
+            nn.Linear(hit_features + coord_features, coord_features),
             nn.Mish(),
-            nn.Linear(objcon_features, objcon_features),
+            nn.Linear(coord_features, coord_features),
             nn.Mish(),
-            nn.Linear(objcon_features, objcon_features),
+            nn.Linear(coord_features, coord_features),
             nn.Mish()
         )
 
