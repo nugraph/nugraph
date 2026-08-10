@@ -36,7 +36,7 @@ class NuGraphBlock(MessagePassing): # pylint: disable=abstract-method
             0.0 disables edge latent state entirely, recovering original behaviour.
         identity_msg_net: If True, skip msg_net and use raw x_j as message content
         identity_edge_update_net: If True, skip edge_update_net and persist the
-            raw attention scalar as the edge embedding (requires resulting edge_features=1)
+            raw attention scalar as the edge embedding (forces edge_features=1 regardless of scale)
     """
     def __init__(self, source_features: int, target_features: int,
                  out_features: int, edge_features_scale: float = 0.0,
@@ -44,13 +44,12 @@ class NuGraphBlock(MessagePassing): # pylint: disable=abstract-method
                  identity_edge_update_net: bool = False):
         super().__init__(aggr="softmax")
 
-        # edge latent dimension scaled by min(source, target); 0 disables edge latent space
-        edge_features = int(edge_features_scale * min(source_features, target_features))
-
-        if identity_edge_update_net and edge_features != 1:
-            raise ValueError(
-                "identity_edge_update_net=True requires edge_features_scale that "
-                f"yields edge_features=1 (got {edge_features})")
+        # when using identity update, edge embedding is always the attention scalar (dim=1);
+        # otherwise scale by min(source, target), with 0 disabling edge latent space entirely
+        if identity_edge_update_net:
+            edge_features = 1
+        else:
+            edge_features = int(edge_features_scale * min(source_features, target_features))
 
         self.edge_features = edge_features
         self.identity_msg_net = identity_msg_net
