@@ -111,7 +111,8 @@ class NuGraph3(LightningModule):
 
         if instance_head:
             self.instance_decoder = InstanceDecoder(beta_features, coord_features,
-                                                    instance_features, particle_loss)
+                                                    instance_features, semantic_classes,
+                                                    particle_loss)
             self.decoders.append(self.instance_decoder)
 
         if spacepoint_head:
