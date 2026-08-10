@@ -139,7 +139,7 @@ class SemanticDecoder(DecoderBase):
             x: Planar feature tensor dictionary
             batch: Batch index tensor dictionary
         """
-        return {'x_semantic': {p: self.net[p](x[p]).squeeze(dim=-1) for p in self.planes}}
+        return {'x_semantic': {p: net(x[p]).squeeze(dim=-1) for p, net in self.net.items()}}
 
     def arrange(self, data: NuGraphData) -> tuple[T, T]:
         x = torch.cat([data[p].x_semantic for p in self.planes], dim=0)
@@ -186,8 +186,8 @@ class FilterDecoder(DecoderBase):
             batch: Batch index tensor dictionary
         """
         ret = {}
-        for p in self.planes:
-            ret[p] = self.net[p](x[p].flatten(start_dim=1)).squeeze(dim=-1)
+        for p, net in self.net.items():
+            ret[p] = net(x[p].flatten(start_dim=1)).squeeze(dim=-1)
         return {"x_filter": ret}
 
     def arrange(self, data) -> tuple[T, T]:
