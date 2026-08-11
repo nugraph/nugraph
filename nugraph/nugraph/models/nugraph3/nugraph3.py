@@ -84,7 +84,8 @@ class NuGraph3(LightningModule):
 
         self.encoder = Encoder(in_features, hit_features,
                                nexus_features, interaction_features, instance_features,
-                               edge_features_scale=edge_features_scale)
+                               edge_features_scale=edge_features_scale,
+                               identity_edge_update_net=identity_edge_update_net)
 
         self.core_net = NuGraphCore(hit_features,
                                     nexus_features,

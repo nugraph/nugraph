@@ -19,7 +19,8 @@ class Encoder(torch.nn.Module):
                  nexus_features: int,
                  interaction_features: int,
                  instance_features: int,
-                 edge_features_scale: float = 0.0):
+                 edge_features_scale: float = 0.0,
+                 identity_edge_update_net: bool = False):
         super().__init__()
 
         self.input_norm = InputNorm(in_features)
@@ -39,10 +40,16 @@ class Encoder(torch.nn.Module):
 
         self.nexus_features = nexus_features
         self.interaction_features = interaction_features
-        # pre-compute edge latent dimensions per edge type to match NuGraphBlock
-        self.edge_features_pp = int(edge_features_scale * planar_features)
-        self.edge_features_pn = int(edge_features_scale * min(planar_features, nexus_features))
-        self.edge_features_ni = int(edge_features_scale * min(nexus_features, interaction_features))
+        # pre-compute edge latent dimensions per edge type to match NuGraphBlock;
+        # identity_edge_update_net forces edge_features=1 regardless of scale
+        if identity_edge_update_net:
+            self.edge_features_pp = 1 if edge_features_scale > 0.0 else 0
+            self.edge_features_pn = 1 if edge_features_scale > 0.0 else 0
+            self.edge_features_ni = 1 if edge_features_scale > 0.0 else 0
+        else:
+            self.edge_features_pp = int(edge_features_scale * planar_features)
+            self.edge_features_pn = int(edge_features_scale * min(planar_features, nexus_features))
+            self.edge_features_ni = int(edge_features_scale * min(nexus_features, interaction_features))
 
     def forward(self, data: NuGraphData) -> None:
         """
