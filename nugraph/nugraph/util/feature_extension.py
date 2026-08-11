@@ -36,7 +36,7 @@ class FeatureExtension(BaseTransform):
                 edge = data['hit', 'delaunay-planar', 'hit']
                 x = data['hit'].x[idx]
             else:
-                idx = torch.ones(data[p].x.shape[0], dtype=torch.long)
+                idx = torch.arange(data[p].x.shape[0])
                 pos = data.collect("pos")[p]
                 edge = data[p, 'plane', p]
                 x = torch.cat((data[p].x, torch.zeros(data[p].x.shape[0],4)), dim=-1)
