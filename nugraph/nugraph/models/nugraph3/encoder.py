@@ -74,7 +74,9 @@ class Encoder(torch.nn.Module):
             e.edge_attr = torch.zeros(e.edge_index.shape[1], self.edge_features_pp, device=dev)
         if self.edge_features_pn > 0:
             e = data["hit", "nexus", "sp"]
-            e.edge_attr = torch.zeros(e.edge_index.shape[1], self.edge_features_pn, device=dev)
+            e.edge_attr_fwd = torch.zeros(e.edge_index.shape[1], self.edge_features_pn, device=dev)
+            e.edge_attr_bwd = torch.zeros(e.edge_index.shape[1], self.edge_features_pn, device=dev)
         if self.edge_features_ni > 0:
             e = data["sp", "in", "evt"]
-            e.edge_attr = torch.zeros(e.edge_index.shape[1], self.edge_features_ni, device=dev)
+            e.edge_attr_fwd = torch.zeros(e.edge_index.shape[1], self.edge_features_ni, device=dev)
+            e.edge_attr_bwd = torch.zeros(e.edge_index.shape[1], self.edge_features_ni, device=dev)

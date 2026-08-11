@@ -248,13 +248,19 @@ class NuGraphCore(nn.Module):
         """
         if edge_store is not None:
             edge_index = edge_store.edge_index[(1, 0), :] if reverse else edge_store.edge_index
-            edge_attr = edge_store.get("edge_attr", None)
+            # cross-type edges keep separate fwd/bwd embeddings (encoder initialises edge_attr_fwd);
+            # same-type edges (hit-hit) use a single symmetric edge_attr
+            if edge_store.get("edge_attr_fwd", None) is not None:
+                attr_key = "edge_attr_bwd" if reverse else "edge_attr_fwd"
+            else:
+                attr_key = "edge_attr"
+            edge_attr = edge_store.get(attr_key, None)
             if self.use_checkpointing and self.training:
                 result = checkpoint(net, x, edge_index, edge_attr, use_reentrant=False)
             else:
                 result = net(x, edge_index, edge_attr)
             if net.edge_features > 0 and net._new_edge_attr is not None:
-                edge_store.edge_attr = net._new_edge_attr
+                setattr(edge_store, attr_key, net._new_edge_attr)
         else:
             if self.use_checkpointing and self.training:
                 result = checkpoint(net, x, use_reentrant=False)
