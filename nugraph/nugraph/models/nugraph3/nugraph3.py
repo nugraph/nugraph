@@ -48,8 +48,8 @@ class NuGraph3(LightningModule):
                  hit_features: int = 128,
                  nexus_features: int = 32,
                  interaction_features: int = 32,
-                 beta_features: int = 384,
-                 coord_features: int = 384,
+                 beta_features: int = 32,
+                 coord_features: int = 128,
                  instance_features: int = 8,
                  planes: tuple[str] = ("u","v","y"),
                  semantic_classes: tuple[str] = ('MIP','HIP','shower','michel','diffuse'),
@@ -229,9 +229,9 @@ class NuGraph3(LightningModule):
                            help='Hidden dimensionality of nexus convolutions')
         model.add_argument('--interaction-feats', type=int, default=32,
                            help='Hidden dimensionality of interaction layer')
-        model.add_argument('--beta-feats', type=int, default=384,
+        model.add_argument('--beta-feats', type=int, default=32,
                            help='Hidden dimensionality of clustering beta embedding')
-        model.add_argument('--coord-feats', type=int, default=384,
+        model.add_argument('--coord-feats', type=int, default=128,
                            help='Hidden dimensionality of clustering coordinate embedding')
         model.add_argument('--instance-feats', type=int, default=8,
                            help='Size of clustering embedding')
