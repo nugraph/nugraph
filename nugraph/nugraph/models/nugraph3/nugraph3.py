@@ -62,6 +62,7 @@ class NuGraph3(LightningModule):
                  spacepoint_head: bool = False,
                  particle_loss: bool = False,
                  edge_features_scale: float = 0.0,
+                 input_edge_geom: bool = False,
                  identity_msg_net: bool = False,
                  identity_edge_update_net: bool = False,
                  use_checkpointing: bool = False,
@@ -85,13 +86,15 @@ class NuGraph3(LightningModule):
         self.encoder = Encoder(in_features, hit_features,
                                nexus_features, interaction_features, instance_features,
                                edge_features_scale=edge_features_scale,
-                               identity_edge_update_net=identity_edge_update_net)
+                               identity_edge_update_net=identity_edge_update_net,
+                               input_edge_geom=input_edge_geom)
 
         self.core_net = NuGraphCore(hit_features,
                                     nexus_features,
                                     interaction_features,
                                     instance_features,
                                     edge_features_scale=edge_features_scale,
+                                    input_edge_geom=input_edge_geom,
                                     identity_msg_net=identity_msg_net,
                                     identity_edge_update_net=identity_edge_update_net,
                                     use_checkpointing=use_checkpointing)
@@ -254,6 +257,10 @@ class NuGraph3(LightningModule):
                            help='Scale factor for edge latent space dimension, '
                                 'computed per block as int(scale * min(src, tgt)). '
                                 '0.0 disables edge latent state (default)')
+        model.add_argument('--edge-geom', action='store_true',
+                           dest="input_edge_geom",
+                           help='Inject fixed geometric features (Δwire, Δtime, Δintegral, '
+                                'Δrms, distance) on hit-hit edges as non-updated input')
         model.add_argument('--identity-msg-net', action='store_true',
                            dest="identity_msg_net",
                            help='Use raw source features as message content (no msg_net MLP)')
@@ -301,6 +308,7 @@ class NuGraph3(LightningModule):
             spacepoint_head=args.spacepoint,
             particle_loss=args.particle_loss,
             edge_features_scale=args.edge_features_scale,
+            input_edge_geom=args.input_edge_geom,
             identity_msg_net=args.identity_msg_net,
             identity_edge_update_net=args.identity_edge_update_net,
             use_checkpointing=args.use_checkpointing,

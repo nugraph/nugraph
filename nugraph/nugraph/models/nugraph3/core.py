@@ -36,34 +36,40 @@ class NuGraphBlock(MessagePassing): # pylint: disable=abstract-method
             0.0 disables edge latent state entirely, recovering original behaviour.
         identity_msg_net: If True, skip msg_net and use raw x_j as message content
         identity_edge_update_net: If True, skip edge_update_net and persist the
-            raw attention scalar as the edge embedding (forces edge_features=1 regardless of scale)
+            raw attention scalar as the edge embedding (requires edge_features_scale > 0;
+            has no effect when scale=0 since there is no edge state to update)
     """
     def __init__(self, source_features: int, target_features: int,
                  out_features: int, edge_features_scale: float = 0.0,
+                 input_edge_features: int = 0,
                  identity_msg_net: bool = False,
                  identity_edge_update_net: bool = False):
         super().__init__(aggr="softmax")
 
-        # when using identity update, edge embedding is always the attention scalar (dim=1);
-        # otherwise scale by min(source, target), with 0 disabling edge latent space entirely
-        if identity_edge_update_net:
+        # scale=0 always means no edge state; identity_edge_update_net changes the update
+        # mechanism (store alpha instead of MLP), not whether the edge state is enabled
+        if edge_features_scale == 0.0:
+            edge_features = 0
+        elif identity_edge_update_net:
             edge_features = 1
         else:
             edge_features = int(edge_features_scale * min(source_features, target_features))
 
         self.edge_features = edge_features
+        self.input_edge_features = input_edge_features
         self.identity_msg_net = identity_msg_net
         self.identity_edge_update_net = identity_edge_update_net
 
+        # input_edge_features are fixed (never updated), concatenated alongside learned edge_attr
         self.edge_net = nn.Sequential(
-            nn.Linear(source_features + target_features + edge_features, 1),
+            nn.Linear(source_features + target_features + edge_features + input_edge_features, 1),
             nn.Sigmoid())
 
         # transforms source features using edge context before aggregation;
         # skipped when identity_msg_net=True (Option 3 / Option 1 behaviour)
-        if not identity_msg_net and edge_features > 0:
+        if not identity_msg_net and (edge_features > 0 or input_edge_features > 0):
             self.msg_net = nn.Sequential(
-                nn.Linear(source_features + edge_features, out_features),
+                nn.Linear(source_features + edge_features + input_edge_features, out_features),
                 nn.Mish())
         else:
             self.msg_net = None
@@ -87,7 +93,7 @@ class NuGraphBlock(MessagePassing): # pylint: disable=abstract-method
             nn.Linear(out_features, out_features),
             nn.Mish())
 
-    def forward(self, x: T, edge_index: T, edge_attr: T = None) -> T: # pylint: disable=arguments-differ
+    def forward(self, x: T, edge_index: T, edge_attr: T = None, edge_geom: T = None) -> T: # pylint: disable=arguments-differ
         """
         NuGraphBlock forward pass
 
@@ -96,29 +102,37 @@ class NuGraphBlock(MessagePassing): # pylint: disable=abstract-method
             edge_index: Edge index tensor
             edge_attr: Persistent edge embedding tensor of shape (E, edge_features),
                 or None when edge_features=0
+            edge_geom: Fixed geometric edge features of shape (E, input_edge_features),
+                or None when input_edge_features=0
         """
         self._new_edge_attr = None
-        return self.propagate(edge_index, x=x, edge_attr=edge_attr)
+        return self.propagate(edge_index, x=x, edge_attr=edge_attr, edge_geom=edge_geom)
 
-    def message(self, x_i: T, x_j: T, edge_attr: T) -> T: # pylint: disable=arguments-differ
+    def message(self, x_i: T, x_j: T, edge_attr: T, edge_geom: T = None) -> T: # pylint: disable=arguments-differ
         """
         NuGraphBlock message function
 
         Computes per-edge attention weights and message content. If an edge
         latent space is active, the edge embedding is also updated here and
         stored in self._new_edge_attr for write-back by NuGraphCore.
+        Fixed geometric features (edge_geom) influence attention and message
+        content but are never updated.
 
         Args:
             x_i: Target node features on each edge
             x_j: Source node features on each edge
             edge_attr: Current edge embedding (None when edge_features=0)
+            edge_geom: Fixed geometric edge features (None when input_edge_features=0)
         """
+        attn_input = [x_i, x_j]
         if edge_attr is not None:
-            alpha = self.edge_net(torch.cat((x_i, x_j, edge_attr), dim=1))
-        else:
-            alpha = self.edge_net(torch.cat((x_i, x_j), dim=1))
+            attn_input.append(edge_attr)
+        if edge_geom is not None:
+            attn_input.append(edge_geom)
+        alpha = self.edge_net(torch.cat(attn_input, dim=1))
 
-        # update edge embedding: either via learned MLP or by storing alpha directly
+        # update learned edge embedding: either via learned MLP or by storing alpha directly;
+        # edge_geom is intentionally excluded — it is a fixed input, never updated
         if self.edge_features > 0:
             if self.identity_edge_update_net:
                 self._new_edge_attr = alpha  # alpha is already (E, 1)
@@ -128,7 +142,12 @@ class NuGraphBlock(MessagePassing): # pylint: disable=abstract-method
 
         # construct message content: edge-transformed x_j or raw x_j
         if self.msg_net is not None:
-            msg = self.msg_net(torch.cat((x_j, edge_attr), dim=1))
+            msg_input = [x_j]
+            if edge_attr is not None:
+                msg_input.append(edge_attr)
+            if edge_geom is not None:
+                msg_input.append(edge_geom)
+            msg = self.msg_net(torch.cat(msg_input, dim=1))
         else:
             msg = x_j
 
@@ -164,8 +183,8 @@ class NuGraphCore(nn.Module):
             per block as int(scale * min(source_features, target_features)).
             0.0 disables edge latent state entirely (default, original behaviour).
         identity_msg_net: Pass raw x_j as message content (no msg_net MLP)
-        identity_edge_update_net: Store attention scalar as edge embedding
-            instead of using a learned update MLP (requires resulting edge_features=1)
+        identity_edge_update_net: Store attention scalar as edge embedding instead of using a
+            learned update MLP. Requires edge_features_scale > 0; no-op otherwise.
         use_checkpointing: Whether to use gradient checkpointing
     """
     def __init__(self,
@@ -174,6 +193,7 @@ class NuGraphCore(nn.Module):
                  interaction_features: int,
                  instance_features: int,
                  edge_features_scale: float = 0.0,
+                 input_edge_geom: bool = False,
                  identity_msg_net: bool = False,
                  identity_edge_update_net: bool = False,
                  use_checkpointing: bool = True):
@@ -181,9 +201,10 @@ class NuGraphCore(nn.Module):
 
         self.use_checkpointing = use_checkpointing
 
-        # internal planar message-passing
+        # internal planar message-passing; geometric input edge features only on hit-hit edges
         self.plane_net = NuGraphBlock(hit_features, hit_features, hit_features,
                                       edge_features_scale=edge_features_scale,
+                                      input_edge_features=5 if input_edge_geom else 0,
                                       identity_msg_net=identity_msg_net,
                                       identity_edge_update_net=identity_edge_update_net)
 
@@ -255,10 +276,11 @@ class NuGraphCore(nn.Module):
             else:
                 attr_key = "edge_attr"
             edge_attr = edge_store.get(attr_key, None)
+            edge_geom = edge_store.get("edge_geom", None)
             if self.use_checkpointing and self.training:
-                result = checkpoint(net, x, edge_index, edge_attr, use_reentrant=False)
+                result = checkpoint(net, x, edge_index, edge_attr, edge_geom, use_reentrant=False)
             else:
-                result = net(x, edge_index, edge_attr)
+                result = net(x, edge_index, edge_attr, edge_geom)
             if net.edge_features > 0 and net._new_edge_attr is not None:
                 setattr(edge_store, attr_key, net._new_edge_attr)
         else:

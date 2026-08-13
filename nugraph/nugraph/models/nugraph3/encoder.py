@@ -20,7 +20,8 @@ class Encoder(torch.nn.Module):
                  interaction_features: int,
                  instance_features: int,
                  edge_features_scale: float = 0.0,
-                 identity_edge_update_net: bool = False):
+                 identity_edge_update_net: bool = False,
+                 input_edge_geom: bool = False):
         super().__init__()
 
         self.input_norm = InputNorm(in_features)
@@ -40,6 +41,7 @@ class Encoder(torch.nn.Module):
 
         self.nexus_features = nexus_features
         self.interaction_features = interaction_features
+        self.input_edge_geom = input_edge_geom
         # pre-compute edge latent dimensions per edge type to match NuGraphBlock;
         # identity_edge_update_net forces edge_features=1 regardless of scale
         if identity_edge_update_net:
@@ -59,6 +61,19 @@ class Encoder(torch.nn.Module):
             data: Graph data object
         """
         x_in = self.input_norm(data["hit"].x)
+
+        if self.input_edge_geom:
+            # Compute fixed geometric edge features from normalized hit inputs.
+            # Recomputed each forward pass since hit features differ per batch.
+            pp = data["hit", "delaunay-planar", "hit"]
+            src, dst = pp.edge_index
+            d_wire     = x_in[src, 0] - x_in[dst, 0]
+            d_time     = x_in[src, 1] - x_in[dst, 1]
+            d_integral = x_in[src, 2] - x_in[dst, 2]
+            d_rms      = x_in[src, 3] - x_in[dst, 3]
+            distance   = torch.sqrt(d_wire.pow(2) + d_time.pow(2))
+            pp.edge_geom = torch.stack([d_integral, d_rms, d_wire, d_time, distance], dim=1)
+
         data["hit"].x = self.planar_net(x_in)
         data["hit"].of = self.beta_net(x_in)
         data["hit"].ox = self.coord_net(x_in)
@@ -70,13 +85,13 @@ class Encoder(torch.nn.Module):
                                     device=data["hit"].x.device)
         dev = data["hit"].x.device
         if self.edge_features_pp > 0:
-            e = data["hit", "delaunay-planar", "hit"]
-            e.edge_attr = torch.zeros(e.edge_index.shape[1], self.edge_features_pp, device=dev)
+            pp = data["hit", "delaunay-planar", "hit"]
+            pp.edge_attr = torch.zeros(pp.edge_index.shape[1], self.edge_features_pp, device=dev)
         if self.edge_features_pn > 0:
-            e = data["hit", "nexus", "sp"]
-            e.edge_attr_fwd = torch.zeros(e.edge_index.shape[1], self.edge_features_pn, device=dev)
-            e.edge_attr_bwd = torch.zeros(e.edge_index.shape[1], self.edge_features_pn, device=dev)
+            pn = data["hit", "nexus", "sp"]
+            pn.edge_attr_fwd = torch.zeros(pn.edge_index.shape[1], self.edge_features_pn, device=dev)
+            pn.edge_attr_bwd = torch.zeros(pn.edge_index.shape[1], self.edge_features_pn, device=dev)
         if self.edge_features_ni > 0:
-            e = data["sp", "in", "evt"]
-            e.edge_attr_fwd = torch.zeros(e.edge_index.shape[1], self.edge_features_ni, device=dev)
-            e.edge_attr_bwd = torch.zeros(e.edge_index.shape[1], self.edge_features_ni, device=dev)
+            ni = data["sp", "in", "evt"]
+            ni.edge_attr_fwd = torch.zeros(ni.edge_index.shape[1], self.edge_features_ni, device=dev)
+            ni.edge_attr_bwd = torch.zeros(ni.edge_index.shape[1], self.edge_features_ni, device=dev)
