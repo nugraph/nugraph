@@ -186,6 +186,11 @@ class NuGraphCore(nn.Module):
         identity_edge_update_net: Store attention scalar as edge embedding instead of using a
             learned update MLP. Requires edge_features_scale > 0; no-op otherwise.
         use_checkpointing: Whether to use gradient checkpointing
+        instance_edge_pass: If True, run a dedicated hit-hit message-passing step after each
+            main iteration to update condensation coordinates (h.ox) using the hit-hit edge
+            state and geometric features as fixed, read-only context. Operates per-edge so
+            the model can selectively attend toward same-particle neighbours. Has no effect
+            if neither edge_features_scale > 0 nor input_edge_geom is set.
     """
     def __init__(self,
                  hit_features: int,
@@ -196,7 +201,8 @@ class NuGraphCore(nn.Module):
                  input_edge_geom: bool = False,
                  identity_msg_net: bool = False,
                  identity_edge_update_net: bool = False,
-                 use_checkpointing: bool = True):
+                 use_checkpointing: bool = True,
+                 instance_edge_pass: bool = False):
         super().__init__()
 
         self.use_checkpointing = use_checkpointing
@@ -233,6 +239,19 @@ class NuGraphCore(nn.Module):
                                            edge_features_scale=edge_features_scale,
                                            identity_msg_net=identity_msg_net,
                                            identity_edge_update_net=identity_edge_update_net)
+
+        # dedicated instance post-pass: updates h.ox using hit-hit edge context as fixed input;
+        # edge_attr (learned state) and edge_geom (geometric features) are concatenated and
+        # passed as read-only — this block never writes back to the edge store
+        inst_edge_ctx = self.plane_net.edge_features + (5 if input_edge_geom else 0)
+        if instance_edge_pass and inst_edge_ctx > 0:
+            self.instance_net = NuGraphBlock(
+                hit_features + instance_features,
+                hit_features + instance_features,
+                instance_features,
+                input_edge_features=inst_edge_ctx)
+        else:
+            self.instance_net = None
 
         # widen MLP for instance embedding generation
         hidden = 3 * hit_features
@@ -335,3 +354,17 @@ class NuGraphCore(nn.Module):
             self.beta_net, torch.cat((h.of, h.x), dim=1))
         h.ox = self.checkpoint(
             self.coord_net, torch.cat((h.ox, h.x), dim=1))
+
+        if self.instance_net is not None:
+            pp = data["hit", "delaunay-planar", "hit"]
+            # combine learned edge state and geometric features as a single fixed context;
+            # this block reads them but never updates the edge store
+            ctx = [t for t in (pp.get("edge_attr", None), pp.get("edge_geom", None))
+                   if t is not None]
+            inst_edge_ctx = torch.cat(ctx, dim=1) if ctx else None
+            inst_in = torch.cat([h.ox, h.x], dim=1)
+            if self.use_checkpointing and self.training:
+                h.ox = checkpoint(self.instance_net, inst_in, pp.edge_index,
+                                  None, inst_edge_ctx, use_reentrant=False)
+            else:
+                h.ox = self.instance_net(inst_in, pp.edge_index, None, inst_edge_ctx)

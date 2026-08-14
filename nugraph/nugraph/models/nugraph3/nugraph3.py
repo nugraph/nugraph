@@ -40,6 +40,8 @@ class NuGraph3(LightningModule):
         edge_features_scale: Scale factor for edge latent space dimension (0.0 = disabled)
         identity_msg_net: Use raw source features as message content (no msg_net MLP)
         identity_edge_update_net: Store attention scalar as edge embedding (no update MLP)
+        instance_edge_pass: Run a dedicated hit-hit post-pass after each main iteration to
+            update condensation coordinates using edge state/geometry as fixed context
         use_checkpointing: Whether to use checkpointing
         lr: Learning rate
         no_one_cycle_sched: Whether to disable the OneCycleLR scheduler
@@ -65,6 +67,7 @@ class NuGraph3(LightningModule):
                  input_edge_geom: bool = False,
                  identity_msg_net: bool = False,
                  identity_edge_update_net: bool = False,
+                 instance_edge_pass: bool = False,
                  use_checkpointing: bool = False,
                  lr: float = 0.001,
                  no_one_cycle_sched: bool = False):
@@ -97,7 +100,8 @@ class NuGraph3(LightningModule):
                                     input_edge_geom=input_edge_geom,
                                     identity_msg_net=identity_msg_net,
                                     identity_edge_update_net=identity_edge_update_net,
-                                    use_checkpointing=use_checkpointing)
+                                    use_checkpointing=use_checkpointing,
+                                    instance_edge_pass=instance_edge_pass)
 
         self.decoders = []
 
@@ -269,6 +273,12 @@ class NuGraph3(LightningModule):
                            help='Store attention scalar as edge embedding instead of '
                                 'using a learned update MLP (requires --edge-feats-scale '
                                 'that yields edge_features=1)')
+        model.add_argument('--instance-edge-pass', action='store_true',
+                           dest="instance_edge_pass",
+                           help='Run a dedicated hit-hit post-pass after each main iteration '
+                                'to update condensation coordinates using edge state and/or '
+                                'geometric features as fixed read-only context '
+                                '(requires --edge-feats-scale or --edge-geom)')
         model.add_argument('--no-checkpointing', action='store_false',
                            dest="use_checkpointing",
                            help='Disable checkpointing during training')
@@ -311,6 +321,7 @@ class NuGraph3(LightningModule):
             input_edge_geom=args.input_edge_geom,
             identity_msg_net=args.identity_msg_net,
             identity_edge_update_net=args.identity_edge_update_net,
+            instance_edge_pass=args.instance_edge_pass,
             use_checkpointing=args.use_checkpointing,
             lr=args.learning_rate,
             no_one_cycle_sched=args.no_one_cycle_sched)
