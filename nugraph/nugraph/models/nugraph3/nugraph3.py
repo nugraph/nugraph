@@ -37,6 +37,7 @@ class NuGraph3(LightningModule):
         vertex_head: Whether to enable vertex decoder
         instance_head: Whether to enable instance decoder
         spacepoint_head: Whether to enable spacepoint decoder
+        input_edge_geom: Inject 5 fixed geometric features on hit-hit edges
         instance_edge_pass: Run a dedicated hit-hit post-pass after each main iteration to
             update condensation coordinates using geometric edge features as fixed context
         use_checkpointing: Whether to use checkpointing
@@ -91,9 +92,9 @@ class NuGraph3(LightningModule):
                                     nexus_features,
                                     interaction_features,
                                     instance_features,
-                                    input_edge_geom=input_edge_geom,
-                                    instance_edge_pass=instance_edge_pass,
-                                    use_checkpointing=use_checkpointing)
+                                    input_edge_geom,
+                                    instance_edge_pass,
+                                    use_checkpointing)
 
         self.decoders = []
 

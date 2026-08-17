@@ -20,12 +20,12 @@ class NuGraphBlock(MessagePassing): # pylint: disable=abstract-method
     Args:
         source_features: Number of source node input features
         target_features: Number of target node input features
-        out_features: Number of target node output features
         input_edge_features: Number of fixed (non-updated) input edge features
             appended to attention and message inputs. 0 disables.
+        out_features: Number of target node output features
     """
     def __init__(self, source_features: int, target_features: int,
-                 out_features: int, input_edge_features: int = 0):
+                 input_edge_features: int, out_features: int):
         super().__init__(aggr="softmax")
 
         self.input_edge_features = input_edge_features
@@ -74,8 +74,8 @@ class NuGraphBlock(MessagePassing): # pylint: disable=abstract-method
         Fixed geometric edge features are optionally used.
 
         Args:
-            x_i: Target node features on each edge
-            x_j: Source node features on each edge
+            x_i: Edge features from target nodes
+            x_j: Edge features from source nodes
             edge_geom: Fixed geometric edge features (None when input_edge_features=0)
         """
         attn_input = [x_i, x_j]
@@ -93,7 +93,7 @@ class NuGraphBlock(MessagePassing): # pylint: disable=abstract-method
     def update(self, aggr_out: T, x: T) -> T: # pylint: disable=arguments-differ
         """
         NuGraphBlock update function
-
+        
         This function takes the output node features and combines them with
         the input features
 
@@ -135,25 +135,23 @@ class NuGraphCore(nn.Module):
         self.use_checkpointing = use_checkpointing
 
         # internal planar message-passing; geometric input edge features only on hit-hit edges
-        self.plane_net = NuGraphBlock(hit_features, hit_features, hit_features,
-                                      input_edge_features=5 if input_edge_geom else 0)
+        self.plane_net = NuGraphBlock(hit_features, hit_features, 5 if input_edge_geom else 0,
+                                      hit_features)
 
         # message-passing from planar nodes to nexus nodes
-        self.plane_to_nexus = NuGraphBlock(hit_features, nexus_features,
+        self.plane_to_nexus = NuGraphBlock(hit_features, nexus_features, 0,
                                            nexus_features)
 
         # message-passing from nexus nodes to interaction nodes
-        self.nexus_to_interaction = NuGraphBlock(nexus_features,
-                                                 interaction_features,
+        self.nexus_to_interaction = NuGraphBlock(nexus_features, interaction_features, 0,
                                                  interaction_features)
 
         # message-passing from interaction nodes to nexus nodes
-        self.interaction_to_nexus = NuGraphBlock(interaction_features,
-                                                 nexus_features,
+        self.interaction_to_nexus = NuGraphBlock(interaction_features, nexus_features, 0,
                                                  nexus_features)
 
         # message-passing from nexus nodes to planar nodes
-        self.nexus_to_plane = NuGraphBlock(nexus_features, hit_features,
+        self.nexus_to_plane = NuGraphBlock(nexus_features, hit_features, 0,
                                            hit_features)
 
         # dedicated instance post-pass: updates h.ox using geometric edge features as fixed input;
@@ -162,9 +160,8 @@ class NuGraphCore(nn.Module):
         if instance_edge_pass and inst_edge_ctx > 0:
             self.instance_net = NuGraphBlock(
                 hit_features + instance_features,
-                hit_features + instance_features,
-                instance_features,
-                input_edge_features=inst_edge_ctx)
+                hit_features + instance_features, inst_edge_ctx,
+                instance_features)
         else:
             self.instance_net = None
 
