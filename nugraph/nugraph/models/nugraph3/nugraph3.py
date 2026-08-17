@@ -92,8 +92,8 @@ class NuGraph3(LightningModule):
                                     interaction_features,
                                     instance_features,
                                     input_edge_geom=input_edge_geom,
-                                    use_checkpointing=use_checkpointing,
-                                    instance_edge_pass=instance_edge_pass)
+                                    instance_edge_pass=instance_edge_pass,
+                                    use_checkpointing=use_checkpointing)
 
         self.decoders = []
 

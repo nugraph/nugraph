@@ -9,13 +9,13 @@ class NuGraphBlock(MessagePassing): # pylint: disable=abstract-method
     """
     Standard NuGraph message-passing block
 
-    Generates a per-edge attention weight from source and target node features
-    (and optional fixed geometric features), applies it to the (optionally
-    edge-transformed) source features to form messages, aggregates via softmax,
-    and feeds the result into a two-layer MLP to update target node features.
-
-    Fixed geometric features (input_edge_features > 0) influence both attention
-    weights and message content but are never updated.
+    This block generates attention weights for each graph edge based on both
+    the source and target node features (and optional fixed geometric features),
+    and then applies those weights to the source node features in order to form
+    messages. These messages are then aggregated into the target nodes using
+    softmax aggregation, and then fed into a two-layer MLP to generate updated
+    target node features. Fixed geometric features (input_edge_features > 0)
+    influence both attention weights and message content but are never updated.
 
     Args:
         source_features: Number of source node input features
@@ -32,21 +32,21 @@ class NuGraphBlock(MessagePassing): # pylint: disable=abstract-method
 
         # attention: scalar weight per edge from node and edge context
         self.edge_net = nn.Sequential(
-            nn.Linear(source_features + target_features + input_edge_features, 1),
+            nn.Linear(source_features+target_features+input_edge_features, 1),
             nn.Sigmoid())
 
         # transforms source features using fixed edge context before aggregation;
         # only created when edge context is available
         if input_edge_features > 0:
             self.msg_net = nn.Sequential(
-                nn.Linear(source_features + input_edge_features, out_features),
+                nn.Linear(source_features+input_edge_features, out_features),
                 nn.Mish())
         else:
             self.msg_net = None
 
         msg_features = out_features if (self.msg_net is not None) else source_features
         self.net = nn.Sequential(
-            nn.Linear(msg_features + target_features, out_features),
+            nn.Linear(msg_features+target_features, out_features),
             nn.Mish(),
             nn.Linear(out_features, out_features),
             nn.Mish())
@@ -67,8 +67,11 @@ class NuGraphBlock(MessagePassing): # pylint: disable=abstract-method
         """
         NuGraphBlock message function
 
-        Computes per-edge attention weight and message content from node features
-        and optional fixed geometric edge features.
+        This function constructs messages on graph edges. Features from the
+        source and target nodes are concatenated and fed into a linear layer
+        to construct attention weights. Messages are then formed on edges by
+        weighting the source node features by these attention weights.
+        Fixed geometric edge features are optionally used.
 
         Args:
             x_i: Target node features on each edge
@@ -91,6 +94,9 @@ class NuGraphBlock(MessagePassing): # pylint: disable=abstract-method
         """
         NuGraphBlock update function
 
+        This function takes the output node features and combines them with
+        the input features
+
         Args:
             aggr_out: Tensor of aggregated node features
             x: Target node features
@@ -103,7 +109,7 @@ class NuGraphCore(nn.Module):
     """
     NuGraph core message-passing engine
 
-    This is the core NuGraph message-passing loop.
+    This is the core NuGraph message-passing loop
 
     Args:
         hit_features: Number of features in planar embedding
@@ -111,10 +117,10 @@ class NuGraphCore(nn.Module):
         interaction_features: Number of features in interaction embedding
         instance_features: Number of features in instance embedding
         input_edge_geom: If True, inject 5 fixed geometric features on hit-hit edges
-        use_checkpointing: Whether to use gradient checkpointing
         instance_edge_pass: If True, run a dedicated hit-hit message-passing step after each
             main iteration to update condensation coordinates (h.ox) using geometric edge
             features as fixed, read-only context. Has no effect if input_edge_geom is False.
+        use_checkpointing: Whether to use gradient checkpointing
     """
     def __init__(self,
                  hit_features: int,
@@ -122,8 +128,8 @@ class NuGraphCore(nn.Module):
                  interaction_features: int,
                  instance_features: int,
                  input_edge_geom: bool = False,
-                 use_checkpointing: bool = True,
-                 instance_edge_pass: bool = False):
+                 instance_edge_pass: bool = False,
+                 use_checkpointing: bool = True):
         super().__init__()
 
         self.use_checkpointing = use_checkpointing
@@ -137,15 +143,18 @@ class NuGraphCore(nn.Module):
                                            nexus_features)
 
         # message-passing from nexus nodes to interaction nodes
-        self.nexus_to_interaction = NuGraphBlock(nexus_features, interaction_features,
+        self.nexus_to_interaction = NuGraphBlock(nexus_features,
+                                                 interaction_features,
                                                  interaction_features)
 
         # message-passing from interaction nodes to nexus nodes
-        self.interaction_to_nexus = NuGraphBlock(interaction_features, nexus_features,
+        self.interaction_to_nexus = NuGraphBlock(interaction_features,
+                                                 nexus_features,
                                                  nexus_features)
 
         # message-passing from nexus nodes to planar nodes
-        self.nexus_to_plane = NuGraphBlock(nexus_features, hit_features, hit_features)
+        self.nexus_to_plane = NuGraphBlock(nexus_features, hit_features,
+                                           hit_features)
 
         # dedicated instance post-pass: updates h.ox using geometric edge features as fixed input;
         # this block reads edge_geom but never writes back to the edge store
@@ -233,12 +242,12 @@ class NuGraphCore(nn.Module):
         # message-passing from interaction to nexus
         sp.x = self.checkpoint(
             self.interaction_to_nexus, (evt.x, sp.x),
-            data["sp", "in", "evt"].edge_index[(1, 0), :])
+            data["sp", "in", "evt"].edge_index[(1,0), :])
 
         # message-passing from nexus to hits
         h.x = self.checkpoint(
             self.nexus_to_plane, (sp.x, h.x),
-            data["hit", "nexus", "sp"].edge_index[(1, 0), :])
+            data["hit", "nexus", "sp"].edge_index[(1,0), :])
 
         if not hasattr(h, "of") or not hasattr(h, "ox"):
             raise RuntimeError(
