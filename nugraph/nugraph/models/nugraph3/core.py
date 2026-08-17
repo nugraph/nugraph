@@ -81,14 +81,14 @@ class NuGraphBlock(MessagePassing): # pylint: disable=abstract-method
         attn_input = [x_i, x_j]
         if edge_geom is not None:
             attn_input.append(edge_geom)
-        alpha = self.edge_net(torch.cat(attn_input, dim=1))
+        attn = self.edge_net(torch.cat(attn_input, dim=1))
 
         if self.msg_net is not None:
             msg = self.msg_net(torch.cat([x_j, edge_geom], dim=1))
         else:
             msg = x_j
 
-        return alpha * msg
+        return attn * msg
 
     def update(self, aggr_out: T, x: T) -> T: # pylint: disable=arguments-differ
         """
