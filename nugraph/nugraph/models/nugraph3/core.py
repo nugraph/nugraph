@@ -93,7 +93,7 @@ class NuGraphBlock(MessagePassing): # pylint: disable=abstract-method
     def update(self, aggr_out: T, x: T) -> T: # pylint: disable=arguments-differ
         """
         NuGraphBlock update function
-        
+
         This function takes the output node features and combines them with
         the input features
 
