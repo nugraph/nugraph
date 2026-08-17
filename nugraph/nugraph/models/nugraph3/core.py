@@ -3,7 +3,7 @@ import torch
 from torch import nn
 from torch.utils.checkpoint import checkpoint
 from torch_geometric.nn import MessagePassing
-from .types import T, TD, Data
+from .types import T, Data
 
 class NuGraphBlock(MessagePassing): # pylint: disable=abstract-method
     """
@@ -103,10 +103,7 @@ class NuGraphCore(nn.Module):
     """
     NuGraph core message-passing engine
 
-    This is the core NuGraph message-passing loop. Fixed geometric features on
-    hit-hit edges can be enabled via input_edge_geom. An optional dedicated
-    instance post-pass (instance_edge_pass) updates condensation coordinates
-    using those features as read-only context.
+    This is the core NuGraph message-passing loop.
 
     Args:
         hit_features: Number of features in planar embedding
@@ -136,7 +133,8 @@ class NuGraphCore(nn.Module):
                                       input_edge_features=5 if input_edge_geom else 0)
 
         # message-passing from planar nodes to nexus nodes
-        self.plane_to_nexus = NuGraphBlock(hit_features, nexus_features, nexus_features)
+        self.plane_to_nexus = NuGraphBlock(hit_features, nexus_features,
+                                           nexus_features)
 
         # message-passing from nexus nodes to interaction nodes
         self.nexus_to_interaction = NuGraphBlock(nexus_features, interaction_features,
@@ -183,20 +181,17 @@ class NuGraphCore(nn.Module):
             nn.Linear(hidden, instance_features),
         )
 
-    def checkpoint(self, net: nn.Module, x: T, edge_store=None, *, reverse: bool = False) -> TD:
+    def checkpoint(self, net: nn.Module, x: T, edge_index: T = None, edge_geom: T = None) -> T:
         """
-        Checkpoint module, if enabled, and pass geometric edge features if available.
+        Checkpoint module, if enabled.
 
         Args:
             net: Network module
             x: Node feature tensor (or tuple of source/target tensors)
-            edge_store: Edge data store supplying edge_index and optional edge_geom,
-                or None for plain nn.Sequential modules (beta_net, coord_net)
-            reverse: If True, reverse the edge direction (for down-passes)
+            edge_index: Edge index tensor, or None for plain nn.Sequential modules
+            edge_geom: Fixed geometric edge features, or None
         """
-        if edge_store is not None:
-            edge_index = edge_store.edge_index[(1, 0), :] if reverse else edge_store.edge_index
-            edge_geom = edge_store.get("edge_geom", None)
+        if edge_index is not None:
             if self.use_checkpointing and self.training:
                 result = checkpoint(net, x, edge_index, edge_geom, use_reentrant=False)
             else:
@@ -222,27 +217,28 @@ class NuGraphCore(nn.Module):
         # message-passing in hits
         h.x = self.checkpoint(
             self.plane_net, h.x,
-            data["hit", "delaunay-planar", "hit"])
+            data["hit", "delaunay-planar", "hit"].edge_index,
+            data["hit", "delaunay-planar", "hit"].get("edge_geom", None))
 
         # message-passing from hits to nexus
         sp.x = self.checkpoint(
             self.plane_to_nexus, (h.x, sp.x),
-            data["hit", "nexus", "sp"])
+            data["hit", "nexus", "sp"].edge_index)
 
         # message-passing from nexus to interaction
         evt.x = self.checkpoint(
             self.nexus_to_interaction, (sp.x, evt.x),
-            data["sp", "in", "evt"])
+            data["sp", "in", "evt"].edge_index)
 
         # message-passing from interaction to nexus
         sp.x = self.checkpoint(
             self.interaction_to_nexus, (evt.x, sp.x),
-            data["sp", "in", "evt"], reverse=True)
+            data["sp", "in", "evt"].edge_index[(1, 0), :])
 
         # message-passing from nexus to hits
         h.x = self.checkpoint(
             self.nexus_to_plane, (sp.x, h.x),
-            data["hit", "nexus", "sp"], reverse=True)
+            data["hit", "nexus", "sp"].edge_index[(1, 0), :])
 
         if not hasattr(h, "of") or not hasattr(h, "ox"):
             raise RuntimeError(
@@ -255,11 +251,7 @@ class NuGraphCore(nn.Module):
             self.coord_net, torch.cat((h.ox, h.x), dim=1))
 
         if self.instance_net is not None:
-            pp = data["hit", "delaunay-planar", "hit"]
-            inst_in = torch.cat([h.ox, h.x], dim=1)
-            edge_geom = pp.get("edge_geom", None)
-            if self.use_checkpointing and self.training:
-                h.ox = checkpoint(self.instance_net, inst_in, pp.edge_index,
-                                  edge_geom, use_reentrant=False)
-            else:
-                h.ox = self.instance_net(inst_in, pp.edge_index, edge_geom)
+            h.ox = self.checkpoint(
+                self.instance_net, torch.cat([h.ox, h.x], dim=1),
+                data["hit", "delaunay-planar", "hit"].edge_index,
+                data["hit", "delaunay-planar", "hit"].get("edge_geom", None))

@@ -122,7 +122,7 @@ class NuGraph2(LightningModule): # pylint: disable=too-many-instance-attributes
                                                 checkpoint=checkpoint),
                                        dynamic=True)
 
-        self.decoders = torch.nn.ModuleList()
+        self.decoders = []
 
         if semantic_head:
             self.semantic_decoder = SemanticDecoder(

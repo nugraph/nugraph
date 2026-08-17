@@ -61,7 +61,7 @@ class Encoder(torch.nn.Module):
             d_time     = x_in[src, 1] - x_in[dst, 1]
             d_integral = x_in[src, 2] - x_in[dst, 2]
             d_rms      = x_in[src, 3] - x_in[dst, 3]
-            distance   = torch.sqrt(d_wire.pow(2) + d_time.pow(2))
+            distance   = torch.hypot(d_wire, d_time)
             pp.edge_geom = torch.stack([d_integral, d_rms, d_wire, d_time, distance], dim=1)
 
         data["hit"].x = self.planar_net(x_in)
