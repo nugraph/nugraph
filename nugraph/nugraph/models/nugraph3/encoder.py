@@ -6,12 +6,14 @@ from ...util import InputNorm
 class Encoder(torch.nn.Module):
     """
     NuGraph3 encoder
-    
+
     Args:
         in_features: Number of input node features
         planar_features: Number of planar node features
-        nexus_feature: Number of nexus node features
+        nexus_features: Number of nexus node features
         interaction_features: Number of interaction node features
+        instance_features: Number of instance node features
+        input_edge_geom: If True, compute 5 fixed geometric features on hit-hit edges
     """
     def __init__(self,
                  in_features: int,
@@ -19,8 +21,6 @@ class Encoder(torch.nn.Module):
                  nexus_features: int,
                  interaction_features: int,
                  instance_features: int,
-                 edge_features_scale: float = 0.0,
-                 identity_edge_update_net: bool = False,
                  input_edge_geom: bool = False):
         super().__init__()
 
@@ -42,21 +42,11 @@ class Encoder(torch.nn.Module):
         self.nexus_features = nexus_features
         self.interaction_features = interaction_features
         self.input_edge_geom = input_edge_geom
-        # pre-compute edge latent dimensions per edge type to match NuGraphBlock;
-        # identity_edge_update_net forces edge_features=1 regardless of scale
-        if identity_edge_update_net:
-            self.edge_features_pp = 1 if edge_features_scale > 0.0 else 0
-            self.edge_features_pn = 1 if edge_features_scale > 0.0 else 0
-            self.edge_features_ni = 1 if edge_features_scale > 0.0 else 0
-        else:
-            self.edge_features_pp = int(edge_features_scale * planar_features)
-            self.edge_features_pn = int(edge_features_scale * min(planar_features, nexus_features))
-            self.edge_features_ni = int(edge_features_scale * min(nexus_features, interaction_features))
 
     def forward(self, data: NuGraphData) -> None:
         """
         NuGraph3 encoder forward pass
-        
+
         Args:
             data: Graph data object
         """
@@ -83,15 +73,3 @@ class Encoder(torch.nn.Module):
         data["evt"].x = torch.zeros(data["evt"].num_nodes,
                                     self.interaction_features,
                                     device=data["hit"].x.device)
-        dev = data["hit"].x.device
-        if self.edge_features_pp > 0:
-            pp = data["hit", "delaunay-planar", "hit"]
-            pp.edge_attr = torch.zeros(pp.edge_index.shape[1], self.edge_features_pp, device=dev)
-        if self.edge_features_pn > 0:
-            pn = data["hit", "nexus", "sp"]
-            pn.edge_attr_fwd = torch.zeros(pn.edge_index.shape[1], self.edge_features_pn, device=dev)
-            pn.edge_attr_bwd = torch.zeros(pn.edge_index.shape[1], self.edge_features_pn, device=dev)
-        if self.edge_features_ni > 0:
-            ni = data["sp", "in", "evt"]
-            ni.edge_attr_fwd = torch.zeros(ni.edge_index.shape[1], self.edge_features_ni, device=dev)
-            ni.edge_attr_bwd = torch.zeros(ni.edge_index.shape[1], self.edge_features_ni, device=dev)
