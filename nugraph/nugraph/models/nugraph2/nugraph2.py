@@ -1,7 +1,7 @@
 """NuGraph2 network architecture module"""
 import argparse
 import warnings
-from typing import Dict
+import copy
 
 import torch
 from pytorch_lightning import LightningModule
@@ -44,11 +44,11 @@ class NuGraph2InferenceModule(torch.nn.Module):
         self.semantic_classes = semantic_classes
         self.num_iters: int = num_iters
 
-    def forward(self, x: Dict[str, torch.Tensor],
-                edge_index_plane: Dict[str, torch.Tensor],
-                edge_index_nexus: Dict[str, torch.Tensor],
+    def forward(self, x: dict[str, torch.Tensor],
+                edge_index_plane: dict[str, torch.Tensor],
+                edge_index_nexus: dict[str, torch.Tensor],
                 nexus: torch.Tensor,
-                batch: Dict[str, torch.Tensor]) -> Dict[str, Dict[str, torch.Tensor]]:
+                batch: dict[str, torch.Tensor]) -> dict[str, dict[str, torch.Tensor]]:
         m = self.encoder(x)
         s = {p: x[p].detach().unsqueeze(1).expand(-1, len(self.semantic_classes), -1)
              for p in self.planes}
@@ -57,7 +57,7 @@ class NuGraph2InferenceModule(torch.nn.Module):
                 m[p] = torch.cat((m[p], s[p]), dim=-1)
             self.plane_net(m, edge_index_plane)
             self.nexus_net(m, edge_index_nexus, nexus)
-        ret: Dict[str, Dict[str, torch.Tensor]] = {}
+        ret: dict[str, dict[str, torch.Tensor]] = {}
         ret.update(self.semantic_decoder(m, batch))
         ret.update(self.filter_decoder(m, batch))
         return ret
@@ -263,7 +263,6 @@ class NuGraph2(LightningModule): # pylint: disable=too-many-instance-attributes
         Unwraps torch.compile, freezes InputNorm statistics, and returns
         a scripted NuGraph2InferenceModule ready for torch.jit.save.
         """
-        import copy
 
         semantic_decoder = copy.deepcopy(self.semantic_decoder)
         filter_decoder = copy.deepcopy(self.filter_decoder)

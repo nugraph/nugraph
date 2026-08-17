@@ -4,7 +4,7 @@ from torch_scatter import scatter_max
 
 T = torch.Tensor
 
-class ObjCondensationLoss(torch.nn.Module):
+class ObjConLoss(torch.nn.Module):
     def __init__(self, s_b: float = 1.0, q_min: float = 0.5):
         super().__init__()
         self.s_b = s_b
@@ -26,8 +26,8 @@ class ObjCondensationLoss(torch.nn.Module):
         q = f.float().clamp(-0.99999, 0.99999).atanh().square() + self.q_min
         m_ik = torch.zeros(n_hit, n_true, dtype=torch.bool, device=device)
         m_ik[e_h, e_p] = True
-        dist = (x[:, None, :] - x[centers][None, :, :]).square().sum(dim=2)
-        v = torch.where(m_ik, dist, (1 - dist).clamp(0))
+        dist = torch.cdist(x, x[centers])
+        v = torch.where(m_ik, dist.square(), (1-dist).clamp(min=0))
         v = ((v * q[centers]).sum(dim=1) * q).sum() / n_hit
         return v
 
@@ -64,7 +64,7 @@ class ObjCondensationLoss(torch.nn.Module):
         f_centers, centers = scatter_max(f[e_h], e_p, out=f_centers)
         centers = e_h[centers]
 
-        bkg_mask = (y_i == -1) & (y_s >= 0)
+        bkg_mask = (y_i == -1)
 
         # calculate loss terms
         b = self.l_b(f, f_centers, bkg_mask, n_true)
