@@ -37,6 +37,9 @@ class NuGraph3(LightningModule):
         vertex_head: Whether to enable vertex decoder
         instance_head: Whether to enable instance decoder
         spacepoint_head: Whether to enable spacepoint decoder
+        input_edge_geom: Inject 5 fixed geometric features on hit-hit edges
+        instance_edge_pass: Run a dedicated hit-hit post-pass after each main iteration to
+            update condensation coordinates using geometric edge features as fixed context
         use_checkpointing: Whether to use checkpointing
         lr: Learning rate
         no_one_cycle_sched: Whether to disable the OneCycleLR scheduler
@@ -58,6 +61,8 @@ class NuGraph3(LightningModule):
                  instance_head: bool = False,
                  spacepoint_head: bool = False,
                  particle_loss: bool = False,
+                 input_edge_geom: bool = False,
+                 instance_edge_pass: bool = False,
                  use_checkpointing: bool = False,
                  lr: float = 0.001,
                  no_one_cycle_sched: bool = False):
@@ -66,6 +71,9 @@ class NuGraph3(LightningModule):
         warnings.filterwarnings("ignore", ".*NaN values found in confusion matrix.*")
 
         self.save_hyperparameters()
+
+        if instance_edge_pass and not input_edge_geom:
+            raise ValueError('--instance-edge-pass requires --edge-geom')
 
         self.nexus_features = nexus_features
         self.interaction_features = interaction_features
@@ -77,12 +85,15 @@ class NuGraph3(LightningModule):
         self.no_one_cycle_sched = no_one_cycle_sched
 
         self.encoder = Encoder(in_features, hit_features,
-                               nexus_features, interaction_features, instance_features)
+                               nexus_features, interaction_features, instance_features,
+                               input_edge_geom=input_edge_geom)
 
         self.core_net = NuGraphCore(hit_features,
                                     nexus_features,
                                     interaction_features,
                                     instance_features,
+                                    input_edge_geom,
+                                    instance_edge_pass,
                                     use_checkpointing)
 
         self.decoders = []
@@ -238,6 +249,15 @@ class NuGraph3(LightningModule):
                            help="Enable spacepoint prediction head")
         model.add_argument("--particle-loss", action="store_true",
                            help="Enable object condensation particle loss term")
+        model.add_argument('--edge-geom', action='store_true',
+                           dest="input_edge_geom",
+                           help='Inject fixed geometric features (Δwire, Δtime, Δintegral, '
+                                'Δrms, distance) on hit-hit edges as non-updated input')
+        model.add_argument('--instance-edge-pass', action='store_true',
+                           dest="instance_edge_pass",
+                           help='Run a dedicated hit-hit post-pass after each main iteration '
+                                'to update condensation coordinates using geometric edge '
+                                'features as fixed read-only context (requires --edge-geom)')
         model.add_argument('--no-checkpointing', action='store_false',
                            dest="use_checkpointing",
                            help='Disable checkpointing during training')
@@ -276,6 +296,8 @@ class NuGraph3(LightningModule):
             instance_head=args.instance,
             spacepoint_head=args.spacepoint,
             particle_loss=args.particle_loss,
+            input_edge_geom=args.input_edge_geom,
+            instance_edge_pass=args.instance_edge_pass,
             use_checkpointing=args.use_checkpointing,
             lr=args.learning_rate,
             no_one_cycle_sched=args.no_one_cycle_sched)
