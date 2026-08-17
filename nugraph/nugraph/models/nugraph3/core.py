@@ -158,12 +158,12 @@ class NuGraphCore(nn.Module):
         # this block reads edge_geom but never writes back to the edge store
         inst_edge_ctx = 5 if input_edge_geom else 0
         if instance_edge_pass and inst_edge_ctx > 0:
-            self.instance_net = NuGraphBlock(
+            self.instance_edge_net = NuGraphBlock(
                 hit_features + instance_features,
                 hit_features + instance_features, inst_edge_ctx,
                 instance_features)
         else:
-            self.instance_net = None
+            self.instance_edge_net = None
 
         # widen MLP for instance embedding generation
         hidden = 3 * hit_features
@@ -256,8 +256,8 @@ class NuGraphCore(nn.Module):
         h.ox = self.checkpoint(
             self.coord_net, torch.cat((h.ox, h.x), dim=1))
 
-        if self.instance_net is not None:
+        if self.instance_edge_net is not None:
             h.ox = self.checkpoint(
-                self.instance_net, torch.cat([h.ox, h.x], dim=1),
+                self.instance_edge_net, torch.cat([h.ox, h.x], dim=1),
                 data["hit", "delaunay-planar", "hit"].edge_index,
                 data["hit", "delaunay-planar", "hit"].get("edge_geom", None))
