@@ -1,6 +1,5 @@
 """NuGraph3 filter decoder"""
 from typing import Any
-import tempfile
 import torch
 from torch import nn
 import torchmetrics as tm

@@ -11,14 +11,16 @@ class Encoder(torch.nn.Module):
         in_features: Number of input node features
         planar_features: Number of planar node features
         nexus_feature: Number of nexus node features
-        interaction_features: Number of interaction node features
+        beta_features: Number of object condensation beta features
+        coord_features: Number of object condensation coordinate features
     """
     def __init__(self,
                  in_features: int,
                  planar_features: int,
                  nexus_features: int,
                  interaction_features: int,
-                 instance_features: int):
+                 beta_features: int,
+                 coord_features: int):
         super().__init__()
 
         self.input_norm = InputNorm(in_features)
@@ -26,13 +28,13 @@ class Encoder(torch.nn.Module):
 
         # object condensation beta encoder
         self.beta_net = torch.nn.Sequential(
-            torch.nn.Linear(in_features, 1),
-            torch.nn.Sigmoid(),
+            torch.nn.Linear(in_features, beta_features),
+            torch.nn.Mish(),
         )
 
         # object condensation coordinate encoder
         self.coord_net = torch.nn.Sequential(
-            torch.nn.Linear(in_features, instance_features),
+            torch.nn.Linear(in_features, coord_features),
             torch.nn.Mish(),
         )
 
