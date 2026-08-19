@@ -81,14 +81,11 @@ class NuGraph3(LightningModule):
         self.no_one_cycle_sched = no_one_cycle_sched
 
         self.encoder = Encoder(in_features, hit_features,
-                               nexus_features, interaction_features,
-                               beta_features, coord_features)
+                               nexus_features, interaction_features, 64)
 
         self.core_net = NuGraphCore(hit_features,
                                     nexus_features,
                                     interaction_features,
-                                    beta_features,
-                                    coord_features,
                                     use_checkpointing)
 
         self.decoders = []
@@ -110,7 +107,7 @@ class NuGraph3(LightningModule):
             self.decoders.append(self.vertex_decoder)
 
         if instance_head:
-            self.instance_decoder = InstanceDecoder(beta_features, coord_features,
+            self.instance_decoder = InstanceDecoder(hit_features, beta_features, coord_features,
                                                     instance_features, semantic_classes,
                                                     particle_loss)
             self.decoders.append(self.instance_decoder)
