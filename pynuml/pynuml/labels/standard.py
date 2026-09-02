@@ -246,6 +246,15 @@ class StandardLabels:
             ret += walk(primary, part, 0, None, None)
         if len(ret)==0: return
         labels = pd.DataFrame.from_dict(ret)
+
+        # momentum of the particle that defines each instance (e.g. the primary
+        # electron seeding a shower, or the muon a delta-ray belongs to). This
+        # must be resolved now, while instance_label is still g4_id-valued --
+        # it gets aliased to a small sequential index below.
+        leader_momentum = labels.set_index('g4_id')['momentum']
+        labels['instance_momentum'] = labels['instance_label'].map(leader_momentum)
+        labels.loc[labels['instance_label'] < 0, 'instance_momentum'] = float('nan')
+
         instances = { val: i for i, val in enumerate(labels[(labels.instance_label>=0)].instance_label.unique()) }
 
         def alias_instance(row, instances):
