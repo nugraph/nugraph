@@ -220,6 +220,18 @@ class HitGraphProducer(ProcessorBase):
             data["particle-truth"].num_nodes = instances.size(0)
             edges = torch.stack((mask.nonzero().squeeze(1), y), dim=0).long()
             data["hit", "cluster-truth", "particle-truth"].edge_index = edges
+
+            # true momentum of the particle that defines each instance
+            inst_mom = particles[particles.instance_label >= 0][['instance_label', 'instance_momentum']]
+            if inst_mom.groupby('instance_label')['instance_momentum'].nunique().gt(1).any():
+                print('found inconsistent momentum values within a particle-truth instance.')
+                return evt.name, None
+            inst_mom = inst_mom.drop_duplicates('instance_label').set_index('instance_label')['instance_momentum']
+            momentum = inst_mom.reindex(instances.numpy())
+            if momentum.isnull().any():
+                print(f'found {momentum.isnull().sum()} particle-truth instances with no matching momentum.')
+                return evt.name, None
+            data["particle-truth"].momentum = torch.tensor(momentum.values, dtype=torch.float)
             if self.store_detailed_truth:
                 data["hit"].g4_id = torch.tensor(hits['g4_id'].fillna(-1).values).long()
                 data["hit"].parent_id = torch.tensor(hits['parent_id'].fillna(-1).values).long()
