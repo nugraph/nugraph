@@ -88,6 +88,7 @@ class NuGraph3(LightningModule):
         self.num_iters = num_iters
         self.lr = lr
         self.no_one_cycle_sched = no_one_cycle_sched
+        self.use_optical = use_optical
 
         self.encoder = Encoder(in_features, hit_features,
                                nexus_features, interaction_features,
@@ -101,7 +102,7 @@ class NuGraph3(LightningModule):
                                     coord_features,
                                     use_checkpointing)
 
-        if use_optical:
+        if self.use_optical:
             self.optical_net = NuGraphOptical(interaction_features=interaction_features,
                                               nexus_features=nexus_features,
                                               ophit_features=ophit_features,
@@ -155,7 +156,7 @@ class NuGraph3(LightningModule):
         self.encoder(data)
         for _ in range(self.num_iters):
             self.core_net(data)
-            if hasattr(self, "optical_net"):
+            if self.use_optical:
                 self.optical_net(data)
         total_loss = 0.
         total_metrics = {}

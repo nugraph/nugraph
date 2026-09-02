@@ -44,9 +44,10 @@ class Encoder(torch.nn.Module):
 
         self.nexus_features = nexus_features
         self.interaction_features = interaction_features
+        self.use_optical = use_optical
 
         # hardcode optical features pending redesign
-        if use_optical:
+        if self.use_optical:
             self.ophit_net = torch.nn.Linear(8, ophit_features)
             self.pmt_net = torch.nn.Linear(4, pmt_features)
             self.flash_net = torch.nn.Linear(10, flash_features)
@@ -69,7 +70,7 @@ class Encoder(torch.nn.Module):
                                     self.interaction_features,
                                     device=data["hit"].x.device)
 
-        if hasattr(self, "ophit_net"):
+        if self.use_optical:
             data["ophit"].x = self.ophit_net(data["ophit"].x)
             data["pmt"].x = self.pmt_net(data["pmt"].x)
             data["flash"].x = self.flash_net(data["flash"].x)
