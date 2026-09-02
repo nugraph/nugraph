@@ -62,7 +62,6 @@ class InstanceDecoder(nn.Module):
         """
 
         h = data["hit"]
-        device = h.x.device
 
         # run network and add output to graph object
         h.of = self.beta_net(torch.cat((h.of, h.x_semantic), dim=-1)).squeeze(dim=-1)
@@ -119,12 +118,16 @@ class InstanceDecoder(nn.Module):
         Args:
             data: Graph data object
         """
+
         h = data["hit"]
+        device = h.x.device
+
         mask = torch.ones_like(h.of, dtype=torch.bool)
         if hasattr(h, "x_filter"):
             mask = mask & (h.x_filter > 0.5)
         if hasattr(h, "x_semantic"):
             mask = mask & (h.x_semantic.argmax(dim=1) != 6)
+
         if isinstance(data, Batch):
             x_ip, e_h_ip = [], []
             for ox, m in zip(unbatch(h.ox, h.batch), unbatch(mask, h.batch)):
