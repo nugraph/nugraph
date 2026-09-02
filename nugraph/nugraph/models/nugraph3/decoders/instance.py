@@ -99,47 +99,9 @@ class InstanceDecoder(nn.Module):
                 metrics[f"instance/particle-loss-{stage}"] = p
 
         if not self.training:
-            # add materialized instances
-            mask = torch.ones_like(h.of, dtype=torch.bool)
-            if hasattr(h, "x_filter"):
-                mask = mask & (h.x_filter > 0.5)
-            if hasattr(h, "x_semantic"):
-                mask = mask & (h.x_semantic.argmax(dim=1) != 6)
-            if isinstance(data, Batch):
-                x_ip, e_h_ip = [], []
-                for ox, m in zip(unbatch(h.ox, h.batch), unbatch(mask, h.batch)):
-                    x, e = self.materialize(ox, m)
-                    x_ip.append(x)
-                    e_h_ip.append(e)
 
-                # particle nodes
-                data[N_IP].x = torch.cat(x_ip, dim=0)
-                data[N_IP].batch = torch.cat(
-                    [torch.full((0,), i, dtype=torch.long, device=device) for i, x in enumerate(x_ip)])
-                data[N_IP].ptr = cumsum(torch.tensor([x.size(0) for x in x_ip], device=device))
-                data._slice_dict[N_IP] = {"x": data[N_IP].ptr} # pylint: disable=protected-access
-                data._inc_dict[N_IP] = { # pylint: disable=protected-access
-                    "x": torch.zeros(data.num_graphs, dtype=torch.long, device=device)
-                }
-
-                # particle edges
-                e_inc = torch.stack((h.ptr[:-1], data[N_IP].ptr[:-1]), dim=1).unsqueeze(2)
-                data[E_H_IP].edge_index = torch.cat([e + inc for e, inc in zip(e_h_ip, e_inc)], dim=1)
-                data._slice_dict[E_H_IP] = { # pylint: disable=protected-access
-                    "edge_index": cumsum(torch.tensor([e.size(1) for e in e_h_ip]))
-                }
-                data._inc_dict[E_H_IP] = {"edge_index": e_inc} # pylint: disable=protected-access
-
-                # calculate rand score per graph
-                rand = []
-                for l in data.to_data_list():
-                    mask = l["hit"].y_semantic >= 0
-                    rand.append(adjusted_rand_score(l.x_i()[mask], l.y_i()[mask]))
-                rand = torch.stack(rand).mean()
-
-            else:
-                data[N_IP].x, data[E_H_IP].edge_index = self.materialize(h.ox, mask)
-                rand = adjusted_rand_score(data.x_i(), data.y_i())
+            self.materialize(data)
+            rand = self.adjusted_rand_score(data, masked=False)
 
             if not -1. <= rand <= 1.:
                 raise RuntimeError(f"Adjusted Rand Score metric value {rand} is outside allowed range!")
@@ -152,8 +114,48 @@ class InstanceDecoder(nn.Module):
 
         return loss, metrics
 
-    def materialize(self, ox: torch.Tensor, mask: torch.Tensor) -> tuple[torch.Tensor]:
-        """Materialize instance embedding
+    def materialize(self, data: Data) -> None:
+        """Materialize a graph or batch
+
+        Args:
+            data: Graph data object
+        """
+        h = data["hit"]
+        mask = torch.ones_like(h.of, dtype=torch.bool)
+        if hasattr(h, "x_filter"):
+            mask = mask & (h.x_filter > 0.5)
+        if hasattr(h, "x_semantic"):
+            mask = mask & (h.x_semantic.argmax(dim=1) != 6)
+        if isinstance(data, Batch):
+            x_ip, e_h_ip = [], []
+            for ox, m in zip(unbatch(h.ox, h.batch), unbatch(mask, h.batch)):
+                x, e = self.dbscan(ox, m)
+                x_ip.append(x)
+                e_h_ip.append(e)
+
+            # particle nodes
+            data[N_IP].x = torch.cat(x_ip, dim=0)
+            data[N_IP].batch = torch.cat(
+                [torch.full((0,), i, dtype=torch.long, device=device) for i, x in enumerate(x_ip)])
+            data[N_IP].ptr = cumsum(torch.tensor([x.size(0) for x in x_ip], device=device))
+            data._slice_dict[N_IP] = {"x": data[N_IP].ptr} # pylint: disable=protected-access
+            data._inc_dict[N_IP] = { # pylint: disable=protected-access
+                "x": torch.zeros(data.num_graphs, dtype=torch.long, device=device)
+            }
+
+            # particle edges
+            e_inc = torch.stack((h.ptr[:-1], data[N_IP].ptr[:-1]), dim=1).unsqueeze(2)
+            data[E_H_IP].edge_index = torch.cat([e + inc for e, inc in zip(e_h_ip, e_inc)], dim=1)
+            data._slice_dict[E_H_IP] = { # pylint: disable=protected-access
+                "edge_index": cumsum(torch.tensor([e.size(1) for e in e_h_ip]))
+            }
+            data._inc_dict[E_H_IP] = {"edge_index": e_inc} # pylint: disable=protected-access
+
+        else:
+            data[N_IP].x, data[E_H_IP].edge_index = self.dbscan(h.ox, mask)
+
+    def dbscan(self, ox: torch.Tensor, mask: torch.Tensor) -> tuple[torch.Tensor]:
+        """Materialize instance embedding using DBSCAN
         
         Args:
             ox: object condensation embedding tensor
@@ -174,6 +176,27 @@ class InstanceDecoder(nn.Module):
         mask = i > -1
         e_h_ip = torch.stack((torch.nonzero(mask).squeeze(1), i[mask])).long()
         return x_ip, e_h_ip
+
+    def adjusted_rand_score(self, data: Data, masked: bool = False) -> torch.Tensor:
+        """Calculate adjusted rand score for batch
+
+        Args:
+            data: Graph data object
+            masked: Whether to mask background hits
+        """
+        if isinstance(data, Batch):
+            data_list = data.to_data_list()
+        else:
+            data_list = [data]
+
+        rand = []
+        for d in data_list:
+            x, y = d.x_i(), d.y_i()
+            if masked:
+                mask = d["hit"].y_semantic >= 0
+                x, y = x[mask], y[mask]
+            rand.append(adjusted_rand_score(x, y))
+        return torch.stack(rand).mean()
 
     def on_epoch_end(self, logger: "WandbLogger", stage: str, epoch: int) -> None:
         """
