@@ -39,6 +39,8 @@ class NuGraph3(LightningModule):
         vertex_head: Whether to enable vertex decoder
         instance_head: Whether to enable instance decoder
         spacepoint_head: Whether to enable spacepoint decoder
+        dbscan_eps: Epsilon hyperparameter for DBSCAN algorithm
+        particle_loss: Whether to include particle loss term for object condensation"
         use_checkpointing: Whether to use checkpointing
         lr: Learning rate
         no_one_cycle_sched: Whether to disable the OneCycleLR scheduler
@@ -61,6 +63,7 @@ class NuGraph3(LightningModule):
                  vertex_head: bool = False,
                  instance_head: bool = False,
                  spacepoint_head: bool = False,
+                 dbscan_eps: float = 0.5,
                  particle_loss: bool = False,
                  use_checkpointing: bool = False,
                  lr: float = 0.001,
@@ -112,7 +115,7 @@ class NuGraph3(LightningModule):
         if instance_head:
             self.instance_decoder = InstanceDecoder(beta_features, coord_features,
                                                     instance_features, semantic_classes,
-                                                    particle_loss)
+                                                    dbscan_eps, particle_loss)
             self.decoders.append(self.instance_decoder)
 
         if spacepoint_head:
@@ -247,6 +250,8 @@ class NuGraph3(LightningModule):
                            help='Enable vertex regression head')
         model.add_argument("--spacepoint", action="store_true",
                            help="Enable spacepoint prediction head")
+        model.add_argument("--dbscan-eps", type=float, default=0.5,
+                           help="Epsilon hyperparameter for DBSCAN algorithm")
         model.add_argument("--particle-loss", action="store_true",
                            help="Enable object condensation particle loss term")
         model.add_argument('--no-checkpointing', action='store_false',
@@ -288,6 +293,7 @@ class NuGraph3(LightningModule):
             vertex_head=args.vertex,
             instance_head=args.instance,
             spacepoint_head=args.spacepoint,
+            dbscan_eps=args.dbscan_eps,
             particle_loss=args.particle_loss,
             use_checkpointing=args.use_checkpointing,
             lr=args.learning_rate,

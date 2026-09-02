@@ -21,11 +21,12 @@ class InstanceDecoder(nn.Module):
         coord_features: Number of object condensation coordinate features
         instance_features: Number of instance features
         semantic_classes: List of names of semantic classes
+        dbscan_eps: Epsilon hyperparameter for DBSCAN algorithm
         particle_loss: Whether to compute particle loss term
     """
     def __init__(self, beta_features: int, coord_features: int,
                  instance_features: int, semantic_classes: list[str],
-                 particle_loss: bool = False):
+                 dbscan_eps: float = 0.5, particle_loss: bool = False):
         super().__init__()
 
         # loss function
@@ -49,6 +50,7 @@ class InstanceDecoder(nn.Module):
             nn.Linear(coord_features, instance_features),
         )
 
+        self.eps = dbscan_eps
         self.particle_loss = particle_loss
 
     # pylint: disable=arguments-differ
@@ -172,7 +174,7 @@ class InstanceDecoder(nn.Module):
 
         i = torch.empty(ox.size(0), dtype=torch.long, device=ox.device).fill_(-1)
         arr = ox[mask].detach().to(torch.float32).cpu().numpy()
-        labels = DBSCAN(eps=0.3, min_samples=15).fit_predict(arr)
+        labels = DBSCAN(eps=self.eps).fit_predict(arr)
         i[mask] = torch.from_numpy(labels).to(device=ox.device, dtype=torch.long)
         x_ip = torch.empty(i.max()+1, 0, dtype=ox.dtype, device=ox.device)
         mask = i > -1
