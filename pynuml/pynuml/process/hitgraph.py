@@ -18,7 +18,7 @@ class HitGraphProducer(ProcessorBase):
                  planes: list[str] = ['u','v','y'],
                  node_feats: list[str] = ['integral','rms','tpc'],
                  lower_bound: int = 20,
-                 store_detailed_truth: bool = False):
+                 filter_true_particles: bool = True):
 
         self.semantic_labeller = semantic_labeller
         self.event_labeller = event_labeller
@@ -27,7 +27,7 @@ class HitGraphProducer(ProcessorBase):
         self.planes = planes
         self.node_feats = node_feats
         self.lower_bound = lower_bound
-        self.store_detailed_truth = store_detailed_truth
+        self.filter_true_particles = filter_true_particles
 
         self.transform = pyg.transforms.Compose((
             pyg.transforms.Delaunay(),
@@ -207,23 +207,27 @@ class HitGraphProducer(ProcessorBase):
         # truth information
         if self.semantic_labeller:
             data["hit"].y_semantic = torch.tensor(hits['semantic_label'].fillna(-1).values).long()
-            y = torch.tensor(hits['instance_label'].fillna(-1).values).long()
-            mask = y != -1
-            y = y[mask]
-            instances = y.unique()
-            # remap instances
-            imax = instances.max() + 1 if instances.size(0) else 0
-            if instances.size(0) != imax:
-                remap = torch.full((imax,), -1, dtype=torch.long)
-                remap[instances] = torch.arange(instances.size(0))
-                y = remap[y]
-            data["particle-truth"].num_nodes = instances.size(0)
-            edges = torch.stack((mask.nonzero().squeeze(1), y), dim=0).long()
+
+            # each hit is associated with an instance via the g4_id
+            # we define the particle truth node store as all true particles
+            pt = data["particle-truth"]
+            pt.num_nodes = particles.shape[0]
+            pt.momentum = torch.tensor(particles.momentum.values, dtype=torch.float)
+            pt.pdg_code = torch.tensor(particles.type.values, dtype=torch.long)
+            pt.g4_id = torch.tensor(particles.g4_id.values, dtype=torch.long)
+
+            # TODO: draw edges from particles to their parents
+
+            # draw edges from hits to particle instances
+            edges = hits[["hit_id", "instance_g4_id"]].rename(columns={"instance_g4_id": "g4_id"})
+            edges = edges.dropna()
+            edges = edges.merge(particles[["g4_id"]].reset_index(names="particle_id"), on="g4_id")
+            edges = torch.tensor(edges[["hit_id", "particle_id"]].values.transpose()).long()
             data["hit", "cluster-truth", "particle-truth"].edge_index = edges
-            if self.store_detailed_truth:
-                data["hit"].g4_id = torch.tensor(hits['g4_id'].fillna(-1).values).long()
-                data["hit"].parent_id = torch.tensor(hits['parent_id'].fillna(-1).values).long()
-                data["hit"].pdg = torch.tensor(hits['type'].fillna(-1).values).long()
+
+            if self.filter_true_particles:
+                degree = pyg.utils.degree(edges[1], num_nodes=pt.num_nodes)
+                data = data.subgraph({"particle-truth": torch.nonzero(degree).squeeze(1)})
 
         # event label
         if self.event_labeller:
