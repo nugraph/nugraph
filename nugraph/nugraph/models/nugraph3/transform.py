@@ -92,4 +92,27 @@ class Transform(BaseTransform):
         h = data["hit"]
         h.x = torch.cat((h.pos, h.x), dim=-1)
 
+        # construct pmt-pmt edges if not already present in the dataset
+        if "pmt" in data.node_types and ("pmt", "knn", "pmt") not in data.edge_types:
+            n_pmt = data["pmt"].pos.size(0)
+            if n_pmt > 1:
+                distances = torch.cdist(data["pmt"].pos, data["pmt"].pos, p=2)
+                distances.fill_diagonal_(float("inf"))
+                knn = min(3, n_pmt - 1)
+                _, neighbor_idx = torch.topk(distances, knn, largest=False, dim=1)
+                source = torch.arange(n_pmt, dtype=torch.long).repeat_interleave(knn)
+                target = neighbor_idx.flatten()
+                edge_pmt = torch.stack((source, target), dim=0)
+                edge_pmt = torch.cat((edge_pmt, edge_pmt.flip(0)), dim=1)
+            else:
+                edge_pmt = torch.empty((2, 0), dtype=torch.long)
+            data["pmt", "knn", "pmt"].edge_index = edge_pmt
+
+        # ensure optical edge tensors keep their shape through batching
+        for edge_type in [("flash", "in", "evt"), ("ophit", "in", "pmt"),
+                          ("pmt", "knn", "pmt"), ("sp", "knn", "pmt")]:
+            if edge_type in data.edge_types:
+                if data[edge_type].edge_index.dim() == 1:
+                    data[edge_type].edge_index = data[edge_type].edge_index.unsqueeze(1)
+
         return data
