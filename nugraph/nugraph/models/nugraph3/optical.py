@@ -4,6 +4,37 @@ from pynuml.data import NuGraphData
 from .core import NuGraphBlock
 from .types import TD
 
+class OpticalEncoder(torch.nn.Module):
+    """
+    NuGraph3 optical encoder
+
+    Args:
+        ophit_features: Number of features in optical hit embedding
+        pmt_features: Number of features in PMT (flashsumpe) embedding
+        flash_features: Number of features in optical flash embedding
+    """
+    def __init__(self,
+                 ophit_features: int,
+                 pmt_features: int,
+                 flash_features: int):
+        super().__init__()
+
+        # hardcode optical features pending redesign
+        self.ophit_net = torch.nn.Linear(8, ophit_features)
+        self.pmt_net = torch.nn.Linear(4, pmt_features)
+        self.flash_net = torch.nn.Linear(10, flash_features)
+
+    def forward(self, data: NuGraphData) -> None:
+        """
+        NuGraph3 optical encoder forward pass
+
+        Args:
+            data: Graph data object
+        """
+        data["ophit"].x = self.ophit_net(data["ophit"].x)
+        data["pmt"].x = self.pmt_net(data["pmt"].x)
+        data["flash"].x = self.flash_net(data["flash"].x)
+
 class NuGraphOptical(torch.nn.Module):
     """
     NuGraph optical message-passing engine

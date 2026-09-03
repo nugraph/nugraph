@@ -3,10 +3,10 @@ import torch
 from pynuml.data import NuGraphData
 from ...util import InputNorm
 
-class Encoder(torch.nn.Module):
+class TPCEncoder(torch.nn.Module):
     """
-    NuGraph3 encoder
-    
+    NuGraph3 TPC encoder
+
     Args:
         in_features: Number of input node features
         planar_features: Number of planar node features
@@ -20,11 +20,7 @@ class Encoder(torch.nn.Module):
                  nexus_features: int,
                  interaction_features: int,
                  beta_features: int,
-                 coord_features: int,
-                 ophit_features: int = 128,
-                 pmt_features: int = 64,
-                 flash_features: int = 32,
-                 use_optical: bool = False):
+                 coord_features: int):
         super().__init__()
 
         self.input_norm = InputNorm(in_features)
@@ -44,18 +40,11 @@ class Encoder(torch.nn.Module):
 
         self.nexus_features = nexus_features
         self.interaction_features = interaction_features
-        self.use_optical = use_optical
-
-        # hardcode optical features pending redesign
-        if self.use_optical:
-            self.ophit_net = torch.nn.Linear(8, ophit_features)
-            self.pmt_net = torch.nn.Linear(4, pmt_features)
-            self.flash_net = torch.nn.Linear(10, flash_features)
 
     def forward(self, data: NuGraphData) -> None:
         """
-        NuGraph3 encoder forward pass
-        
+        NuGraph3 TPC encoder forward pass
+
         Args:
             data: Graph data object
         """
@@ -69,8 +58,3 @@ class Encoder(torch.nn.Module):
         data["evt"].x = torch.zeros(data["evt"].num_nodes,
                                     self.interaction_features,
                                     device=data["hit"].x.device)
-
-        if self.use_optical:
-            data["ophit"].x = self.ophit_net(data["ophit"].x)
-            data["pmt"].x = self.pmt_net(data["pmt"].x)
-            data["flash"].x = self.flash_net(data["flash"].x)

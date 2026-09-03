@@ -10,9 +10,9 @@ from pytorch_lightning import LightningModule
 
 from .types import Data
 from .transform import Transform
-from .encoder import Encoder
+from .encoder import TPCEncoder
 from .core import NuGraphCore
-from .optical import NuGraphOptical
+from .optical import OpticalEncoder, NuGraphOptical
 from .decoders import (SemanticDecoder, FilterDecoder, EventDecoder, VertexDecoder, InstanceDecoder,
                        SpacepointDecoder)
 
@@ -90,10 +90,9 @@ class NuGraph3(LightningModule):
         self.no_one_cycle_sched = no_one_cycle_sched
         self.use_optical = use_optical
 
-        self.encoder = Encoder(in_features, hit_features,
-                               nexus_features, interaction_features,
-                               beta_features, coord_features,
-                               ophit_features, pmt_features, flash_features, use_optical)
+        self.tpc_encoder = TPCEncoder(in_features, hit_features,
+                                      nexus_features, interaction_features,
+                                      beta_features, coord_features)
 
         self.core_net = NuGraphCore(hit_features,
                                     nexus_features,
@@ -103,6 +102,9 @@ class NuGraph3(LightningModule):
                                     use_checkpointing)
 
         if self.use_optical:
+            self.optical_encoder = OpticalEncoder(ophit_features=ophit_features,
+                                                  pmt_features=pmt_features,
+                                                  flash_features=flash_features)
             self.optical_net = NuGraphOptical(interaction_features=interaction_features,
                                               nexus_features=nexus_features,
                                               ophit_features=ophit_features,
@@ -153,7 +155,9 @@ class NuGraph3(LightningModule):
             data: Graph data object
             stage: String tag defining the step type
         """
-        self.encoder(data)
+        self.tpc_encoder(data)
+        if self.use_optical:
+            self.optical_encoder(data)
         for _ in range(self.num_iters):
             self.core_net(data)
             if self.use_optical:
@@ -177,7 +181,7 @@ class NuGraph3(LightningModule):
 
     def on_train_epoch_end(self) -> None:
         # stop updating running average for feature norm
-        self.encoder.input_norm.update = False
+        self.tpc_encoder.input_norm.update = False
 
     def validation_step(self,
                         batch,
