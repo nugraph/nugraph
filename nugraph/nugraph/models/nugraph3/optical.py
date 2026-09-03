@@ -31,6 +31,14 @@ class OpticalEncoder(torch.nn.Module):
         Args:
             data: Graph data object
         """
+        # drop ophit nodes with no pmt connection (currently disconnected).
+        # revisit in case of new connections, e.g. ophit-ophit edges
+        # or a decoder reading ophit features
+        edge_index = data["ophit", "in", "pmt"].edge_index
+        keep, inverse = edge_index[0].unique(sorted=True, return_inverse=True)
+        data["ophit"].x = data["ophit"].x[keep]
+        data["ophit", "in", "pmt"].edge_index = torch.stack((inverse, edge_index[1]), dim=0)
+
         data["ophit"].x = self.ophit_net(data["ophit"].x)
         data["pmt"].x = self.pmt_net(data["pmt"].x)
         data["flash"].x = self.flash_net(data["flash"].x)
