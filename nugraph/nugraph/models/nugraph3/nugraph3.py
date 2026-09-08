@@ -63,7 +63,7 @@ class NuGraph3(LightningModule):
                  vertex_head: bool = False,
                  instance_head: bool = False,
                  spacepoint_head: bool = False,
-                 dbscan_eps: float = 0.5,
+                 dbscan_eps: float = 0.3,
                  particle_loss: bool = False,
                  use_checkpointing: bool = False,
                  lr: float = 0.001,
@@ -250,7 +250,7 @@ class NuGraph3(LightningModule):
                            help='Enable vertex regression head')
         model.add_argument("--spacepoint", action="store_true",
                            help="Enable spacepoint prediction head")
-        model.add_argument("--dbscan-eps", type=float, default=0.5,
+        model.add_argument("--dbscan-eps", type=float, default=0.3,
                            help="Epsilon hyperparameter for DBSCAN algorithm")
         model.add_argument("--particle-loss", action="store_true",
                            help="Enable object condensation particle loss term")
