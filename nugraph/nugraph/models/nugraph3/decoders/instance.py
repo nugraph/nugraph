@@ -26,7 +26,7 @@ class InstanceDecoder(nn.Module):
     """
     def __init__(self, beta_features: int, coord_features: int,
                  instance_features: int, semantic_classes: list[str],
-                 dbscan_eps: float = 0.5, particle_loss: bool = False):
+                 dbscan_eps: float = 0.3, particle_loss: bool = False):
         super().__init__()
 
         # loss function
