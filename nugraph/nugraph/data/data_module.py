@@ -13,7 +13,7 @@ from torch_geometric.transforms import Compose
 from pytorch_lightning import LightningDataModule
 
 from ..data import NuGraphDataset, BalanceSampler
-from ..util import FeatureExtension
+from ..util import FeatureExtension, PositionFeatures
 
 DEFAULT_DATA = ("$NUGRAPH_DATA/uboone-opendata/"
                 "uboone-opendata-19be46d89d0f22f5a78641d724c1fedd.gnn.h5")

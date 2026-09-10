@@ -234,7 +234,7 @@ class StandardLabels:
                 "end_process": part.end_process,
                 "momentum": part.momentum,
                 "semantic_label": sl,
-                "instance_label": il } ]
+                "instance_g4_id": il } ]
             for _, row in particles[(part.g4_id==particles.parent_id)].iterrows():
                 ret += walk(row, particles, depth+1, slc, ilc)
             return ret
@@ -246,13 +246,6 @@ class StandardLabels:
             ret += walk(primary, part, 0, None, None)
         if len(ret)==0: return
         labels = pd.DataFrame.from_dict(ret)
-        instances = { val: i for i, val in enumerate(labels[(labels.instance_label>=0)].instance_label.unique()) }
-
-        def alias_instance(row, instances):
-            if row.instance_label == -1: return -1
-            return instances[row.instance_label]
-
-        labels["instance_label"] = labels.apply(alias_instance, args=[instances], axis="columns")
         return labels
 
     def validate(self, labels: pd.Series):
