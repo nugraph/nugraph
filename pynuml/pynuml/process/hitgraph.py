@@ -15,6 +15,7 @@ class HitGraphProducer(ProcessorBase):
                  event_labeller: Callable = None,
                  label_vertex: bool = False,
                  label_position: bool = False,
+                 optical: bool = False,
                  planes: list[str] = ['u','v','y'],
                  node_feats: list[str] = ['integral','rms','tpc'],
                  lower_bound: int = 20,
@@ -24,6 +25,7 @@ class HitGraphProducer(ProcessorBase):
         self.event_labeller = event_labeller
         self.label_vertex = label_vertex
         self.label_position = label_position
+        self.optical = optical
         self.planes = planes
         self.node_feats = node_feats
         self.lower_bound = lower_bound
@@ -54,6 +56,10 @@ class HitGraphProducer(ProcessorBase):
                 groups['event_table'] = keys
         if self.label_position:
             groups["edep_table"] = []
+        if self.optical:
+            groups["ophit_table"] = []
+            groups["opflash_table"] = []
+            groups["opflashsumpe_table"] = []
         return groups
 
     @property
@@ -224,6 +230,90 @@ class HitGraphProducer(ProcessorBase):
                 data["hit"].g4_id = torch.tensor(hits['g4_id'].fillna(-1).values).long()
                 data["hit"].parent_id = torch.tensor(hits['parent_id'].fillna(-1).values).long()
                 data["hit"].pdg = torch.tensor(hits['type'].fillna(-1).values).long()
+
+        # optical system
+        if self.optical:
+
+            ophits = evt["ophit_table"]
+            sum_pe = evt["opflashsumpe_table"]
+            opflash = evt["opflash_table"]
+
+            # skip events with no flash
+            if opflash.shape[0]==0:
+                return evt.name, None
+
+            # node position
+            data["ophit"].pos = torch.tensor(ophits[["wire_pos_0", "wire_pos_1", "wire_pos_2"]].values).float()
+            data["flash"].pos = torch.tensor(opflash[["wire_pos_0", "wire_pos_1", "wire_pos_2"]].values).float()
+
+            if "pos_y" in sum_pe.columns:
+                data["pmt"].pos = torch.tensor(sum_pe[["pos_y", "pos_z"]].values).float()
+            else:
+                #hardcoded positions for MicroBooNE's opdets
+                opdet_pos_y = torch.tensor([55.267144, 55.962509, 27.555318, -0.850317, -28.561692, -56.620694, -56.447756, 55.442895, 55.789304, -0.675445,
+                                            0.017374, -56.275066, -56.274171, 55.616099, 55.616099, -0.50224, -1.021855, -56.100966, -56.100966, 54.750076,
+                                            54.749983, -0.675445, -0.84865, -56.96699, -56.274171, 55.096391, 55.269595, 27.556793, -0.502415, -28.734833,
+                                            -56.274171, -56.620838])
+                opdet_pos_z = torch.tensor([951.85, 911.05, 989.65, 865.45, 990.25, 951.85, 911.95, 751.75, 710.95, 796.15,
+                                            664.15, 752.05, 711.25, 540.85, 500.05, 585.25, 452.95, 540.55, 500.35, 328.15,
+                                            287.95, 373.75, 242.05, 328.45, 287.65, 128.35,  87.85,  51.25, 173.65,  50.35,
+                                            128.05,  87.85])
+                data["pmt"].pos = torch.stack([opdet_pos_y[sum_pe["pmt_channel"].values], opdet_pos_z[sum_pe["pmt_channel"].values]], dim=1)
+
+            # optical node features (not including the positions)
+            data["ophit"].x = torch.cat([data["ophit"].pos,
+            torch.tensor(ophits[["amplitude", "area",  "pe", "peaktime", "width"]].values).float()],dim=1)
+            data["flash"].x = torch.cat([data["flash"].pos,torch.tensor(opflash[["time", "time_width", "totalpe", "y_center", "y_width", "z_center", "z_width"]].values).float()],dim=1)
+            data["pmt"].x = torch.cat([data["pmt"].pos,torch.tensor(sum_pe[["pmt_channel", "sumpe"]].values).float()],dim=1)
+
+            # ophit to pmt edges
+            edge1 = torch.tensor(ophits[["hit_id","sumpe_id"]].values.transpose())
+            mask = edge1[1,:]>=0
+            mask = torch.nonzero(mask)
+            edge1 = torch.squeeze(edge1[:,mask])
+            data["ophit", "in", "pmt"].edge_index = edge1.long()
+
+            # pmt to pmt edges
+            n_pmt = data["pmt"].pos.size(0)
+            if n_pmt > 1:
+                distances = torch.cdist(data["pmt"].pos, data["pmt"].pos, p=2)
+                distances.fill_diagonal_(float('inf'))
+                knn = min(3, n_pmt - 1)
+                _, neighbor_idx = torch.topk(distances, knn, largest=False, dim=1)
+                source = torch.arange(n_pmt, dtype=torch.long).repeat_interleave(knn)
+                target = neighbor_idx.flatten()
+                edge4 = torch.stack((source, target), dim=0)
+                edge4 = torch.cat((edge4, edge4.flip(0)), dim=1)
+            else:
+                edge4 = torch.empty((2, 0), dtype=torch.long)
+            data["pmt", "knn", "pmt"].edge_index = edge4
+
+            # pmt to flash edges
+            edge2 = torch.tensor(sum_pe[["sumpe_id", "flash_id"]].values.transpose())
+            data["pmt", "in", "flash"].edge_index = edge2.long()
+
+            # flash to event edges
+            edge3 = torch.stack((
+                torch.tensor(opflash["flash_id"].values, dtype=torch.long),
+                torch.zeros(opflash.shape[0], dtype=torch.long)
+            ), dim=0)
+            data["flash", "in", "evt"].edge_index = edge3
+
+            # spacepoint to pmt edges
+            spacepoints_nodes = torch.tensor(spacepoints[["position_y", "position_z"]].values)
+            n_sp = spacepoints_nodes.size(0)
+            if n_sp == 0 or n_pmt == 0:
+                edges = torch.empty((2, 0), dtype=torch.long)
+            else:
+                distances = torch.cdist(spacepoints_nodes, data["pmt"].pos, p=2)
+                knn = min(32, n_pmt)
+                _, nearest_indices = torch.topk(distances, knn, largest=False, dim=1)
+
+                sp_indices = torch.arange(n_sp, dtype=torch.long).repeat_interleave(knn)
+                pmt_indices = nearest_indices.flatten()
+
+                edges = torch.stack([sp_indices, pmt_indices], dim=0)
+            data["sp", "knn", "pmt"].edge_index = edges.long()
 
         # event label
         if self.event_labeller:

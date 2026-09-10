@@ -3,10 +3,10 @@ import torch
 from pynuml.data import NuGraphData
 from ...util import InputNorm
 
-class Encoder(torch.nn.Module):
+class TPCEncoder(torch.nn.Module):
     """
-    NuGraph3 encoder
-    
+    NuGraph3 TPC encoder
+
     Args:
         in_features: Number of input node features
         planar_features: Number of planar node features
@@ -43,8 +43,8 @@ class Encoder(torch.nn.Module):
 
     def forward(self, data: NuGraphData) -> None:
         """
-        NuGraph3 encoder forward pass
-        
+        NuGraph3 TPC encoder forward pass
+
         Args:
             data: Graph data object
         """
