@@ -4,7 +4,7 @@ import warnings
 
 import torch.cuda
 from torch.optim import AdamW
-
+from torch.optim.lr_scheduler import OneCycleLR
 from pytorch_lightning import LightningModule
 
 from .types import Data
@@ -53,7 +53,10 @@ class NuGraph3(LightningModule):
                  event_head: bool = False,
                  semantic_head: bool = True,
                  filter_head: bool = True,
+                 # michel_head: bool = False,
+                 # vertex_head: bool = False,
                  michel_head: bool = False,
+                 michel_pos_weight: float = 1.0,
                  vertex_head: bool = False,
                  instance_head: bool = False,
                  spacepoint_head: bool = False,
@@ -257,6 +260,12 @@ class NuGraph3(LightningModule):
         model.add_argument('--no-lr-scheduler', action='store_true',
                            dest="no_one_cycle_sched",
                            help='Disable OneCycleLR scheduler')
+        model.add_argument('--michel-pos-weight', type=float, default=1.0,
+                           help=(
+                                'Positive-class weight for the Michel BCE loss. '
+                                '1.0 reproduces the original unweighted loss.'
+                                ),
+                          )
         return parser
 
     @classmethod
@@ -282,6 +291,7 @@ class NuGraph3(LightningModule):
             semantic_head=args.semantic,
             filter_head=args.filter,
             michel_head=args.michel,
+            michel_pos_weight=args.michel_pos_weight,
             vertex_head=args.vertex,
             instance_head=args.instance,
             spacepoint_head=args.spacepoint,
