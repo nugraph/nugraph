@@ -209,6 +209,21 @@ class HitGraphProducer(ProcessorBase):
         node_feats = self.node_feats + [plane_key, proj_key, drift_key]
         data["hit"].x = torch.tensor(hits[node_feats].values).float()
 
+        # --------------------------------------------------
+        # Node features
+        #
+        # Position is stored separately in hit.pos.
+        # Avoid storing proj/drift again in hit.x.
+        # --------------------------------------------------
+        
+        # base_node_feats = [
+        #     feat
+        #     for feat in self.node_feats
+        #     if feat not in {plane_key, proj_key, drift_key}
+        # ]
+        # node_feats = base_node_feats + [plane_key]
+        # data["hit"].x = torch.tensor(hits[node_feats].values).float()
+
         # node true position
         if self.label_position:
             data["hit"].y_position = torch.tensor(hits[["x_position", "y_position", "z_position"]].values).float()
@@ -249,7 +264,50 @@ class HitGraphProducer(ProcessorBase):
 
         # truth information
         if self.semantic_labeller:
-            data["hit"].y_semantic = torch.tensor(hits['semantic_label'].fillna(-1).values).long()
+            #data["hit"].y_semantic = torch.tensor(hits['semantic_label'].fillna(-1).values).long()
+            semantic = (
+                hits["semantic_label"]
+                .fillna(-1)
+                .astype("int64")
+                .copy()
+            )
+            
+            # "invisible" is an internal StandardLabels class,
+            # but it is not one of the semantic classes trained by NuGraph.
+            # Convert it to the ignored label (-1).
+            invisible_label = self.semantic_labeller.index("invisible")
+            
+            semantic.loc[
+                semantic == invisible_label
+            ] = -1
+            
+            # Sanity check: valid training labels are now only
+            # -1 or [0, ..., n_classes - 1].
+            n_classes = len(self.semantic_labeller.labels) - 1
+            
+            invalid = ~(
+                semantic.eq(-1)
+                | semantic.between(0, n_classes - 1)
+            )
+            
+            if invalid.any():
+                invalid_counts = (
+                    semantic.loc[invalid]
+                    .value_counts()
+                    .sort_index()
+                    .to_dict()
+                )
+            
+                raise RuntimeError(
+                    f"Invalid semantic labels in event {evt.name}: "
+                    f"{invalid_counts}. "
+                    f"Expected -1 or 0-{n_classes - 1}."
+                )
+            
+            data["hit"].y_semantic = torch.tensor(
+                semantic.to_numpy(),
+                dtype=torch.long,
+            )
             y = torch.tensor(hits['instance_label'].fillna(-1).values).long()
             mask = y != -1
             y = y[mask]

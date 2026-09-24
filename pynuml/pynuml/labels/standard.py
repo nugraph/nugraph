@@ -135,69 +135,106 @@ class StandardLabels:
                 def neutral_pions_kaons_labeler(_current, _parent_type):
                     return self.invisible, None
 
-                def electron_positron_labeler(_current, parent_type):
-                    if start_process == "primary":
+                def electron_positron_labeler(current, parent_type):
+
+                    start_process = self._normalise_process(
+                        current.start_process
+                    )
+                    end_process = self._normalise_process(
+                        current.end_process
+                    )
+                
+                    # Generator-level electron/positron.
+                    if start_process.startswith("primary"):
                         return self.shower, self.shower
-
-                    if abs(parent_type) == 13 and start_process in {
-                        "muMinusCaptureAtRest",
-                        "muPlusCaptureAtRest",
-                        "Decay",
-                    }:
+                
+                    # Muon capture related electron/positron.
+                    if (
+                        abs(parent_type) == 13
+                        and start_process in {
+                            "muMinusCaptureAtRest",
+                            "muPlusCaptureAtRest",
+                        }
+                    ):
                         return self.michel, self.michel
-
+                
+                    # Decay electron/positron.
+                    if start_process == "Decay":
+                        if abs(parent_type) == 13:
+                            # True Michel electron/positron.
+                            return self.michel, self.michel
+                
+                        # Electron/positron from another decay.
+                        return self.shower, self.shower
+                
+                    # Photon conversion / Compton scattering.
                     if (
                         start_process in {"conv", "compt"}
                         or end_process in {"conv", "compt"}
                     ):
                         if current.momentum >= self._gamma_threshold:
                             return self.shower, self.shower
+                
                         return self.diffuse, self.diffuse
-
-                    if start_process in {"muIoni", "hIoni", "eIoni"}:
+                
+                    # Ionization secondaries.
+                    if start_process in {
+                        "muIoni",
+                        "hIoni",
+                        "eIoni",
+                    }:
                         if start_process == "muIoni":
                             return self.muon, None
-
+                
                         if start_process == "hIoni":
                             if abs(parent_type) == 2212:
                                 label = self.hadron
+                
                                 if current.momentum <= 0.0015:
                                     label = self.diffuse
                             else:
                                 label = self.pion
+                
                             return label, None
-
+                
                         return self.diffuse, None
-
+                
+                    # Other secondary EM activity.
                     if (
                         start_process == "eBrem"
-                        or end_process in {"phot", "photonNuclear", "eIoni"}
+                        or end_process in {
+                            "phot",
+                            "photonNuclear",
+                            "eIoni",
+                        }
                     ):
                         return self.diffuse, None
-
+                
                     if (
-                        end_process
-                        in {
+                        end_process in {
                             "StepLimiter",
                             "annihil",
                             "eBrem",
                             "FastScintillation",
                         }
-                        or start_process
-                        in {
+                        or start_process in {
                             "hBertiniCaptureAtRest",
                             "muPairProd",
                             "phot",
                         }
                     ):
                         return self.diffuse, self.diffuse
-
+                
                     raise RuntimeError(
-                        "labelling failed for electron with "
-                        f'start process "{start_process}" and '
-                        f'end process "{end_process}".'
+                        "labelling failed for electron/positron: "
+                        f"g4_id={current.g4_id}, "
+                        f"parent_id={current.parent_id}, "
+                        f"parent_pdg={parent_type}, "
+                        f"pdg={current.type}, "
+                        f"momentum={current.momentum}, "
+                        f'start_process="{start_process}", '
+                        f'end_process="{end_process}".'
                     )
-
                 def gamma_labeler(_current, _parent_type):
                     if (
                         start_process in {"conv", "compt"}
