@@ -3,11 +3,44 @@ from typing import Any
 from sklearn.cluster import DBSCAN
 import torch
 from torch import nn
-from torchmetrics.functional.clustering import adjusted_rand_score
+#from torchmetrics.functional.clustering import adjusted_rand_score
+from sklearn.metrics import adjusted_rand_score
 from torch_geometric.data import Batch
 from torch_geometric.utils import cumsum, unbatch
 from ....util import ObjConLoss, RecallLoss
 from ..types import Data, N_IT, E_H_IT, N_IP, E_H_IP
+
+def safe_adjusted_rand_score(
+    predicted: torch.Tensor,
+    target: torch.Tensor,
+    device: torch.device,
+) -> torch.Tensor:
+    """Calculate ARI on the CPU without TorchMetrics integer overflow."""
+
+    predicted_numpy = (
+        predicted.detach()
+        .to(dtype=torch.long)
+        .cpu()
+        .numpy()
+    )
+
+    target_numpy = (
+        target.detach()
+        .to(dtype=torch.long)
+        .cpu()
+        .numpy()
+    )
+
+    score = adjusted_rand_score(
+        target_numpy,
+        predicted_numpy,
+    )
+
+    return torch.tensor(
+        score,
+        dtype=torch.float32,
+        device=device,
+    )
 
 class InstanceDecoder(nn.Module):
     """
@@ -130,12 +163,20 @@ class InstanceDecoder(nn.Module):
                 rand = []
                 for l in data.to_data_list():
                     mask = l["hit"].y_semantic >= 0
-                    rand.append(adjusted_rand_score(l.x_i()[mask], l.y_i()[mask]))
+                    #rand.append(adjusted_rand_score(l.x_i()[mask], l.y_i()[mask]))
+                    rand.append(
+                                safe_adjusted_rand_score(
+                                    l.x_i()[mask],
+                                    l.y_i()[mask],
+                                    device,
+                                )
+                            )
                 rand = torch.stack(rand).mean()
 
             else:
                 data[N_IP].x, data[E_H_IP].edge_index = self.materialize(h.ox, mask)
-                rand = adjusted_rand_score(data.x_i(), data.y_i())
+                #rand = adjusted_rand_score(data.x_i(), data.y_i())
+                rand = safe_adjusted_rand_score(data.x_i(),data.y_i(), device,)
 
             if not -1. <= rand <= 1.:
                 raise RuntimeError(f"Adjusted Rand Score metric value {rand} is outside allowed range!")

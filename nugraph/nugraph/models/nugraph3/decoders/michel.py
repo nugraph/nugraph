@@ -23,11 +23,29 @@ class MichelDecoder(nn.Module):
     Michel semantic hits vs all other labeled hits.
     """
 
-    def __init__(self, hit_features: int, michel_label: int = 5):
+    # def __init__(self, hit_features: int, michel_label: int = 5):
+    #     super().__init__()
+
+    #     # loss function
+    #     self.loss = nn.BCEWithLogitsLoss()
+    def __init__(
+        self,
+        hit_features: int,
+        michel_label: int = 5,
+        pos_weight: float = 1.0,
+    ):
         super().__init__()
 
-        # loss function
-        self.loss = nn.BCEWithLogitsLoss()
+        if pos_weight <= 0:
+            raise ValueError("Michel pos_weight must be > 0.")
+
+        # Positive Michel hits receive this relative BCE weight.
+        # A tensor of shape [1] broadcasts over the 1-D hit logits.
+        self.loss = nn.BCEWithLogitsLoss(
+            pos_weight=torch.tensor([pos_weight], dtype=torch.float32)
+        )
+
+        self.pos_weight = float(pos_weight)
 
         # temperature parameter
         self.temp = nn.Parameter(torch.tensor(0.0))
