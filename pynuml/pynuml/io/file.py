@@ -841,7 +841,19 @@ class File:
         rank = comm.Get_rank()
         if rank == 0:
             out.write_metadata(processor.metadata)
-        self.read_data_all()
+        #self.read_data_all()
+
+        has_particle_table = any(
+            group == "particle_table"
+            for group, _ in self._groups
+        )
+
+        if has_particle_table:
+            # MC / truth-labelled processing
+            self.read_data_all(evt_part=2)
+        else:
+            # Real-data / unlabelled processing
+            self.read_data_all(evt_part=1)
 
         verbose = False
 
