@@ -52,6 +52,8 @@ def test(args):
     model = Model.load_from_checkpoint(
         args.checkpoint,
         map_location="cpu",
+        michel_pos_weight=1.0,
+        strict=False,
     )
 
     expected_features = int(model.hparams.in_features)
