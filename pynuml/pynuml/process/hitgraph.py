@@ -310,7 +310,7 @@ class HitGraphProducer(ProcessorBase):
                 edges = torch.empty((2, 0), dtype=torch.long)
             else:
                 distances = torch.cdist(spacepoints_nodes, data["pmt"].pos, p=2)
-                knn = min(32, n_pmt)
+                knn = min(2, n_pmt)
                 _, nearest_indices = torch.topk(distances, knn, largest=False, dim=1)
 
                 sp_indices = torch.arange(n_sp, dtype=torch.long).repeat_interleave(knn)
