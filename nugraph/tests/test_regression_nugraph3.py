@@ -78,9 +78,7 @@ DUPLICATE_INVARIANT = [
     "vertex/loss-val",
     "spacepoint/loss-val",
     "instance/bkg-loss-val",
-    pytest.param("instance/potential-loss-val", marks=bug(
-        2, "OC potential is a dense hit x particle matrix over the whole batch, "
-           "so hits are repelled by particles in other events")),
+    "instance/potential-loss-val",
 ]
 
 
@@ -93,8 +91,6 @@ def test_loss_invariant_to_duplicating_event(key):
     torch.testing.assert_close(double[key], single[key], rtol=1e-4, atol=1e-6)
 
 
-@bug(3, "RecallLoss already divides each hit's loss by the number of hits, "
-        "and l_p averages again, so the term scales as 1/N_hits")
 def test_particle_loss_invariant_to_batch_size():
     """The OC particle-loss term must not shrink as the batch grows"""
     model = build_model(particle_loss=True)
