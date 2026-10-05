@@ -18,8 +18,23 @@ class NuGraphDataset(Dataset):
                  samples: list[str],
                  transform: Optional[Callable] = None):
         super().__init__(transform=transform)
-        self.file = h5py.File(filename)
+        self.filename = filename
+        self._file = None
         self.samples = samples
+
+    @property
+    def file(self) -> h5py.File:
+        """HDF5 file, opened on first access in each process"""
+        if self._file is None:
+            self._file = h5py.File(self.filename)
+        return self._file
+
+    def __getstate__(self) -> dict:
+        # h5py file handles cannot be pickled, so DataLoader workers started
+        # with spawn or forkserver open their own handle instead
+        state = self.__dict__.copy()
+        state["_file"] = None
+        return state
 
     def len(self) -> int:
         return len(self.samples)
