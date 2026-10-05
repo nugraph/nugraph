@@ -47,15 +47,21 @@ class RecallLoss(torch.nn.Module):
                              ignore_index=self.ignore_index)
         loss = weight[y] * ce
 
-        # Sync total non-ignored count across GPUs
+        if self.reduction == "none":
+            return loss
+        if self.reduction == "sum":
+            return loss.sum() / self.n_valid(y)
+        raise ValueError(f'"{self.reduction}" is not a valid reduction.')
+
+    def n_valid(self, y: Tensor) -> Tensor:
+        """
+        Number of non-ignored labels, averaged across GPUs
+
+        Args:
+            y: True class labels
+        """
         n_valid = (y != self.ignore_index).sum().float()
         if dist.is_available() and dist.is_initialized():
             dist.all_reduce(n_valid, op=dist.ReduceOp.SUM)
             n_valid = n_valid / dist.get_world_size()
-
-        loss /= n_valid
-        if self.reduction == "none":
-            return loss
-        if self.reduction == "sum":
-            return loss.sum()
-        raise ValueError(f'"{self.reduction}" is not a valid reduction.')
+        return n_valid
