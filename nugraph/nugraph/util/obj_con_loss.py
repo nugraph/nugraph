@@ -18,7 +18,8 @@ class ObjConLoss(torch.nn.Module):
             b += (self.s_b / n_bkg) * f[bkg_mask].sum()
         return b
 
-    def l_v(self, x: T, f: T, centers: T, e_h: T, e_p: T, n_true: int) -> T:
+    def l_v(self, x: T, f: T, centers: T, e_h: T, e_p: T, n_true: int,
+            batch: T = None) -> T:
         """Calculate potential loss term"""
         device = x.device
         n_hit = x.size(0)
@@ -28,6 +29,9 @@ class ObjConLoss(torch.nn.Module):
         m_ik[e_h, e_p] = True
         dist = torch.cdist(x, x[centers])
         v = torch.where(m_ik, dist.square(), (1-dist).clamp(min=0))
+        # only repel hits from condensation points in the same graph
+        if batch is not None:
+            v = v * (batch[:, None] == batch[centers][None, :])
         v = ((v * q[centers]).sum(dim=1) * q).sum() / n_hit
         return v
 
@@ -45,7 +49,7 @@ class ObjConLoss(torch.nn.Module):
         return p
 
     def forward(self, x: T, f: T, y_i: T, y_s: T, n_true: int, e_true: T,
-                l_p: T) -> T:
+                l_p: T, batch: T = None) -> T:
 
         device = x.device
         dtype = x.dtype
@@ -68,7 +72,7 @@ class ObjConLoss(torch.nn.Module):
 
         # calculate loss terms
         b = self.l_b(f, f_centers, bkg_mask, n_true)
-        v = self.l_v(x, f, centers, e_h, e_p, n_true)
+        v = self.l_v(x, f, centers, e_h, e_p, n_true, batch)
         p = self.l_p(f, bkg_mask, l_p)
 
         return torch.stack([b, v, p])

@@ -82,9 +82,10 @@ class InstanceDecoder(nn.Module):
             loss_semantic = data.hit_loss()
 
         # calculate loss
+        batch = h.batch if isinstance(data, Batch) else None
         loss = self.loss(h.ox, h.of, data.y_i(), h.y_semantic,
                          data[N_IT].num_nodes, data[E_H_IT].edge_index,
-                         loss_semantic)
+                         loss_semantic, batch)
         loss *= (-1 * self.temp).exp()
         b, v, p = loss
         loss = loss.sum() + self.temp
