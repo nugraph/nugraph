@@ -11,8 +11,11 @@ class SpacePointGraph(BaseTransform):
     Each spacepoint receives edges from its k nearest neighbours by Euclidean
     distance. If the graph carries true hit instance labels, each spacepoint is
     labelled with the instance shared by all of its hits (-1 if its hits come
-    from more than one instance or from background), and each edge is labelled
-    1 if both spacepoints belong to the same instance.
+    from more than one instance or from background), each edge is labelled
+    1 if both spacepoints belong to the same instance, and each labelled
+    spacepoint gets the local direction of its instance (y_direction), the
+    principal axis of itself and its same-instance neighbours; spacepoints
+    with fewer than two such neighbours get a zero vector.
 
     Args:
         k: Number of nearest neighbours to connect each spacepoint to
@@ -63,5 +66,18 @@ class SpacePointGraph(BaseTransform):
             sp.y_instance = torch.where((lo == hi) & (lo >= 0), lo, -1)
             y = sp.y_instance
             edge.y = ((y[edge_index[0]] >= 0) & (y[edge_index[0]] == y[edge_index[1]])).long()
+
+            # local instance direction: principal axis of each spacepoint and
+            # its same-instance neighbours
+            src, dst = edge_index[:, edge.y == 1]
+            pos = torch.cat((sp.pos[src], sp.pos), dim=0).double()
+            idx = torch.cat((dst, torch.arange(n)), dim=0)
+            count = torch.zeros(n, dtype=pos.dtype).index_add(0, idx, torch.ones_like(idx, dtype=pos.dtype))
+            mean = torch.zeros(n, 3, dtype=pos.dtype).index_add(0, idx, pos) / count[:, None]
+            d = pos - mean[idx]
+            cov = torch.zeros(n, 3, 3, dtype=pos.dtype).index_add(0, idx, d[:, :, None] * d[:, None, :])
+            direction = torch.linalg.eigh(cov).eigenvectors[:, :, -1]
+            ok = (y >= 0) & (count >= 3)
+            sp.y_direction = torch.where(ok[:, None], direction, 0.).float()
 
         return data

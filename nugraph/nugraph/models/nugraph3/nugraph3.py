@@ -46,7 +46,8 @@ class NuGraph3(LightningModule):
         nexus_head: Whether to enable nexus decoder and spacepoint graph message-passing
         nexus_in_features: Number of nexus node input features
         nexus_geometry: Whether spacepoint messages see spacepoint displacements
-        nexus_vertex: Vertex given to the nexus edge classifier ("pred" or "true")
+        nexus_vertex: Vertex given to the nexus edge classifier ("pred", "vote" or "true")
+        nexus_direction: Whether to regress spacepoint directions for the nexus edge classifier
         use_optical: Whether to perform message-passing in optical system
         dbscan_eps: Epsilon hyperparameter for DBSCAN algorithm
         particle_loss: Whether to include particle loss term for object condensation"
@@ -79,6 +80,7 @@ class NuGraph3(LightningModule):
                  nexus_in_features: int = 0,
                  nexus_geometry: bool = False,
                  nexus_vertex: str = None,
+                 nexus_direction: bool = False,
                  dbscan_eps: float = 0.3,
                  particle_loss: bool = False,
                  use_optical: bool = False,
@@ -157,7 +159,7 @@ class NuGraph3(LightningModule):
         if nexus_vertex == "pred" and not vertex_head:
             raise RuntimeError("nexus_vertex=\"pred\" requires the vertex head!")
         if nexus_head:
-            self.nexus_decoder = NexusDecoder(nexus_features, nexus_vertex)
+            self.nexus_decoder = NexusDecoder(nexus_features, nexus_vertex, nexus_direction)
             self.decoders.append(self.nexus_decoder)
 
         if not self.decoders:
@@ -306,9 +308,11 @@ class NuGraph3(LightningModule):
                            help="Number of nexus node input features")
         model.add_argument("--nexus-geometry", action="store_true",
                            help="Pass spacepoint displacements into spacepoint messages")
-        model.add_argument("--nexus-vertex", type=str, default=None, choices=("pred", "true"),
+        model.add_argument("--nexus-vertex", type=str, default=None, choices=("pred", "vote", "true"),
                            help="Give the nexus edge classifier edge geometry relative to the "
-                                "predicted or (diagnostic only) true vertex")
+                                "predicted, spacepoint-voted or (diagnostic only) true vertex")
+        model.add_argument("--nexus-direction", action="store_true",
+                           help="Regress spacepoint directions for the nexus edge classifier")
         model.add_argument("--dbscan-eps", type=float, default=0.3,
                            help="Epsilon hyperparameter for DBSCAN algorithm")
         model.add_argument("--particle-loss", action="store_true",
@@ -361,6 +365,7 @@ class NuGraph3(LightningModule):
             nexus_in_features=args.nexus_in_feats,
             nexus_geometry=args.nexus_geometry,
             nexus_vertex=args.nexus_vertex,
+            nexus_direction=args.nexus_direction,
             dbscan_eps=args.dbscan_eps,
             particle_loss=args.particle_loss,
             use_optical=args.optical,

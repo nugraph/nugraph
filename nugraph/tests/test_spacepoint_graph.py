@@ -71,3 +71,19 @@ def test_single_spacepoint():
     data["sp"].pos = torch.zeros(1, 3)
     data = SpacePointGraph(k=4)(data)
     assert data[E_SP].edge_index.shape == (2, 0)
+
+
+def test_spacepoint_direction():
+    """Spacepoints along a straight particle get that particle's direction"""
+    data = NuGraphData()
+    n = 6
+    line = torch.arange(n, dtype=torch.float)[:, None] * torch.tensor([[1., 2., 2.]]) / 3.
+    data["hit"].y_semantic = torch.zeros(n, dtype=torch.long)
+    data["particle-truth"].num_nodes = 1
+    data["hit", "cluster-truth", "particle-truth"].edge_index = torch.stack(
+        (torch.arange(n), torch.zeros(n, dtype=torch.long)))
+    data["sp"].pos = line
+    data["hit", "nexus", "sp"].edge_index = torch.stack((torch.arange(n), torch.arange(n)))
+    data = SpacePointGraph(k=3)(data)
+    cos = (data["sp"].y_direction @ torch.tensor([1., 2., 2.]) / 3.).abs()
+    torch.testing.assert_close(cos, torch.ones(n))
