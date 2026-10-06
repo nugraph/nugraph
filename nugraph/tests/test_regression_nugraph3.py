@@ -78,9 +78,7 @@ DUPLICATE_INVARIANT = [
     "vertex/loss-val",
     "spacepoint/loss-val",
     "instance/bkg-loss-val",
-    pytest.param("instance/potential-loss-val", marks=bug(
-        2, "OC potential is a dense hit x particle matrix over the whole batch, "
-           "so hits are repelled by particles in other events")),
+    "instance/potential-loss-val",
 ]
 
 
@@ -93,8 +91,6 @@ def test_loss_invariant_to_duplicating_event(key):
     torch.testing.assert_close(double[key], single[key], rtol=1e-4, atol=1e-6)
 
 
-@bug(3, "RecallLoss already divides each hit's loss by the number of hits, "
-        "and l_p averages again, so the term scales as 1/N_hits")
 def test_particle_loss_invariant_to_batch_size():
     """The OC particle-loss term must not shrink as the batch grows"""
     model = build_model(particle_loss=True)
@@ -102,6 +98,16 @@ def test_particle_loss_invariant_to_batch_size():
     _, double, _ = evaluate(model, 0, 0)
     torch.testing.assert_close(double["instance/particle-loss-val"],
                                single["instance/particle-loss-val"], rtol=1e-4, atol=1e-6)
+
+
+def test_potential_repels_within_event_only():
+    """Hits are repelled by other particles in their own event, not in other events"""
+    x = torch.tensor([[0.0], [0.5], [0.2], [0.7]]) # events [0, 0, 1, 1], one hit per particle
+    f = torch.full((4,), 0.5)
+    idx = torch.arange(4)
+    v = ObjConLoss().l_v(x, f, idx, idx, idx, 4, torch.tensor([0, 0, 1, 1]))
+    q = torch.tensor(0.5).atanh().square() + 0.5
+    torch.testing.assert_close(v, 0.5 * q.square())
 
 
 @bug("OC loss", "a true particle with no hits makes scatter_max return an "
