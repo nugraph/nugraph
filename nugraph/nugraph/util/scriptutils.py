@@ -44,12 +44,12 @@ def setup_env(verbose: bool = True) -> None:
     if verbose:
         print()
 
-def configure_device(device: int = None) -> tuple[str, str | list[int]]:
+def configure_device(device: int | list[int] = None) -> tuple[str, str | list[int]]:
     """
-    Convert GPU device index into a set of PyTorch Lightning arguments
+    Convert GPU device indices into a set of PyTorch Lightning arguments
 
     Args:
-        device: index of GPU device to use
+        device: index, or list of indices, of GPU devices to use
     """
 
     # if no device passed, run on CPU
@@ -61,5 +61,5 @@ def configure_device(device: int = None) -> tuple[str, str | list[int]]:
         raise RuntimeError((f"Device {device} requested but CUDA is not "
                              "available in the current environment."))
 
-    # return GPU device as single element list
-    return "gpu", [device]
+    # return GPU devices as a list
+    return "gpu", list(device) if isinstance(device, (list, tuple)) else [device]
