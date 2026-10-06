@@ -159,7 +159,8 @@ class NuGraph3(LightningModule):
         if nexus_vertex == "pred" and not vertex_head:
             raise RuntimeError("nexus_vertex=\"pred\" requires the vertex head!")
         if nexus_head:
-            self.nexus_decoder = NexusDecoder(nexus_features, nexus_vertex, nexus_direction)
+            self.nexus_decoder = NexusDecoder(nexus_features, nexus_vertex, nexus_direction,
+                                              interaction_features)
             self.decoders.append(self.nexus_decoder)
 
         if not self.decoders:
