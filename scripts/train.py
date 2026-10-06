@@ -25,8 +25,8 @@ def configure():
     parser = argparse.ArgumentParser()
     parser.add_argument('--nugraph2', action='store_true', default=False,
                         help='Train NuGraph2 instead of NuGraph3 (default)')
-    parser.add_argument('--device', type=int, default=None,
-                        help="Index of GPU device to train with")
+    parser.add_argument('--device', type=int, nargs='+', default=None,
+                        help="Index of GPU device(s) to train with")
     parser.add_argument('--logger', type=str, default="tensorboard",
                         choices=("wandb", "tensorboard"),
                         help="Which logging method to use")
@@ -100,9 +100,7 @@ def train(args, Model):
         callbacks.append(ModelCheckpoint(monitor="loss/val", mode="min"))
 
     # configure plugins
-    plugins = [
-        SLURMEnvironment(),
-    ]
+    plugins = [SLURMEnvironment()] if SLURMEnvironment.detect() else []
 
     accelerator, devices = ng.util.configure_device(args.device)
     trainer = pl.Trainer(
@@ -115,6 +113,8 @@ def train(args, Model):
         profiler=args.profiler,
         callbacks=callbacks,
         plugins=plugins,
+        strategy=("ddp_find_unused_parameters_true"
+                  if isinstance(devices, list) and len(devices) > 1 else "auto"),
     )
 
     trainer.fit(model, datamodule=nudata, ckpt_path=args.resume)
