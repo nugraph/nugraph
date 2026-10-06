@@ -27,9 +27,11 @@ class NexusDecoder(nn.Module):
             true vertex (diagnostic only, as it reads truth at inference)
         direction: Regress each spacepoint's local particle direction and give
             the edge classifier the alignment of directions along each edge
+        interaction_features: Number of interaction node features, which the
+            vertex vote head sees for event-level context
     """
     def __init__(self, nexus_features: int, vertex: str = None,
-                 direction: bool = False):
+                 direction: bool = False, interaction_features: int = 32):
         super().__init__()
 
         if vertex not in (None, "pred", "vote", "true"):
@@ -63,14 +65,17 @@ class NexusDecoder(nn.Module):
         if vertex == "vote":
             self.temp_vote = nn.Parameter(torch.tensor(0.))
             self.vote_net = nn.Sequential(
-                nn.Linear(nexus_features, nexus_features),
+                nn.Linear(nexus_features + interaction_features, nexus_features),
                 nn.Mish(),
                 nn.Linear(nexus_features, 3))
 
         # spacepoint local particle direction
         if direction:
             self.temp_direction = nn.Parameter(torch.tensor(0.))
-            self.direction_net = nn.Linear(nexus_features, 3)
+            self.direction_net = nn.Sequential(
+                nn.Linear(nexus_features + 6, nexus_features),
+                nn.Mish(),
+                nn.Linear(nexus_features, 3))
 
     def forward(self, data: Data, stage: str = None) -> dict[str, Any]:
         """
@@ -88,10 +93,13 @@ class NexusDecoder(nn.Module):
         x_node = self.node_net(sp.x).squeeze(dim=-1)
         metrics, extra_loss = {}, 0.
         if self.vertex == "vote":
-            sp.offset = 100. * self.vote_net(sp.x)
+            evt = data["evt"].x[self.graph_index(data)]
+            sp.offset = 100. * self.vote_net(torch.cat((sp.x, evt), dim=1))
             extra_loss = extra_loss + self.vote_loss(data, metrics, stage)
         if self.direction:
-            sp.direction = nn.functional.normalize(self.direction_net(sp.x), dim=1)
+            shape = self.local_shape(sp.pos, i, j)
+            sp.direction = nn.functional.normalize(
+                self.direction_net(torch.cat((sp.x, shape), dim=1)), dim=1)
             extra_loss = extra_loss + self.direction_loss(data, metrics, stage)
         dpos = sp.pos[i] - sp.pos[j]
         feats = [sp.x[i], sp.x[j], dpos, dpos.norm(dim=1, keepdim=True)]
@@ -166,6 +174,30 @@ class NexusDecoder(nn.Module):
         cos = (dpos * mid).sum(dim=1, keepdim=True) / (dpos.norm(dim=1, keepdim=True)
                                                        * mid.norm(dim=1, keepdim=True)).clamp(min=1e-6)
         return [r[i].log1p(), r[j].log1p(), cos.abs()]
+
+    @staticmethod
+    def graph_index(data: Data) -> torch.Tensor:
+        """Graph index of every spacepoint (all zero for a single graph)"""
+        sp = data["sp"]
+        return sp.batch if isinstance(data, Batch) else torch.zeros_like(sp.pos[:, 0], dtype=torch.long)
+
+    @staticmethod
+    def local_shape(pos: torch.Tensor, i: torch.Tensor, j: torch.Tensor) -> torch.Tensor:
+        """
+        Shape of each spacepoint's neighbourhood: the six independent entries
+        of the covariance of its neighbours' offsets, divided by its trace
+
+        Args:
+            pos: Spacepoint positions
+            i: Edge target spacepoint indices
+            j: Edge source spacepoint indices
+        """
+        d = pos[j] - pos[i]
+        cov = torch.zeros(pos.size(0), 3, 3, dtype=pos.dtype, device=pos.device).index_add(
+            0, i, d[:, :, None] * d[:, None, :])
+        cov = cov / cov.diagonal(dim1=1, dim2=2).sum(dim=1).clamp(min=1e-6)[:, None, None]
+        r, c = torch.triu_indices(3, 3, device=pos.device)
+        return cov[:, r, c]
 
     @staticmethod
     def per_spacepoint(data: Data, vtx: torch.Tensor) -> torch.Tensor:
