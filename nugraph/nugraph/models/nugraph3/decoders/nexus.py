@@ -19,9 +19,16 @@ class NexusDecoder(nn.Module):
 
     Args:
         nexus_features: Number of nexus node features
+        vertex: Give the edge classifier each edge's geometry relative to the
+            vertex: "pred" for the vertex decoder's prediction, "true" for the
+            true vertex (diagnostic only, as it reads truth at inference)
     """
-    def __init__(self, nexus_features: int):
+    def __init__(self, nexus_features: int, vertex: str = None):
         super().__init__()
+
+        if vertex not in (None, "pred", "true"):
+            raise ValueError(f'"{vertex}" is not a valid nexus vertex option.')
+        self.vertex = vertex
 
         # loss function
         self.loss = nn.BCEWithLogitsLoss()
@@ -40,7 +47,7 @@ class NexusDecoder(nn.Module):
         # network
         self.node_net = nn.Linear(nexus_features, 1)
         self.edge_net = nn.Sequential(
-            nn.Linear(2 * nexus_features + 4, nexus_features),
+            nn.Linear(2 * nexus_features + 4 + (3 if vertex else 0), nexus_features),
             nn.Mish(),
             nn.Linear(nexus_features, 1))
 
@@ -59,8 +66,10 @@ class NexusDecoder(nn.Module):
         # run network
         x_node = self.node_net(sp.x).squeeze(dim=-1)
         dpos = sp.pos[i] - sp.pos[j]
-        x_edge = self.edge_net(torch.cat((sp.x[i], sp.x[j], dpos,
-                                          dpos.norm(dim=1, keepdim=True)), dim=1)).squeeze(dim=-1)
+        feats = [sp.x[i], sp.x[j], dpos, dpos.norm(dim=1, keepdim=True)]
+        if self.vertex:
+            feats += self.vertex_features(data, i, j, dpos)
+        x_edge = self.edge_net(torch.cat(feats, dim=1)).squeeze(dim=-1)
 
         # calculate loss
         y_node = (sp.y_instance >= 0).float()
@@ -95,6 +104,30 @@ class NexusDecoder(nn.Module):
             data._inc_dict[E_SP]["x"] = torch.zeros(data.num_graphs, device=sp.x.device)
 
         return loss, metrics
+
+    def vertex_features(self, data: Data, i: torch.Tensor, j: torch.Tensor,
+                        dpos: torch.Tensor) -> list[torch.Tensor]:
+        """
+        Edge geometry relative to the vertex: log distance of each spacepoint
+        from the vertex, and |cos| of the angle between the edge and the
+        radial direction from the vertex
+
+        Args:
+            data: Graph data object
+            i: Edge target spacepoint indices
+            j: Edge source spacepoint indices
+            dpos: Edge displacement vectors
+        """
+        sp = data["sp"]
+        vtx = data["evt"].v.detach() if self.vertex == "pred" else data["evt"].y_vtx
+        vtx = vtx.reshape(-1, 3).to(sp.pos.dtype)
+        batch = sp.batch if isinstance(data, Batch) else torch.zeros_like(sp.pos[:, 0], dtype=torch.long)
+        rel = sp.pos - vtx[batch]
+        r = rel.norm(dim=1, keepdim=True)
+        mid = 0.5 * (rel[i] + rel[j])
+        cos = (dpos * mid).sum(dim=1, keepdim=True) / (dpos.norm(dim=1, keepdim=True)
+                                                       * mid.norm(dim=1, keepdim=True)).clamp(min=1e-6)
+        return [r[i].log1p(), r[j].log1p(), cos.abs()]
 
     def on_epoch_end(self, logger: Logger | list[Logger], stage: str,
                      epoch: int) -> None: # pylint: disable=unused-argument
