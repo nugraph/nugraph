@@ -14,7 +14,7 @@ from .encoder import TPCEncoder
 from .core import NuGraphCore
 from .optical import OpticalEncoder, NuGraphOptical
 from .decoders import (SemanticDecoder, FilterDecoder, EventDecoder, VertexDecoder, InstanceDecoder,
-                       SpacepointDecoder)
+                       SpacepointDecoder, NexusDecoder)
 
 from ...data import H5DataModule
 
@@ -43,6 +43,9 @@ class NuGraph3(LightningModule):
         vertex_head: Whether to enable vertex decoder
         instance_head: Whether to enable instance decoder
         spacepoint_head: Whether to enable spacepoint decoder
+        nexus_head: Whether to enable nexus decoder and spacepoint graph message-passing
+        nexus_in_features: Number of nexus node input features
+        nexus_geometry: Whether spacepoint messages see spacepoint displacements
         use_optical: Whether to perform message-passing in optical system
         dbscan_eps: Epsilon hyperparameter for DBSCAN algorithm
         particle_loss: Whether to include particle loss term for object condensation"
@@ -71,6 +74,9 @@ class NuGraph3(LightningModule):
                  vertex_head: bool = False,
                  instance_head: bool = False,
                  spacepoint_head: bool = False,
+                 nexus_head: bool = False,
+                 nexus_in_features: int = 0,
+                 nexus_geometry: bool = False,
                  dbscan_eps: float = 0.3,
                  particle_loss: bool = False,
                  use_optical: bool = False,
@@ -95,14 +101,17 @@ class NuGraph3(LightningModule):
 
         self.tpc_encoder = TPCEncoder(in_features, hit_features,
                                       nexus_features, interaction_features,
-                                      beta_features, coord_features)
+                                      beta_features, coord_features,
+                                      nexus_in_features)
 
         self.core_net = NuGraphCore(hit_features,
                                     nexus_features,
                                     interaction_features,
                                     beta_features,
                                     coord_features,
-                                    use_checkpointing)
+                                    use_checkpointing,
+                                    nexus_head,
+                                    nexus_geometry)
 
         if self.use_optical:
             self.optical_encoder = OpticalEncoder(ophit_features=ophit_features,
@@ -142,6 +151,10 @@ class NuGraph3(LightningModule):
         if spacepoint_head:
             self.spacepoint_decoder = SpacepointDecoder(hit_features, len(planes))
             self.decoders.append(self.spacepoint_decoder)
+
+        if nexus_head:
+            self.nexus_decoder = NexusDecoder(nexus_features)
+            self.decoders.append(self.nexus_decoder)
 
         if not self.decoders:
             raise RuntimeError('At least one decoder head must be enabled!')
@@ -185,6 +198,8 @@ class NuGraph3(LightningModule):
     def on_train_epoch_end(self) -> None:
         # stop updating running average for feature norm
         self.tpc_encoder.input_norm.update = False
+        if self.tpc_encoder.nexus_in_features:
+            self.tpc_encoder.nexus_norm.update = False
 
     def validation_step(self,
                         batch,
@@ -281,6 +296,12 @@ class NuGraph3(LightningModule):
                            help='Enable vertex regression head')
         model.add_argument("--spacepoint", action="store_true",
                            help="Enable spacepoint prediction head")
+        model.add_argument("--nexus", action="store_true",
+                           help="Enable nexus decoder and spacepoint graph message-passing")
+        model.add_argument("--nexus-in-feats", type=int, default=0,
+                           help="Number of nexus node input features")
+        model.add_argument("--nexus-geometry", action="store_true",
+                           help="Pass spacepoint displacements into spacepoint messages")
         model.add_argument("--dbscan-eps", type=float, default=0.3,
                            help="Epsilon hyperparameter for DBSCAN algorithm")
         model.add_argument("--particle-loss", action="store_true",
@@ -329,6 +350,9 @@ class NuGraph3(LightningModule):
             vertex_head=args.vertex,
             instance_head=args.instance,
             spacepoint_head=args.spacepoint,
+            nexus_head=args.nexus,
+            nexus_in_features=args.nexus_in_feats,
+            nexus_geometry=args.nexus_geometry,
             dbscan_eps=args.dbscan_eps,
             particle_loss=args.particle_loss,
             use_optical=args.optical,

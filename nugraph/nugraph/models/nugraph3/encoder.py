@@ -13,6 +13,7 @@ class TPCEncoder(torch.nn.Module):
         nexus_feature: Number of nexus node features
         beta_features: Number of object condensation beta features
         coord_features: Number of object condensation coordinate features
+        nexus_in_features: Number of nexus node input features
     """
     def __init__(self,
                  in_features: int,
@@ -20,7 +21,8 @@ class TPCEncoder(torch.nn.Module):
                  nexus_features: int,
                  interaction_features: int,
                  beta_features: int,
-                 coord_features: int):
+                 coord_features: int,
+                 nexus_in_features: int = 0):
         super().__init__()
 
         self.input_norm = InputNorm(in_features)
@@ -38,7 +40,13 @@ class TPCEncoder(torch.nn.Module):
             torch.nn.Mish(),
         )
 
+        # nexus input encoder
+        if nexus_in_features:
+            self.nexus_norm = InputNorm(nexus_in_features)
+            self.nexus_net = torch.nn.Linear(nexus_in_features, nexus_features)
+
         self.nexus_features = nexus_features
+        self.nexus_in_features = nexus_in_features
         self.interaction_features = interaction_features
 
     def forward(self, data: NuGraphData) -> None:
@@ -52,9 +60,12 @@ class TPCEncoder(torch.nn.Module):
         data["hit"].x = self.planar_net(x_in)
         data["hit"].of = self.beta_net(x_in)
         data["hit"].ox = self.coord_net(x_in)
-        data["sp"].x = torch.zeros(data["sp"].num_nodes,
-                                   self.nexus_features,
-                                   device=data["hit"].x.device)
+        if self.nexus_in_features:
+            data["sp"].x = self.nexus_net(self.nexus_norm(data["sp"].x))
+        else:
+            data["sp"].x = torch.zeros(data["sp"].num_nodes,
+                                       self.nexus_features,
+                                       device=data["hit"].x.device)
         data["evt"].x = torch.zeros(data["evt"].num_nodes,
                                     self.interaction_features,
                                     device=data["hit"].x.device)
