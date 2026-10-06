@@ -13,7 +13,7 @@ from torch_geometric.transforms import Compose
 from pytorch_lightning import LightningDataModule
 
 from ..data import NuGraphDataset, BalanceSampler
-from ..util import FeatureExtension, PositionFeatures
+from ..util import FeatureExtension, PositionFeatures, SpacePointGraph, NexusFeatures
 
 DEFAULT_DATA = ("$NUGRAPH_DATA/uboone-opendata/"
                 "uboone-opendata-19be46d89d0f22f5a78641d724c1fedd.gnn.h5")
@@ -27,7 +27,10 @@ class NuGraphDataModule(LightningDataModule):
                  num_workers: int = 8,
                  shuffle: str = 'random',
                  balance_frac: float = 0.1,
-                 featext: bool = False):
+                 featext: bool = False,
+                 sp_knn: int = 0,
+                 sp_feats: bool = False,
+                 sp_majority: bool = True):
         super().__init__()
 
         # for this HDF5 dataloader, worker processes slow things down
@@ -45,6 +48,9 @@ class NuGraphDataModule(LightningDataModule):
         self.shuffle = shuffle
         self.balance_frac = balance_frac
         self.featext = featext
+        self.sp_knn = sp_knn
+        self.sp_feats = sp_feats
+        self.sp_majority = sp_majority
 
         with h5py.File(self.filename) as f:
 
@@ -97,6 +103,10 @@ class NuGraphDataModule(LightningDataModule):
             transform.append(model.transform(planes=self.planes))
         if self.featext:
             transform.append(FeatureExtension(planes=self.planes))
+        if self.sp_knn:
+            transform.append(SpacePointGraph(k=self.sp_knn, majority=self.sp_majority))
+        if self.sp_feats:
+            transform.append(NexusFeatures(planes=self.planes, positions=False))
         transform = Compose(transform) if transform else None
 
         self.train_dataset = NuGraphDataset(self.filename, train_samples, transform)
@@ -189,4 +199,10 @@ class NuGraphDataModule(LightningDataModule):
                           help='Fraction of dataset to use for workload balancing')
         data.add_argument('--featext', action='store_true', default=False,
                           help='Enable extended features')
+        data.add_argument('--sp-knn', type=int, default=0,
+                          help='Number of neighbours in spacepoint graph (0 to disable)')
+        data.add_argument('--sp-feats', action='store_true', default=False,
+                          help='Enable spacepoint delta_T and chi2 input features')
+        data.add_argument('--no-sp-majority', action='store_false', dest='sp_majority',
+                          help='Leave three-hit spacepoints with two hits from one particle unlabelled')
         return parser
