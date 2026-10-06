@@ -58,7 +58,7 @@ def train(args, Model):
                   model=Model, shuffle=args.shuffle,
                   balance_frac=args.balance_frac, num_workers=args.num_workers,
                   featext=args.featext, sp_knn=args.sp_knn,
-                  sp_feats=args.sp_feats)
+                  sp_feats=args.sp_feats, sp_majority=args.sp_majority)
 
     if args.resume:
         model = Model.load_from_checkpoint(args.resume)
