@@ -100,6 +100,16 @@ def test_particle_loss_invariant_to_batch_size():
                                single["instance/particle-loss-val"], rtol=1e-4, atol=1e-6)
 
 
+def test_potential_repels_within_event_only():
+    """Hits are repelled by other particles in their own event, not in other events"""
+    x = torch.tensor([[0.0], [0.5], [0.2], [0.7]]) # events [0, 0, 1, 1], one hit per particle
+    f = torch.full((4,), 0.5)
+    idx = torch.arange(4)
+    v = ObjConLoss().l_v(x, f, idx, idx, idx, 4, torch.tensor([0, 0, 1, 1]))
+    q = torch.tensor(0.5).atanh().square() + 0.5
+    torch.testing.assert_close(v, 0.5 * q.square())
+
+
 @bug("OC loss", "a true particle with no hits makes scatter_max return an "
         "out-of-range index")
 def test_obj_con_loss_tolerates_particle_without_hits():
