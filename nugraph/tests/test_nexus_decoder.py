@@ -125,3 +125,23 @@ def test_nexus_vertex_pred_requires_vertex_head():
     except RuntimeError:
         return
     raise AssertionError("expected a RuntimeError")
+
+
+def test_nexus_vote_and_direction_training_step():
+    """Vertex votes and spacepoint directions train and feed the edge classifier"""
+    for kwargs, extra in (({"nexus_vertex": "vote"}, 3), ({"nexus_direction": True}, 3),
+                          ({"nexus_vertex": "vote", "nexus_direction": True}, 6)):
+        model = nexus_model(**kwargs)
+        model.train()
+        batch = nexus_batch(0, 1)
+        batch["sp"].y_direction[:5] = torch.tensor([1., 0., 0.]) # synthetic events have few
+        loss, metrics = model(batch, stage="train")
+        loss.backward()
+        assert torch.isfinite(loss)
+        assert model.nexus_decoder.edge_net[0].in_features == 2 * 32 + 4 + extra
+        if "nexus_vertex" in kwargs:
+            assert torch.isfinite(metrics["nexus/vote-resolution-train"])
+            assert model.nexus_decoder.vote_net[0].weight.grad.abs().sum() > 0
+        if "nexus_direction" in kwargs:
+            assert 0 <= metrics["nexus/direction-cos-train"] <= 1
+            assert model.nexus_decoder.direction_net.weight.grad.abs().sum() > 0
