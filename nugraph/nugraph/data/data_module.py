@@ -29,7 +29,8 @@ class NuGraphDataModule(LightningDataModule):
                  balance_frac: float = 0.1,
                  featext: bool = False,
                  sp_knn: int = 0,
-                 sp_feats: bool = False):
+                 sp_feats: bool = False,
+                 sp_majority: bool = True):
         super().__init__()
 
         # for this HDF5 dataloader, worker processes slow things down
@@ -49,6 +50,7 @@ class NuGraphDataModule(LightningDataModule):
         self.featext = featext
         self.sp_knn = sp_knn
         self.sp_feats = sp_feats
+        self.sp_majority = sp_majority
 
         with h5py.File(self.filename) as f:
 
@@ -102,7 +104,7 @@ class NuGraphDataModule(LightningDataModule):
         if self.featext:
             transform.append(FeatureExtension(planes=self.planes))
         if self.sp_knn:
-            transform.append(SpacePointGraph(k=self.sp_knn))
+            transform.append(SpacePointGraph(k=self.sp_knn, majority=self.sp_majority))
         if self.sp_feats:
             transform.append(NexusFeatures(planes=self.planes, positions=False))
         transform = Compose(transform) if transform else None
@@ -201,4 +203,6 @@ class NuGraphDataModule(LightningDataModule):
                           help='Number of neighbours in spacepoint graph (0 to disable)')
         data.add_argument('--sp-feats', action='store_true', default=False,
                           help='Enable spacepoint delta_T and chi2 input features')
+        data.add_argument('--no-sp-majority', action='store_false', dest='sp_majority',
+                          help='Leave three-hit spacepoints with two hits from one particle unlabelled')
         return parser

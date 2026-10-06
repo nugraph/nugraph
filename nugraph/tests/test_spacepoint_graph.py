@@ -71,3 +71,21 @@ def test_single_spacepoint():
     data["sp"].pos = torch.zeros(1, 3)
     data = SpacePointGraph(k=4)(data)
     assert data[E_SP].edge_index.shape == (2, 0)
+
+
+def test_majority_labels():
+    """Three-hit spacepoints with two hits from one particle and an odd hit
+    carrying truth take that particle; noise, two-hit and split cases do not"""
+    data = NuGraphData()
+    # hits: 0-1 particle 0, 2 particle 1, 3 diffuse (no instance), 4 noise, 5 particle 2
+    data["hit"].y_semantic = torch.tensor([0, 0, 1, 6, -1, 2])
+    data["particle-truth"].num_nodes = 3
+    data["hit", "cluster-truth", "particle-truth"].edge_index = torch.tensor([[0, 1, 2, 5], [0, 0, 1, 2]])
+    data["sp"].pos = torch.arange(15, dtype=torch.float).reshape(5, 3)
+    data["hit", "nexus", "sp"].edge_index = torch.tensor(
+        [[0, 1, 2, 0, 1, 3, 0, 1, 4, 0, 2, 0, 2, 5],
+         [0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 4, 4, 4]])
+    plain = SpacePointGraph(k=2, majority=False)(data.clone())["sp"].y_instance
+    majority = SpacePointGraph(k=2)(data)["sp"].y_instance
+    assert plain.tolist() == [-1, -1, -1, -1, -1]
+    assert majority.tolist() == [0, 0, -1, -1, -1]

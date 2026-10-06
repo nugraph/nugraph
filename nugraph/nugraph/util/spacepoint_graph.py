@@ -18,11 +18,15 @@ class SpacePointGraph(BaseTransform):
         k: Number of nearest neighbours to connect each spacepoint to
         chunk_size: Number of spacepoints to compute distances for at once,
             bounding peak memory to chunk_size * n_sp
+        majority: Also label spacepoints with hits in three planes, two from
+            the same instance and an odd hit that carries truth (another
+            instance, or a diffuse deposit), with the majority instance
     """
-    def __init__(self, k: int, chunk_size: int = 1024):
+    def __init__(self, k: int, chunk_size: int = 1024, majority: bool = True):
         super().__init__()
         self.k = k
         self.chunk_size = chunk_size
+        self.majority = majority
 
     def forward(self, data: NuGraphData) -> NuGraphData:
         """
@@ -61,7 +65,42 @@ class SpacePointGraph(BaseTransform):
             lo = lo.scatter_reduce(0, s, y_i[hit], reduce="amin")
             hi = hi.scatter_reduce(0, s, y_i[hit], reduce="amax")
             sp.y_instance = torch.where((lo == hi) & (lo >= 0), lo, -1)
+            if self.majority:
+                sp.y_instance = self.majority_labels(sp.y_instance, y_i[hit],
+                                                     data["hit"].y_semantic[hit], s)
             y = sp.y_instance
             edge.y = ((y[edge_index[0]] >= 0) & (y[edge_index[0]] == y[edge_index[1]])).long()
 
         return data
+
+    @staticmethod
+    def majority_labels(y: torch.Tensor, y_hit: torch.Tensor, sem_hit: torch.Tensor,
+                        s: torch.Tensor) -> torch.Tensor:
+        """
+        Give unlabelled spacepoints with three hits, two from one instance and
+        an odd hit that carries truth, the majority instance
+
+        Args:
+            y: Spacepoint instance labels
+            y_hit: Instance of each hit-spacepoint edge's hit
+            sem_hit: Semantic label of each hit-spacepoint edge's hit
+            s: Spacepoint of each hit-spacepoint edge
+        """
+        n = y.size(0)
+        order = torch.argsort(s, stable=True)
+        s, y_hit, sem_hit = s[order], y_hit[order], sem_hit[order]
+        first = torch.searchsorted(s, s, side="left")
+        slot = torch.arange(s.size(0)) - first
+        inst = torch.full((n, 3), -2, dtype=torch.long)
+        sem = torch.full((n, 3), -2, dtype=torch.long)
+        ok = slot < 3
+        inst[s[ok], slot[ok]] = y_hit[ok]
+        sem[s[ok], slot[ok]] = sem_hit[ok]
+        nhit = torch.zeros(n, dtype=torch.long).index_add(0, s, torch.ones_like(s))
+        a, b, c = inst.unbind(dim=1)
+        major = torch.where(a == b, a, torch.where(a == c, a, torch.where(b == c, b, -1)))
+        odd = torch.where(a == b, 2, torch.where(a == c, 1, 0))
+        odd_inst = inst.gather(1, odd[:, None]).squeeze(1)
+        odd_sem = sem.gather(1, odd[:, None]).squeeze(1)
+        relabel = (y < 0) & (nhit == 3) & (major >= 0) & (odd_inst != major) & (odd_sem >= 0)
+        return torch.where(relabel, major, y)
