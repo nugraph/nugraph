@@ -110,3 +110,16 @@ def test_save_and_load(tmp_path):
     assert torch.equal(loaded[E_PARENT].generations, data[E_PARENT].generations)
     torch.testing.assert_close(loaded["particle-truth"].start_position,
                                data["particle-truth"].start_position)
+
+
+def test_split_delta_rays():
+    """Delta rays join their parent's instance by default and get their own when split"""
+    from pynuml.labels import StandardLabels # pylint: disable=import-outside-toplevel
+    particles = pd.DataFrame({
+        "g4_id": [1, 2], "parent_id": [0, 1], "type": [13, 11], "momentum": [1.0, 0.05],
+        "start_process": ["primary", "muIoni"], "end_process": ["CoupledTransportation", "eIoni"]})
+    merged = StandardLabels()(particles).set_index("g4_id")
+    split = StandardLabels(split_delta_rays=True)(particles).set_index("g4_id")
+    assert merged.instance_g4_id[2] == 1
+    assert split.instance_g4_id[2] == 2
+    assert merged.semantic_label[2] == split.semantic_label[2]

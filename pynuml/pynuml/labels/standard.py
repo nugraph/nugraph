@@ -5,7 +5,8 @@ class StandardLabels:
 
     def __init__(self,
                  gamma_threshold: float = 0.02,
-                 hadron_threshold: float = 0.2):
+                 hadron_threshold: float = 0.2,
+                 split_delta_rays: bool = False):
         self._labels = [
             'pion',
             'muon',
@@ -18,6 +19,7 @@ class StandardLabels:
         ]
         self._gamma_threshold = gamma_threshold
         self._hadron_threshold = hadron_threshold
+        self._split_delta_rays = split_delta_rays
 
     @property
     def labels(self):
@@ -210,9 +212,11 @@ class StandardLabels:
 
             def i(part, particles, sl):
                 il, ilc = -1, None
-                if sl == self.muon and part.start_process == 'muIoni':
+                # delta rays join their parent's instance unless split off
+                if not self._split_delta_rays and sl == self.muon and part.start_process == 'muIoni':
                     il = part.parent_id
-                elif (sl == self.pion or sl == self.hadron) and part.start_process == 'hIoni':
+                elif (not self._split_delta_rays and (sl == self.pion or sl == self.hadron)
+                      and part.start_process == 'hIoni'):
                     il = part.parent_id
                 elif sl != self.diffuse and sl != self.invisible:
                     il = part.g4_id

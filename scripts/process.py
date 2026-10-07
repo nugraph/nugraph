@@ -14,6 +14,12 @@ def configure():
                       help="add true 3D hit position to graphs")
     args.add_argument("--optical", action="store_true",
                       help="add optical hierarchy")
+    args.add_argument("--ancestry", action="store_true",
+                      help="add particle parents, processes and start/end positions")
+    args.add_argument("--corrected-positions", action="store_true",
+                      help="use space-charge-corrected particle positions (MicroBooNE)")
+    args.add_argument("--split-delta-rays", action="store_true",
+                      help="give delta rays their own instances instead of their parent's")
     return args.parse_args()
 
 def process(args):
@@ -24,11 +30,13 @@ def process(args):
     # create graph processor
     processor = pynuml.process.HitGraphProducer(
             file=f,
-            semantic_labeller=pynuml.labels.StandardLabels(),
+            semantic_labeller=pynuml.labels.StandardLabels(split_delta_rays=args.split_delta_rays),
             event_labeller=pynuml.labels.FlavorLabels(),
             label_vertex=args.label_vertex,
             label_position=args.label_position,
-            optical=args.optical)
+            optical=args.optical,
+            ancestry=args.ancestry,
+            corrected_positions=args.corrected_positions)
 
     # create output file stream
     out = pynuml.io.H5Out(args.outfile)
