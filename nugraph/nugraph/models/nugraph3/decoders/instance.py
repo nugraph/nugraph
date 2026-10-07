@@ -53,6 +53,10 @@ class InstanceDecoder(nn.Module):
         self.eps = dbscan_eps
         self.particle_loss = particle_loss
 
+        # hits predicted as diffuse are not clustered into particles
+        self.diffuse = (semantic_classes.index("diffuse")
+                        if "diffuse" in semantic_classes else None)
+
     # pylint: disable=arguments-differ
     def forward(self, data: Data, stage: str = None) -> dict[str, Any]:
         """
@@ -127,8 +131,8 @@ class InstanceDecoder(nn.Module):
         mask = torch.ones_like(h.of, dtype=torch.bool)
         if hasattr(h, "x_filter"):
             mask = mask & (h.x_filter > 0.5)
-        if hasattr(h, "x_semantic"):
-            mask = mask & (h.x_semantic.argmax(dim=1) != 6)
+        if hasattr(h, "x_semantic") and self.diffuse is not None:
+            mask = mask & (h.x_semantic.argmax(dim=1) != self.diffuse)
 
         if isinstance(data, Batch):
             x_ip, e_h_ip = [], []
@@ -140,7 +144,8 @@ class InstanceDecoder(nn.Module):
             # particle nodes
             data[N_IP].x = torch.cat(x_ip, dim=0)
             data[N_IP].batch = torch.cat(
-                [torch.full((0,), i, dtype=torch.long, device=device) for i, x in enumerate(x_ip)])
+                [torch.full((x.size(0),), i, dtype=torch.long, device=device)
+                 for i, x in enumerate(x_ip)])
             data[N_IP].ptr = cumsum(torch.tensor([x.size(0) for x in x_ip], device=device))
             data._slice_dict[N_IP] = {"x": data[N_IP].ptr} # pylint: disable=protected-access
             data._inc_dict[N_IP] = { # pylint: disable=protected-access
