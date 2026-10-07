@@ -161,7 +161,6 @@ def test_materialize_finds_clusters():
     assert data["particle"].x.size(0) == 3
 
 
-@bug(4, "diffuse class is hard-coded as index 6; with 5 classes the mask does nothing")
 def test_materialize_ignores_diffuse_hits():
     """Hits predicted as diffuse must not be clustered into particles"""
     data = clustered_hits(1, SEMANTIC_CLASSES.index("diffuse"))
@@ -169,13 +168,29 @@ def test_materialize_ignores_diffuse_hits():
     assert data["particle"].x.size(0) == 0
 
 
-@bug(5, "particle batch vector is built with torch.full((0,), i) and is always empty")
+def test_materialize_masks_diffuse_by_name():
+    """Only the class named diffuse is masked, wherever it sits in the class list"""
+    classes = ("MIP", "HIP", "shower", "michel", "other")
+    data = clustered_hits(1, classes.index("other"))
+    InstanceDecoder(beta_features=32, coord_features=128, instance_features=8,
+                    semantic_classes=classes).materialize(data)
+    assert data["particle"].x.size(0) == 3
+
+
 def test_materialize_batch_vector():
     """Each predicted particle must record which graph in the batch it came from"""
     data = clustered_hits(2, SEMANTIC_CLASSES.index("MIP"))
     instance_decoder().materialize(data)
     torch.testing.assert_close(data["particle"].batch,
                                torch.tensor([0, 0, 0, 1, 1, 1]))
+
+
+def test_materialize_batch_vector_with_empty_graph():
+    """A graph with no clustered hits adds no entries to the particle batch vector"""
+    data = clustered_hits(2, SEMANTIC_CLASSES.index("MIP"))
+    data["hit"].x_filter[data["hit"].batch == 1] = 0.
+    instance_decoder().materialize(data)
+    torch.testing.assert_close(data["particle"].batch, torch.tensor([0, 0, 0]))
 
 
 @bug(9, "the update flag is a plain attribute, so a resumed run starts updating again")
