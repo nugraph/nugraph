@@ -7,9 +7,12 @@ from ..data import NuGraphData
 from .base import ProcessorBase
 
 # Geant4 processes stored as integer codes; anything else maps to "other"
-PROCESSES = ("primary", "Decay", "muIoni", "hIoni", "eIoni", "conv", "compt", "phot",
-             "eBrem", "annihil", "muMinusCaptureAtRest", "hBertiniCaptureAtRest",
-             "hadElastic", "CoupledTransportation", "other")
+PROCESSES = ("primary", "Decay", "muIoni", "hIoni", "eIoni", "ionIoni", "conv", "compt",
+             "phot", "eBrem", "annihil", "photonNuclear", "hadElastic", "neutronInelastic",
+             "protonInelastic", "pi+Inelastic", "pi-Inelastic", "kaon+Inelastic",
+             "kaon-Inelastic", "dInelastic", "nCapture", "muMinusCaptureAtRest",
+             "hBertiniCaptureAtRest", "CoupledTransportation", "FastScintillation",
+             "StepLimiter", "nKiller", "other")
 
 class HitGraphProducer(ProcessorBase):
     '''Process event into graphs'''
