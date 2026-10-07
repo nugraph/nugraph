@@ -142,3 +142,29 @@ def test_load_without_parent_edges(tmp_path):
     assert loaded[E_PARENT].generations.shape == (0,)
     batch = Batch.from_data_list([full, loaded])
     assert batch[E_PARENT].generations.shape == (3,)
+
+
+def test_load_without_particles(tmp_path):
+    """Graphs without truth particles load with empty particle tensors and batch"""
+    import h5py # pylint: disable=import-outside-toplevel
+    from torch_geometric.data import Batch # pylint: disable=import-outside-toplevel
+    from pynuml.data import NuGraphData # pylint: disable=import-outside-toplevel
+    data = produce()
+    empty = data.clone()
+    pt = empty["particle-truth"]
+    for attr, val in list(pt.items()):
+        if torch.is_tensor(val):
+            pt[attr] = val[:0]
+    pt.num_nodes = 0
+    for edge in (E_PARENT, ("hit", "cluster-truth", "particle-truth")):
+        for attr, val in list(empty[edge].items()):
+            empty[edge][attr] = val[..., :0]
+    with h5py.File(tmp_path / "graph.h5", "w") as f:
+        data.save(f, "full")
+        empty.save(f, "empty")
+    with h5py.File(tmp_path / "graph.h5") as f:
+        full, loaded = NuGraphData.load(f["full"]), NuGraphData.load(f["empty"])
+    assert loaded["particle-truth"].g4_id.shape == (0,)
+    batch = Batch.from_data_list([full, loaded])
+    assert batch["particle-truth"].g4_id.shape == (6,)
+    assert batch["particle-truth"].start_position.shape == (6, 3)

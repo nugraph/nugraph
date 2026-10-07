@@ -124,12 +124,14 @@ class NuGraphData(HeteroData):
                 if n.num_nodes is not None and not hasattr(n, "x"):
                     n.x = torch.empty([n.num_nodes, 0])
 
-        # handle empty edge attribute tensors, saved as a scalar 0
-        for edge_type in data.edge_types:
-            e = data[edge_type]
-            if e.edge_index.size(1) == 0:
-                for attr, val in e.items():
-                    if attr != "edge_index" and val.dim() == 0:
-                        e[attr] = torch.empty(0, dtype=val.dtype)
+        # handle empty attribute tensors of stores without nodes or edges, saved as a scalar 0
+        for store in data.node_stores + data.edge_stores:
+            if store._key == "metadata":
+                continue
+            empty = store.edge_index.size(1) == 0 if "edge_index" in store else store.num_nodes == 0
+            if empty:
+                for attr, val in store.items():
+                    if attr not in ("edge_index", "num_nodes") and val.dim() == 0:
+                        store[attr] = torch.empty(0, dtype=val.dtype)
 
         return data
