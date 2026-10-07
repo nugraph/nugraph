@@ -6,6 +6,11 @@ import torch_geometric as pyg
 from ..data import NuGraphData
 from .base import ProcessorBase
 
+# Geant4 processes stored as integer codes; anything else maps to "other"
+PROCESSES = ("primary", "Decay", "muIoni", "hIoni", "eIoni", "conv", "compt", "phot",
+             "eBrem", "annihil", "muMinusCaptureAtRest", "hBertiniCaptureAtRest",
+             "hadElastic", "CoupledTransportation", "other")
+
 class HitGraphProducer(ProcessorBase):
     '''Process event into graphs'''
 
@@ -19,7 +24,9 @@ class HitGraphProducer(ProcessorBase):
                  planes: list[str] = ['u','v','y'],
                  node_feats: list[str] = ['integral','rms','tpc'],
                  lower_bound: int = 20,
-                 filter_true_particles: bool = True):
+                 filter_true_particles: bool = True,
+                 ancestry: bool = False,
+                 corrected_positions: bool = False):
 
         self.semantic_labeller = semantic_labeller
         self.event_labeller = event_labeller
@@ -30,6 +37,8 @@ class HitGraphProducer(ProcessorBase):
         self.node_feats = node_feats
         self.lower_bound = lower_bound
         self.filter_true_particles = filter_true_particles
+        self.ancestry = ancestry
+        self.position_suffix = "_corr" if corrected_positions else ""
 
         self.transform = pyg.transforms.Compose((
             pyg.transforms.Delaunay(),
@@ -45,6 +54,9 @@ class HitGraphProducer(ProcessorBase):
         }
         if self.semantic_labeller:
             groups['particle_table'] = ['g4_id','parent_id','type','momentum','start_process','end_process']
+            if self.ancestry:
+                groups['particle_table'] += [f'start_position{self.position_suffix}',
+                                             f'end_position{self.position_suffix}']
             groups['edep_table'] = []
         if self.event_labeller:
             groups['event_table'] = ['is_cc', 'nu_pdg']
@@ -69,7 +81,43 @@ class HitGraphProducer(ProcessorBase):
             metadata['semantic_classes'] = self.semantic_labeller.labels[:-1]
         if self.event_labeller is not None:
             metadata['event_classes'] = self.event_labeller.labels
+        if self.ancestry:
+            metadata['processes'] = list(PROCESSES)
         return metadata
+
+    def add_particle_truth(self, pt, particles, table) -> None:
+        '''Add parent, process and start/end position truth to particle nodes'''
+        code = lambda p: PROCESSES.index(p) if p in PROCESSES else len(PROCESSES) - 1
+        pt.parent_g4_id = torch.tensor(particles.parent_id.values, dtype=torch.long)
+        pt.start_process = torch.tensor([code(p) for p in particles.start_process], dtype=torch.long)
+        pt.end_process = torch.tensor([code(p) for p in particles.end_process], dtype=torch.long)
+        table = table.set_index('g4_id')
+        for end in ('start', 'end'):
+            cols = [f'{end}_position{self.position_suffix}_{c}' for c in ('x', 'y', 'z')]
+            pos = table.loc[particles.g4_id.values, cols].values
+            pt[f'{end}_position'] = torch.tensor(pos, dtype=torch.float)
+
+    def add_parent_edges(self, data, particles) -> None:
+        '''
+        Draw an edge from each stored particle to its nearest stored ancestor,
+        walking up through ancestors that were dropped (for example hitless
+        neutral pions or decayed pions), with the number of generations stepped
+        '''
+        pt = data["particle-truth"]
+        index = {int(g): i for i, g in enumerate(pt.g4_id.tolist())}
+        parent = dict(zip(particles.g4_id.astype(int), particles.parent_id.astype(int)))
+        child, ancestor, steps = [], [], []
+        for i, g in enumerate(pt.g4_id.tolist()):
+            p, n = parent.get(int(g), 0), 1
+            while p != 0 and p not in index:
+                p, n = parent.get(p, 0), n + 1
+            if p != 0:
+                child.append(i)
+                ancestor.append(index[p])
+                steps.append(n)
+        edge = data["particle-truth", "parent", "particle-truth"]
+        edge.edge_index = torch.tensor([child, ancestor], dtype=torch.long).reshape(2, -1)
+        edge.generations = torch.tensor(steps, dtype=torch.long)
 
     def __call__(self, evt: 'pynuml.io.Event') -> tuple[str, Any]:
 
@@ -221,8 +269,8 @@ class HitGraphProducer(ProcessorBase):
             pt.momentum = torch.tensor(particles.momentum.values, dtype=torch.float)
             pt.pdg_code = torch.tensor(particles.type.values, dtype=torch.long)
             pt.g4_id = torch.tensor(particles.g4_id.values, dtype=torch.long)
-
-            # TODO: draw edges from particles to their parents
+            if self.ancestry:
+                self.add_particle_truth(pt, particles, evt['particle_table'])
 
             # draw edges from hits to particle instances
             edges = hits[["hit_id", "instance_g4_id"]].rename(columns={"instance_g4_id": "g4_id"})
@@ -234,6 +282,10 @@ class HitGraphProducer(ProcessorBase):
             if self.filter_true_particles:
                 degree = pyg.utils.degree(edges[1], num_nodes=pt.num_nodes)
                 data = data.subgraph({"particle-truth": torch.nonzero(degree).squeeze(1)})
+
+            # draw edges from particles to their nearest ancestor among the stored particles
+            if self.ancestry:
+                self.add_parent_edges(data, particles)
 
         # optical system
         if self.optical:
