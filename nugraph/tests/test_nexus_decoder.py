@@ -154,3 +154,31 @@ def test_local_shape():
     i, j = torch.zeros(3, dtype=torch.long), torch.tensor([1, 2, 3])
     shape = NexusDecoder.local_shape(pos, i, j)
     torch.testing.assert_close(shape[0], torch.tensor([1., 0., 0., 0., 0., 0.]))
+
+
+def test_continuation_features():
+    """Interior edges of a straight chain continue straight; a kink does not"""
+    from nugraph.models.nugraph3.decoders import NexusDecoder # pylint: disable=import-outside-toplevel
+    pos = torch.tensor([[0., 0., 0.], [1., 0., 0.], [2., 0., 0.], [2., 1., 0.]])
+    # directed edges source -> target, both ways along 0-1-2, and 2-3 (a right-angle kink)
+    i = torch.tensor([0, 1, 1, 2, 2, 3])
+    j = torch.tensor([1, 0, 2, 1, 3, 2])
+    cont = NexusDecoder.continuation_features(pos, i, j, torch.ones(6))
+    # edge 0->1 continues straight through 1->2 (cos 1) and has nothing beyond 0
+    torch.testing.assert_close(cont[0], torch.tensor([1., 0.]))
+    # edge 2->3 turns 90 degrees from 1->2 (cos 0) and has nothing beyond 3
+    torch.testing.assert_close(cont[4], torch.tensor([0., 0.]))
+    # a zero score suppresses the continuation
+    weak = NexusDecoder.continuation_features(pos, i, j, torch.tensor([1., 1., 0., 0., 1., 1.]))
+    torch.testing.assert_close(weak[0], torch.tensor([0., 0.]))
+
+
+def test_nexus_continuation_training_step():
+    """The two-pass edge classifier trains and both passes get gradients"""
+    model = nexus_model(nexus_continuation=True)
+    model.train()
+    loss, _ = model(nexus_batch(0, 1), stage="train")
+    loss.backward()
+    assert torch.isfinite(loss)
+    assert model.nexus_decoder.edge_net[0].weight.grad.abs().sum() > 0
+    assert model.nexus_decoder.edge_net2[0].weight.grad.abs().sum() > 0

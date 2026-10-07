@@ -48,6 +48,7 @@ class NuGraph3(LightningModule):
         nexus_geometry: Whether spacepoint messages see spacepoint displacements
         nexus_vertex: Vertex given to the nexus edge classifier ("pred", "vote" or "true")
         nexus_direction: Whether to regress spacepoint directions for the nexus edge classifier
+        nexus_continuation: Whether to rescore nexus edges using continuation straightness
         use_optical: Whether to perform message-passing in optical system
         dbscan_eps: Epsilon hyperparameter for DBSCAN algorithm
         particle_loss: Whether to include particle loss term for object condensation"
@@ -81,6 +82,7 @@ class NuGraph3(LightningModule):
                  nexus_geometry: bool = False,
                  nexus_vertex: str = None,
                  nexus_direction: bool = False,
+                 nexus_continuation: bool = False,
                  dbscan_eps: float = 0.3,
                  particle_loss: bool = False,
                  use_optical: bool = False,
@@ -160,7 +162,7 @@ class NuGraph3(LightningModule):
             raise RuntimeError("nexus_vertex=\"pred\" requires the vertex head!")
         if nexus_head:
             self.nexus_decoder = NexusDecoder(nexus_features, nexus_vertex, nexus_direction,
-                                              interaction_features)
+                                              interaction_features, nexus_continuation)
             self.decoders.append(self.nexus_decoder)
 
         if not self.decoders:
@@ -314,6 +316,8 @@ class NuGraph3(LightningModule):
                                 "predicted, spacepoint-voted or (diagnostic only) true vertex")
         model.add_argument("--nexus-direction", action="store_true",
                            help="Regress spacepoint directions for the nexus edge classifier")
+        model.add_argument("--nexus-continuation", action="store_true",
+                           help="Rescore nexus edges using the straightness of their continuations")
         model.add_argument("--dbscan-eps", type=float, default=0.3,
                            help="Epsilon hyperparameter for DBSCAN algorithm")
         model.add_argument("--particle-loss", action="store_true",
@@ -367,6 +371,7 @@ class NuGraph3(LightningModule):
             nexus_geometry=args.nexus_geometry,
             nexus_vertex=args.nexus_vertex,
             nexus_direction=args.nexus_direction,
+            nexus_continuation=args.nexus_continuation,
             dbscan_eps=args.dbscan_eps,
             particle_loss=args.particle_loss,
             use_optical=args.optical,

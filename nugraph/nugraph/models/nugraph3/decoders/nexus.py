@@ -29,15 +29,19 @@ class NexusDecoder(nn.Module):
             the edge classifier the alignment of directions along each edge
         interaction_features: Number of interaction node features, which the
             vertex vote head sees for event-level context
+        continuation: Rescore each edge in a second pass that also sees how
+            straight a continuation the first-pass edges offer at each end
     """
     def __init__(self, nexus_features: int, vertex: str = None,
-                 direction: bool = False, interaction_features: int = 32):
+                 direction: bool = False, interaction_features: int = 32,
+                 continuation: bool = False):
         super().__init__()
 
         if vertex not in (None, "pred", "vote", "true"):
             raise ValueError(f'"{vertex}" is not a valid nexus vertex option.')
         self.vertex = vertex
         self.direction = direction
+        self.continuation = continuation
 
         # loss function
         self.loss = nn.BCEWithLogitsLoss()
@@ -60,6 +64,13 @@ class NexusDecoder(nn.Module):
                       nexus_features),
             nn.Mish(),
             nn.Linear(nexus_features, 1))
+
+        # second-pass edge classifier with continuation features
+        if continuation:
+            self.edge_net2 = nn.Sequential(
+                nn.Linear(self.edge_net[0].in_features + 3, nexus_features),
+                nn.Mish(),
+                nn.Linear(nexus_features, 1))
 
         # spacepoint offset to the vertex, in cm
         if vertex == "vote":
@@ -112,6 +123,11 @@ class NexusDecoder(nn.Module):
                       (d[i] * dn).sum(dim=1, keepdim=True).abs(),
                       (d[j] * dn).sum(dim=1, keepdim=True).abs()]
         x_edge = self.edge_net(torch.cat(feats, dim=1)).squeeze(dim=-1)
+        if self.continuation:
+            x_first = x_edge
+            cont = self.continuation_features(sp.pos, i, j, x_first.detach().sigmoid())
+            x_edge = self.edge_net2(torch.cat(feats + [cont, x_first.detach()[:, None]],
+                                              dim=1)).squeeze(dim=-1)
 
         # calculate loss
         y_node = (sp.y_instance >= 0).float()
@@ -119,7 +135,10 @@ class NexusDecoder(nn.Module):
         w_node = 2 * (-1 * self.temp_node).exp()
         w_edge = 2 * (-1 * self.temp_edge).exp()
         loss_node = w_node * self.loss(x_node, y_node) + self.temp_node
-        loss_edge = w_edge * self.loss(x_edge, y_edge) + self.temp_edge
+        loss_edge = self.loss(x_edge, y_edge)
+        if self.continuation:
+            loss_edge = 0.5 * (loss_edge + self.loss(x_first, y_edge))
+        loss_edge = w_edge * loss_edge + self.temp_edge
         loss = loss_node + loss_edge + extra_loss
 
         # calculate metrics
@@ -174,6 +193,43 @@ class NexusDecoder(nn.Module):
         cos = (dpos * mid).sum(dim=1, keepdim=True) / (dpos.norm(dim=1, keepdim=True)
                                                        * mid.norm(dim=1, keepdim=True)).clamp(min=1e-6)
         return [r[i].log1p(), r[j].log1p(), cos.abs()]
+
+    @staticmethod
+    def continuation_features(pos: torch.Tensor, i: torch.Tensor, j: torch.Tensor,
+                              score: torch.Tensor) -> torch.Tensor:
+        """
+        Straightness of each edge's best continuation at both ends: the largest
+        score-weighted cosine between the edge and another edge arriving at that
+        end, returned as the larger and smaller of the two ends
+
+        Args:
+            pos: Spacepoint positions
+            i: Edge source spacepoint indices
+            j: Edge target spacepoint indices
+            score: Edge scores used to weight the continuations
+        """
+        order = torch.argsort(j, stable=True)
+        ptr = torch.searchsorted(j[order], torch.arange(pos.size(0) + 1, device=pos.device))
+
+        def beyond(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+            # continuations of a -> b through edges c -> b, with c != a
+            cnt = ptr[b + 1] - ptr[b]
+            e = torch.repeat_interleave(torch.arange(a.size(0), device=pos.device), cnt)
+            start = torch.repeat_interleave(ptr[b], cnt)
+            within = torch.arange(e.size(0), device=pos.device) - torch.repeat_interleave(
+                torch.cumsum(cnt, dim=0) - cnt, cnt)
+            f = order[start + within]
+            c = i[f]
+            m = c != a[e]
+            e, f, c = e[m], f[m], c[m]
+            u = nn.functional.normalize(pos[b] - pos[a], dim=1)
+            v = nn.functional.normalize(pos[c] - pos[b[e]], dim=1)
+            val = score[f] * (u[e] * v).sum(dim=1)
+            return torch.zeros(a.size(0), dtype=pos.dtype, device=pos.device).scatter_reduce(
+                0, e, val, reduce="amax", include_self=True)
+
+        at_j, at_i = beyond(i, j), beyond(j, i)
+        return torch.stack((torch.maximum(at_i, at_j), torch.minimum(at_i, at_j)), dim=1)
 
     @staticmethod
     def graph_index(data: Data) -> torch.Tensor:
