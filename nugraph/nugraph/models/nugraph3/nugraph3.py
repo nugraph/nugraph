@@ -46,6 +46,10 @@ class NuGraph3(LightningModule):
         use_optical: Whether to perform message-passing in optical system
         dbscan_eps: Epsilon hyperparameter for DBSCAN algorithm
         particle_loss: Whether to include particle loss term for object condensation"
+        materializer: Instance materialization method, "dbscan" or "seed"
+        seed_beta: Minimum beta for a seed condensation point
+        seed_radius: Radius within which a seed suppresses lower-beta seeds
+        seed_assign_radius: Maximum distance from a hit to its condensation point
         use_checkpointing: Whether to use checkpointing
         lr: Learning rate
         no_one_cycle_sched: Whether to disable the OneCycleLR scheduler
@@ -73,6 +77,10 @@ class NuGraph3(LightningModule):
                  spacepoint_head: bool = False,
                  dbscan_eps: float = 0.3,
                  particle_loss: bool = False,
+                 materializer: str = "dbscan",
+                 seed_beta: float = 0.5,
+                 seed_radius: float = 0.3,
+                 seed_assign_radius: float = float("inf"),
                  use_optical: bool = False,
                  use_checkpointing: bool = False,
                  lr: float = 0.001,
@@ -136,7 +144,11 @@ class NuGraph3(LightningModule):
         if instance_head:
             self.instance_decoder = InstanceDecoder(beta_features, coord_features,
                                                     instance_features, semantic_classes,
-                                                    dbscan_eps, particle_loss)
+                                                    dbscan_eps, particle_loss,
+                                                    materializer=materializer,
+                                                    seed_beta=seed_beta,
+                                                    seed_radius=seed_radius,
+                                                    seed_assign_radius=seed_assign_radius)
             self.decoders.append(self.instance_decoder)
 
         if spacepoint_head:
@@ -285,6 +297,15 @@ class NuGraph3(LightningModule):
                            help="Epsilon hyperparameter for DBSCAN algorithm")
         model.add_argument("--particle-loss", action="store_true",
                            help="Enable object condensation particle loss term")
+        model.add_argument("--materializer", type=str, default="dbscan",
+                           choices=("dbscan", "seed"),
+                           help="Instance materialization method")
+        model.add_argument("--seed-beta", type=float, default=0.5,
+                           help="Minimum beta for a seed condensation point")
+        model.add_argument("--seed-radius", type=float, default=0.3,
+                           help="Radius within which a seed suppresses lower-beta seeds")
+        model.add_argument("--seed-assign-radius", type=float, default=float("inf"),
+                           help="Maximum distance from a hit to its condensation point")
         model.add_argument('--optical', action='store_true',
                            help='Enable optical hierarchy')
         model.add_argument('--no-checkpointing', action='store_false',
@@ -331,6 +352,10 @@ class NuGraph3(LightningModule):
             spacepoint_head=args.spacepoint,
             dbscan_eps=args.dbscan_eps,
             particle_loss=args.particle_loss,
+            materializer=args.materializer,
+            seed_beta=args.seed_beta,
+            seed_radius=args.seed_radius,
+            seed_assign_radius=args.seed_assign_radius,
             use_optical=args.optical,
             use_checkpointing=args.use_checkpointing,
             lr=args.learning_rate,
