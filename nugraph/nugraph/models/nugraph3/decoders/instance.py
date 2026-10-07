@@ -9,12 +9,21 @@ from torch_geometric.utils import cumsum, unbatch
 from ....util import ObjConLoss, RecallLoss
 from ..types import Data, N_IT, E_H_IT, N_IP, E_H_IP
 
+# largest block of pairwise distances computed at once by the seed materializer
+MAX_PAIRS = 2 ** 22
+
+def _blocks(n_rows: int, n_cols: int) -> list[slice]:
+    """Row slices whose block of pairwise distances has at most MAX_PAIRS elements"""
+    step = max(1, MAX_PAIRS // max(1, n_cols))
+    return [slice(k, k + step) for k in range(0, n_rows, step)]
+
 class InstanceDecoder(nn.Module):
     """
     NuGraph3 instance decoder module
 
     Convolve object condensation node embedding into a beta value and a set of
-    coordinates for each hit.
+    coordinates for each hit. Particle instances are materialized from these
+    either with DBSCAN or from beta-seeded condensation points.
 
     Args:
         beta_features: Number of object condensation beta features
@@ -23,10 +32,16 @@ class InstanceDecoder(nn.Module):
         semantic_classes: List of names of semantic classes
         dbscan_eps: Epsilon hyperparameter for DBSCAN algorithm
         particle_loss: Whether to compute particle loss term
+        materializer: Instance materialization method, "dbscan" or "seed"
+        seed_beta: Minimum beta for a seed condensation point
+        seed_radius: Radius within which a seed suppresses lower-beta seeds
+        seed_assign_radius: Maximum distance from a hit to its condensation point
     """
     def __init__(self, beta_features: int, coord_features: int,
                  instance_features: int, semantic_classes: list[str],
-                 dbscan_eps: float = 0.3, particle_loss: bool = False):
+                 dbscan_eps: float = 0.3, particle_loss: bool = False,
+                 materializer: str = "dbscan", seed_beta: float = 0.5,
+                 seed_radius: float = 0.3, seed_assign_radius: float = float("inf")):
         super().__init__()
 
         # loss function
@@ -56,6 +71,13 @@ class InstanceDecoder(nn.Module):
         # hits predicted as diffuse are not clustered into particles
         self.diffuse = (semantic_classes.index("diffuse")
                         if "diffuse" in semantic_classes else None)
+
+        if materializer not in ("dbscan", "seed"):
+            raise ValueError(f'"{materializer}" is not a valid materializer.')
+        self.materializer = materializer
+        self.seed_beta = seed_beta
+        self.seed_radius = seed_radius
+        self.seed_assign_radius = seed_assign_radius
 
     # pylint: disable=arguments-differ
     def forward(self, data: Data, stage: str = None) -> dict[str, Any]:
@@ -136,8 +158,9 @@ class InstanceDecoder(nn.Module):
 
         if isinstance(data, Batch):
             x_ip, e_h_ip = [], []
-            for ox, m in zip(unbatch(h.ox, h.batch), unbatch(mask, h.batch)):
-                x, e = self.dbscan(ox, m)
+            for ox, of, m in zip(unbatch(h.ox, h.batch), unbatch(h.of, h.batch),
+                                 unbatch(mask, h.batch)):
+                x, e = self.cluster(ox, of, m)
                 x_ip.append(x)
                 e_h_ip.append(e)
 
@@ -161,7 +184,20 @@ class InstanceDecoder(nn.Module):
             data._inc_dict[E_H_IP] = {"edge_index": e_inc} # pylint: disable=protected-access
 
         else:
-            data[N_IP].x, data[E_H_IP].edge_index = self.dbscan(h.ox, mask)
+            data[N_IP].x, data[E_H_IP].edge_index = self.cluster(h.ox, h.of, mask)
+
+    def cluster(self, ox: torch.Tensor, of: torch.Tensor,
+                mask: torch.Tensor) -> tuple[torch.Tensor]:
+        """Materialize one graph with the configured method
+
+        Args:
+            ox: object condensation embedding tensor
+            of: object condensation beta tensor
+            mask: bool mask tensor for background hit removal
+        """
+        if self.materializer == "seed":
+            return self.seed(ox, of, mask)
+        return self.dbscan(ox, mask)
 
     def dbscan(self, ox: torch.Tensor, mask: torch.Tensor) -> tuple[torch.Tensor]:
         """Materialize instance embedding using DBSCAN
@@ -182,6 +218,49 @@ class InstanceDecoder(nn.Module):
         labels = DBSCAN(eps=self.eps).fit_predict(arr)
         i[mask] = torch.from_numpy(labels).to(device=ox.device, dtype=torch.long)
         x_ip = torch.empty(i.max()+1, 0, dtype=ox.dtype, device=ox.device)
+        mask = i > -1
+        e_h_ip = torch.stack((torch.nonzero(mask).squeeze(1), i[mask])).long()
+        return x_ip, e_h_ip
+
+    def seed(self, ox: torch.Tensor, of: torch.Tensor,
+             mask: torch.Tensor) -> tuple[torch.Tensor]:
+        """Materialize instance embedding from beta-seeded condensation points
+
+        Hits with beta above seed_beta are candidate condensation points. A
+        candidate is dropped if a candidate with higher beta lies within
+        seed_radius, and each hit is assigned to its nearest remaining
+        condensation point if that lies within seed_assign_radius. This runs on
+        the embedding's device, without copying to the CPU.
+
+        Args:
+            ox: object condensation embedding tensor
+            of: object condensation beta tensor
+            mask: bool mask tensor for background hit removal
+        """
+        x = ox[mask].detach().float()
+        beta = of[mask].detach().float()
+        exact = "donot_use_mm_for_euclid_dist"
+
+        # candidate condensation points; ties in beta are broken by hit index
+        cand = torch.nonzero(beta > self.seed_beta).squeeze(1)
+        keep = torch.ones_like(cand, dtype=torch.bool)
+        for rows in _blocks(cand.size(0), cand.size(0)):
+            dist = torch.cdist(x[cand[rows]], x[cand], compute_mode=exact)
+            b_row, b_col = beta[cand[rows]].unsqueeze(1), beta[cand].unsqueeze(0)
+            higher = (b_col > b_row) | ((b_col == b_row) & (cand < cand[rows].unsqueeze(1)))
+            keep[rows] = ~((dist <= self.seed_radius) & higher).any(dim=1)
+        points = x[cand[keep]]
+
+        # assign each hit to its nearest condensation point
+        labels = torch.full((x.size(0),), -1, dtype=torch.long, device=x.device)
+        if points.size(0):
+            for rows in _blocks(x.size(0), points.size(0)):
+                dist, nearest = torch.cdist(x[rows], points, compute_mode=exact).min(dim=1)
+                labels[rows] = torch.where(dist <= self.seed_assign_radius, nearest, -1)
+
+        i = torch.full((ox.size(0),), -1, dtype=torch.long, device=ox.device)
+        i[mask] = labels
+        x_ip = torch.empty(points.size(0), 0, dtype=ox.dtype, device=ox.device)
         mask = i > -1
         e_h_ip = torch.stack((torch.nonzero(mask).squeeze(1), i[mask])).long()
         return x_ip, e_h_ip
