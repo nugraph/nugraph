@@ -123,3 +123,22 @@ def test_split_delta_rays():
     assert merged.instance_g4_id[2] == 1
     assert split.instance_g4_id[2] == 2
     assert merged.semantic_label[2] == split.semantic_label[2]
+
+
+def test_load_without_parent_edges(tmp_path):
+    """Graphs without parent edges load with an empty generations tensor and batch"""
+    import h5py # pylint: disable=import-outside-toplevel
+    from torch_geometric.data import Batch # pylint: disable=import-outside-toplevel
+    from pynuml.data import NuGraphData # pylint: disable=import-outside-toplevel
+    data = produce()
+    empty = data.clone()
+    empty[E_PARENT].edge_index = torch.empty((2, 0), dtype=torch.long)
+    empty[E_PARENT].generations = torch.empty(0, dtype=torch.long)
+    with h5py.File(tmp_path / "graph.h5", "w") as f:
+        data.save(f, "full")
+        empty.save(f, "empty")
+    with h5py.File(tmp_path / "graph.h5") as f:
+        full, loaded = NuGraphData.load(f["full"]), NuGraphData.load(f["empty"])
+    assert loaded[E_PARENT].generations.shape == (0,)
+    batch = Batch.from_data_list([full, loaded])
+    assert batch[E_PARENT].generations.shape == (3,)
