@@ -13,6 +13,7 @@ from .transform import Transform
 from .encoder import TPCEncoder
 from .core import NuGraphCore
 from .optical import OpticalEncoder, NuGraphOptical
+from .feedback import SemanticFeedback
 from .decoders import (SemanticDecoder, FilterDecoder, EventDecoder, VertexDecoder, InstanceDecoder,
                        SpacepointDecoder, NexusDecoder)
 
@@ -57,6 +58,7 @@ class NuGraph3(LightningModule):
         nexus_stub_count: Whether the nexus edge classifier sees the Hough stub counts at both ends
         nexus_edge_layers: Number of hidden layers in the nexus edge classifier
         nexus_edge_width: Width of the nexus edge classifier's hidden layers (0 for nexus_features)
+        nexus_feedback: Whether the spacepoint stage feeds back to hits before a second semantic pass
         use_optical: Whether to perform message-passing in optical system
         dbscan_eps: Epsilon hyperparameter for DBSCAN algorithm
         particle_loss: Whether to include particle loss term for object condensation"
@@ -100,6 +102,7 @@ class NuGraph3(LightningModule):
                  nexus_stub_count: bool = False,
                  nexus_edge_layers: int = 1,
                  nexus_edge_width: int = 0,
+                 nexus_feedback: bool = False,
                  dbscan_eps: float = 0.3,
                  particle_loss: bool = False,
                  use_optical: bool = False,
@@ -190,6 +193,12 @@ class NuGraph3(LightningModule):
                                               nexus_edge_layers, nexus_edge_width)
             self.decoders.append(self.nexus_decoder)
 
+        self.feedback = None
+        if nexus_feedback:
+            if not (semantic_head and nexus_head):
+                raise RuntimeError("nexus_feedback requires the semantic and nexus heads!")
+            self.feedback = SemanticFeedback(hit_features, nexus_features, len(semantic_classes))
+
         if not self.decoders:
             raise RuntimeError('At least one decoder head must be enabled!')
 
@@ -215,7 +224,14 @@ class NuGraph3(LightningModule):
         total_loss = 0.
         total_metrics = {}
         for decoder in self.decoders:
-            loss, metrics = decoder(data, stage)
+            # with feedback, the first semantic pass is not reported
+            first_pass = self.feedback is not None and decoder is self.semantic_decoder
+            loss, metrics = decoder(data, None if first_pass else stage)
+            total_loss += loss
+            total_metrics.update(metrics)
+        if self.feedback is not None:
+            self.feedback(data)
+            loss, metrics = self.semantic_decoder(data, stage)
             total_loss += loss
             total_metrics.update(metrics)
 
@@ -361,6 +377,9 @@ class NuGraph3(LightningModule):
                            help="Number of hidden layers in the nexus edge classifier")
         model.add_argument("--nexus-edge-width", type=int, default=0,
                            help="Width of the nexus edge classifier's hidden layers (0 for --nexus-feats)")
+        model.add_argument("--nexus-feedback", action="store_true",
+                           help="Feed the spacepoint stage back to hits, weighted by edge and ghost "
+                                "scores, before a second semantic pass")
         model.add_argument("--dbscan-eps", type=float, default=0.3,
                            help="Epsilon hyperparameter for DBSCAN algorithm")
         model.add_argument("--particle-loss", action="store_true",
@@ -426,6 +445,7 @@ class NuGraph3(LightningModule):
             nexus_stub_count=args.nexus_stub_count,
             nexus_edge_layers=args.nexus_edge_layers,
             nexus_edge_width=args.nexus_edge_width,
+            nexus_feedback=args.nexus_feedback,
             dbscan_eps=args.dbscan_eps,
             particle_loss=args.particle_loss,
             use_optical=args.optical,
