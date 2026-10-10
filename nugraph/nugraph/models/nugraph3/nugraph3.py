@@ -53,6 +53,7 @@ class NuGraph3(LightningModule):
         dbscan_eps: Epsilon hyperparameter for DBSCAN algorithm
         particle_loss: Whether to include particle loss term for object condensation"
         use_checkpointing: Whether to use checkpointing
+        residual: Whether core message-passing blocks add residual updates
         lr: Learning rate
         no_one_cycle_sched: Whether to disable the OneCycleLR scheduler
     """
@@ -86,6 +87,7 @@ class NuGraph3(LightningModule):
                  particle_loss: bool = False,
                  use_optical: bool = False,
                  use_checkpointing: bool = False,
+                 residual: bool = False,
                  lr: float = 0.001,
                  no_one_cycle_sched: bool = False):
         super().__init__()
@@ -116,7 +118,8 @@ class NuGraph3(LightningModule):
                                     coord_features,
                                     use_checkpointing,
                                     nexus_head,
-                                    nexus_geometry)
+                                    nexus_geometry,
+                                    residual)
 
         if self.use_optical:
             self.optical_encoder = OpticalEncoder(ophit_features=ophit_features,
@@ -327,6 +330,9 @@ class NuGraph3(LightningModule):
         model.add_argument('--no-checkpointing', action='store_false',
                            dest="use_checkpointing",
                            help='Disable checkpointing during training')
+        model.add_argument('--no-residual', action='store_false',
+                           dest="residual",
+                           help='Disable residual connections in core message-passing blocks')
         model.add_argument('--epochs', type=int, default=80,
                            help='Maximum number of epochs to train for')
         model.add_argument('--learning-rate', type=float, default=0.001,
@@ -375,5 +381,6 @@ class NuGraph3(LightningModule):
             particle_loss=args.particle_loss,
             use_optical=args.optical,
             use_checkpointing=args.use_checkpointing,
+            residual=args.residual,
             lr=args.learning_rate,
             no_one_cycle_sched=args.no_one_cycle_sched)
