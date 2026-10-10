@@ -19,7 +19,9 @@ def weighted_mean(x: T, w: T, src: T, dst: T, n: int) -> tuple[T, T]:
         dst: Target node of each edge
         n: Number of target nodes
     """
-    num = torch.zeros(n, x.size(1), device=x.device, dtype=x.dtype).index_add_(0, dst, w[:, None] * x[src])
+    # sum in fp32: under fp16 autocast the inputs mix half and float
+    x, w = x.float(), w.float()
+    num =torch.zeros(n, x.size(1), device=x.device, dtype=x.dtype).index_add_(0, dst, w[:, None] * x[src])
     den = torch.zeros(n, device=x.device, dtype=x.dtype).index_add_(0, dst, w)
     return num / den.clamp(min=1e-6)[:, None], den
 
