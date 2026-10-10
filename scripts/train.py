@@ -45,20 +45,26 @@ def configure():
     parser.add_argument('--precision', type=str, default='32',
                         choices=('32', 'bf16-mixed'),
                         help='Precision for training (default: 32, or bf16-mixed for AMP)')
+    parser.add_argument('--seed', type=int, default=1,
+                        help='Random seed for weight initialisation and data shuffling')
     parser = Data.add_data_args(parser)
     parser = Model.add_model_args(parser)
     return parser.parse_args(), Model
 
 def train(args, Model):
 
-    torch.manual_seed(1)
+    torch.manual_seed(args.seed)
 
     # Load dataset
     nudata = Data(args.data_path, batch_size=args.batch_size,
                   model=Model, shuffle=args.shuffle,
                   balance_frac=args.balance_frac, num_workers=args.num_workers,
                   featext=args.featext, sp_knn=args.sp_knn,
-                  sp_feats=args.sp_feats, sp_majority=args.sp_majority)
+                  sp_feats=args.sp_feats, sp_majority=args.sp_majority,
+                  sp_graph=args.sp_graph, sp_candidates=args.sp_candidates,
+                  sp_stub_radius=args.sp_stub_radius,
+                  sp_gpu=args.sp_gpu, sp_charge=args.sp_charge,
+                  sp_merge_delta=args.sp_merge_delta, sp_extra_knn=args.sp_extra_knn)
 
     if args.resume:
         model = Model.load_from_checkpoint(args.resume)
