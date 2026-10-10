@@ -10,7 +10,9 @@ class NexusFeatures(BaseTransform):
 
     Computes delta_T (max drift-time spread across planes) and chi2 (weighted
     time consistency) for each spacepoint, then stores [delta_T, chi2, x, y, z]
-    as the spacepoint feature vector.
+    as the spacepoint feature vector. Optionally adds the log mean charge, mean
+    width and largest width of the spacepoint's hits, which are also kept as
+    data["sp"].calo for edge features.
 
     Works in both data formats:
     - per-plane: data[p] node stores exist (NG2, or before NG3 Transform)
@@ -19,12 +21,15 @@ class NexusFeatures(BaseTransform):
     Args:
         planes: Tuple of detector plane names
         positions: Whether to append the spacepoint position (x, y, z)
+        charge: Whether to append the hits' log mean charge, mean width and
+            largest width
     '''
 
-    def __init__(self, planes: list[str], positions: bool = True):
+    def __init__(self, planes: list[str], positions: bool = True, charge: bool = False):
         super().__init__()
         self.planes = planes
         self.positions = positions
+        self.charge = charge
 
     @staticmethod
     def _scatter_to_sp(t: torch.Tensor, s: torch.Tensor,
@@ -50,6 +55,7 @@ class NexusFeatures(BaseTransform):
     def forward(self, data: 'pyg.data.HeteroData') -> 'pyg.data.HeteroData':
         n_sp = data['sp'].num_nodes
         times, sigmas = [], []
+        charges, widths, hit_sp = [], [], []
 
         if 'hit' in data.node_types:
             # merged format (after NG3 Transform): all planes in data["hit"]
@@ -67,6 +73,7 @@ class NexusFeatures(BaseTransform):
             n_pos = data['hit'].pos.shape[1]
             rms_col = n_pos + 1 if data['hit'].x.shape[1] > n_pos + 2 else 1
             s_all = data['hit'].x[hit_idx_all, rms_col]
+            charges, widths, hit_sp = [data['hit'].x[hit_idx_all, rms_col - 1]], [s_all], [sp_idx_all]
 
             for i in range(len(self.planes)):
                 mask = plane_of_hit == i
@@ -81,6 +88,9 @@ class NexusFeatures(BaseTransform):
                 hit_idx, sp_idx = edge_index[0], edge_index[1]
                 t = data[p].pos[hit_idx, 1]   # drift time for each hit
                 s = data[p].x[hit_idx, 1]     # rms for each hit
+                charges.append(data[p].x[hit_idx, 0])
+                widths.append(s)
+                hit_sp.append(sp_idx)
                 t_sp, s_sp = self._scatter_to_sp(t, s, sp_idx, n_sp)
                 times.append(t_sp)
                 sigmas.append(s_sp)
@@ -104,6 +114,14 @@ class NexusFeatures(BaseTransform):
 
         # spacepoint features: [delta_T, chi2] (+ [x, y, z])
         feats = [delta_T, chi2] + ([data['sp'].pos] if self.positions else [])
+        if self.charge:
+            q, w, sp_idx = cat(charges), cat(widths), cat(hit_sp)
+            count = q.new_zeros(n_sp).index_add(0, sp_idx, torch.ones_like(q)).clamp(min=1)
+            q_mean = q.new_zeros(n_sp).index_add(0, sp_idx, q) / count
+            w_mean = w.new_zeros(n_sp).index_add(0, sp_idx, w) / count
+            w_max = w.new_zeros(n_sp).scatter_reduce(0, sp_idx, w, reduce="amax")
+            data['sp'].calo = stack((q_mean.clamp(min=0).log1p(), w_mean, w_max), dim=1)
+            feats.append(data['sp'].calo)
         data['sp'].x = cat(feats, dim=1)
 
         return data
