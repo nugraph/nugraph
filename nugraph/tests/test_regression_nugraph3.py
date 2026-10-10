@@ -234,13 +234,11 @@ def trainer_kwargs(monkeypatch, tmp_path, argv: list[str]) -> dict:
     return recorded
 
 
-@bug(1, "--precision is parsed but never passed to pl.Trainer")
 def test_train_passes_precision_to_trainer(monkeypatch, tmp_path):
     kwargs = trainer_kwargs(monkeypatch, tmp_path, ["--precision", "bf16-mixed"])
     assert kwargs.get("precision") == "bf16-mixed"
 
 
-@bug(1, "V100 GPUs (Heimdall) need fp16; '16-mixed' is not an allowed --precision")
 def test_train_accepts_fp16_precision(monkeypatch, tmp_path):
     kwargs = trainer_kwargs(monkeypatch, tmp_path, ["--precision", "16-mixed"])
     assert kwargs.get("precision") == "16-mixed"
