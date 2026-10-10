@@ -47,6 +47,8 @@ def configure():
                         help='Precision for training (default: 32, or bf16-mixed for AMP)')
     parser.add_argument('--seed', type=int, default=1,
                         help='Random seed for weight initialisation and data shuffling')
+    parser.add_argument('--save-every-epoch', action='store_true',
+                        help='Keep a checkpoint at the end of every epoch')
     parser = Data.add_data_args(parser)
     parser = Model.add_model_args(parser)
     return parser.parse_args(), Model
@@ -104,6 +106,10 @@ def train(args, Model):
         callbacks.append(LearningRateMonitor(logging_interval='step'))
     if isinstance(logger, pl.loggers.WandbLogger) and not args.offline:
         callbacks.append(ModelCheckpoint(monitor="loss/val", mode="min"))
+    if args.save_every_epoch:
+        callbacks.append(ModelCheckpoint(filename="epoch={epoch:02d}-step={step}",
+                                         auto_insert_metric_name=False,
+                                         save_top_k=-1, every_n_epochs=1))
 
     # configure plugins
     plugins = [
