@@ -43,8 +43,9 @@ def configure():
     parser.add_argument('--profiler', type=str, default=None,
                         help='Enable requested profiler')
     parser.add_argument('--precision', type=str, default='32',
-                        choices=('32', 'bf16-mixed'),
-                        help='Precision for training (default: 32, or bf16-mixed for AMP)')
+                        choices=('32', 'bf16-mixed', '16-mixed'),
+                        help='Precision for training (default: 32, or bf16-mixed or 16-mixed '
+                             'for AMP; 16-mixed on GPUs without bf16, e.g. V100)')
     parser.add_argument('--seed', type=int, default=1,
                         help='Random seed for weight initialisation and data shuffling')
     parser.add_argument('--save-every-epoch', action='store_true',
@@ -126,6 +127,7 @@ def train(args, Model):
         limit_test_batches=args.limit_test_batches,
         logger=logger,
         profiler=args.profiler,
+        precision=args.precision,
         callbacks=callbacks,
         plugins=plugins,
     )
