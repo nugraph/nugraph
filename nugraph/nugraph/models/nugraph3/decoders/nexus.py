@@ -177,10 +177,12 @@ class NexusDecoder(nn.Module):
         w_edge = 2 * (-1 * self.temp_edge).exp()
         if self.balance_filter:
             real = sp.y_semantic >= 0
-            freq = torch.bincount(sp.y_semantic[real]).float()
-            w = torch.ones_like(y_node)
-            w[real] = freq[sp.y_semantic[real]].rsqrt()
-            w[real] = (w[real] / w[real].mean().clamp(min=1e-6)).clamp(max=10.)
+            cls = sp.y_semantic.clamp(min=0)
+            n_cls = self.semantic_classes or int(sp.y_semantic.max()) + 1
+            freq = torch.zeros(n_cls, device=cls.device).index_add_(0, cls, real.float())
+            w = freq[cls].clamp(min=1).rsqrt()
+            w = w / ((w * real).sum() / real.sum().clamp(min=1)).clamp(min=1e-6)
+            w = torch.where(real, w.clamp(max=10.), 1.)
             loss_node = w_node * nn.functional.binary_cross_entropy_with_logits(
                 x_node, y_node, weight=w) + self.temp_node
         else:
@@ -319,13 +321,16 @@ class NexusDecoder(nn.Module):
             stage: Stage name (train/val/test)
         """
         sp = data["sp"]
-        m = sp.y_direction.norm(dim=1) > 0
-        cos = (sp.direction[m] * sp.y_direction[m]).sum(dim=1).abs()
-        loss = (1. - cos).mean() if m.any() else sp.direction.sum() * 0.
+        # spacepoints without a true direction are left out by weight, since
+        # selecting them makes the CPU wait on the GPU
+        m = (sp.y_direction.norm(dim=1) > 0).float()
+        n = m.sum().clamp(min=1)
+        cos = (sp.direction * sp.y_direction).sum(dim=1).abs()
+        loss = ((1. - cos) * m).sum() / n
         loss = (-1 * self.temp_direction).exp() * loss + self.temp_direction
         if stage:
             metrics[f"nexus/direction-loss-{stage}"] = loss
-            metrics[f"nexus/direction-cos-{stage}"] = cos.mean() if m.any() else torch.tensor(0.)
+            metrics[f"nexus/direction-cos-{stage}"] = (cos * m).sum() / n
         return loss
 
     def on_epoch_end(self, logger: Logger | list[Logger], stage: str,

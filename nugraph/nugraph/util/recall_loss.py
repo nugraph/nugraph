@@ -3,7 +3,6 @@ import torch
 import torch.distributed as dist
 from torch import Tensor
 import torch.nn.functional as F
-from torchmetrics.classification import MulticlassRecall
 
 class RecallLoss(torch.nn.Module):
     """
@@ -22,12 +21,6 @@ class RecallLoss(torch.nn.Module):
         super().__init__()
         self.ignore_index = ignore_index
         self.reduction = reduction
-        self.recall_metric = MulticlassRecall(
-            num_classes=num_classes,
-            average="none",
-            ignore_index=ignore_index,
-            sync_on_compute=True  # syncs TP/FN counts across GPUs before computing recall
-        )
 
     @torch.jit.unused
     def forward(self, x: Tensor, y: Tensor) -> Tensor:
@@ -38,10 +31,18 @@ class RecallLoss(torch.nn.Module):
             x: Predicted class labels
             y: True class labels
         """
-        self.recall_metric = self.recall_metric.to(x.device)
-        self.recall_metric.update(x, y)
-        weight = (1 - self.recall_metric.compute()).to(dtype=x.dtype)
-        self.recall_metric.reset()
+        # per-class recall from counts, without the boolean selections of
+        # MulticlassRecall that make the CPU wait on the GPU; classes absent
+        # from the batch get recall 0, as in MulticlassRecall
+        valid = y != self.ignore_index
+        cls = torch.where(valid, y, 0)
+        tp = torch.zeros(x.size(1), device=x.device).index_add_(
+            0, cls, ((x.argmax(dim=1) == y) & valid).float())
+        total = torch.zeros(x.size(1), device=x.device).index_add_(0, cls, valid.float())
+        if dist.is_available() and dist.is_initialized():
+            dist.all_reduce(tp, op=dist.ReduceOp.SUM)
+            dist.all_reduce(total, op=dist.ReduceOp.SUM)
+        weight = (1 - tp / total.clamp(min=1)).to(dtype=x.dtype)
 
         ce = F.cross_entropy(x, y, reduction="none",
                              ignore_index=self.ignore_index)
