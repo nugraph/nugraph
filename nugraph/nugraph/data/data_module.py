@@ -210,9 +210,20 @@ class NuGraphDataModule(LightningDataModule):
                           batch_size=self.batch_size, pin_memory=True)
 
     def on_after_batch_transfer(self, batch, dataloader_idx: int):
-        """Build the spacepoint graph on the training device, if requested"""
+        """
+        Build the spacepoint graph on the training device, if requested; a
+        batch whose graph does not fit in GPU memory becomes None, which the
+        model skips
+        """
         if self.sp_transform is not None:
-            batch = self.sp_transform(batch)
+            oom = False
+            try:
+                batch = self.sp_transform(batch)
+            except torch.OutOfMemoryError:
+                oom = True
+            if oom:
+                torch.cuda.empty_cache()
+                return None
         return batch
 
     @staticmethod
