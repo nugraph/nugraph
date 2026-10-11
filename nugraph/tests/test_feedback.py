@@ -31,6 +31,26 @@ def test_feedback_training_step():
     assert model.feedback.hit_net[-1].weight.grad.abs().sum() > 0
 
 
+def test_training_step_metrics_only_on_logged_steps():
+    """Training metrics are computed only on the steps the logger keeps, and the loss is unchanged"""
+    class Trainer:  # minimal stand-in for the attributes training_step reads
+        log_every_n_steps = 2
+        global_step = 0
+    model = nexus_model(nexus_semantic=True, nexus_feedback=True)
+    model.train()
+    model.trainer = Trainer()
+    logged = []
+    model.log = lambda *args, **kwargs: None
+    model.log_dict = lambda metrics, **kwargs: logged.append(metrics)
+    losses = []
+    for step in (0, 1):
+        Trainer.global_step = step
+        losses.append(model.training_step(nexus_batch(0, 1), step))
+    assert logged[0] == {}
+    assert "semantic/recall-train" in logged[1]
+    torch.testing.assert_close(losses[0], losses[1])
+
+
 def test_feedback_does_not_train_scores():
     """Edge and ghost scores are only weights: no gradient flows back into them"""
     model = nexus_model(nexus_semantic=True, nexus_feedback=True)
