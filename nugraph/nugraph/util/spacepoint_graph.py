@@ -223,13 +223,17 @@ class SpacePointGraph(BaseTransform):
         # spacepoints of each event are contiguous, so each chunk is compared
         # only against the spacepoints of the events it spans
         ptr = torch.searchsorted(batch, torch.arange(int(batch[-1]) + 2, device=pos.device)).tolist()
+        starts = range(0, n, self.chunk_size)
+        ends = [min(start + self.chunk_size, n) for start in starts]
+        # event of each chunk's first and last spacepoint, read back in one go
+        events = batch[list(starts) + [end - 1 for end in ends]].tolist()
         nbrs, dists = [], []
-        for start in range(0, n, self.chunk_size):
-            end = min(start + self.chunk_size, n)
-            lo, hi = ptr[int(batch[start])], ptr[int(batch[end - 1]) + 1]
+        for chunk, (start, end) in enumerate(zip(starts, ends)):
+            lo, hi = ptr[events[chunk]], ptr[events[len(ends) + chunk] + 1]
             dist = torch.cdist(pos[start:end], pos[lo:hi])
-            dist[batch[start:end, None] != batch[None, lo:hi]] = torch.inf
-            dist[torch.arange(end - start), torch.arange(start - lo, end - lo)] = torch.inf
+            dist.masked_fill_(batch[start:end, None] != batch[None, lo:hi], torch.inf)
+            dist[torch.arange(end - start, device=pos.device),
+                 torch.arange(start - lo, end - lo, device=pos.device)] = torch.inf
             dist, nbr = dist.topk(min(k, hi - lo), largest=False)
             nbr = torch.where(dist.isfinite(), nbr + lo, -1)
             if nbr.size(1) < k:
@@ -249,7 +253,7 @@ class SpacePointGraph(BaseTransform):
             pos: Spacepoint positions
             nbr: Nearest-neighbour indices, nearest first, -1 if missing
         """
-        pairs = []
+        keeps = []
         for start in range(0, nbr.size(0), self.chunk_size):
             c = nbr[start:start + self.chunk_size]
             ok = c >= 0
@@ -258,10 +262,11 @@ class SpacePointGraph(BaseTransform):
             norm2 = dot.diagonal(dim1=1, dim2=2)          # |rel_s|^2
             inside = (norm2[:, None, :] - dot) < -1e-5 * norm2[:, :, None]
             inside &= ok[:, None, :] & torch.ones_like(dot, dtype=torch.bool).tril(-1)
-            keep = ok & ~inside.any(dim=2)
-            i = torch.arange(start, start + c.size(0), device=pos.device)[:, None].expand_as(c)
-            pairs.append(torch.stack((i[keep], c[keep]), dim=0))
-        return torch.cat(pairs, dim=1)
+            keeps.append(ok & ~inside.any(dim=2))
+        # select edges once, after the loop, since selecting makes the CPU wait on the GPU
+        keep = torch.cat(keeps)
+        i = torch.arange(nbr.size(0), device=pos.device)[:, None].expand_as(nbr)
+        return torch.stack((i[keep], nbr[keep]), dim=0)
 
     def stubs(self, pos: torch.Tensor, nbr: torch.Tensor, dist: torch.Tensor,
               r_min: float = 1., r_max: float = 8., kappa: float = 30.,
@@ -288,7 +293,7 @@ class SpacePointGraph(BaseTransform):
         grid_nbr = self.grid_nbr.to(pos.device)
         cos_sep = math.cos(math.radians(sep_deg))
         cos_cone = math.cos(math.radians(cone_deg))
-        pairs, stub_dirs, stub_votes = [], [], []
+        takes, stub_dirs, stub_votes = [], [], []
         for start in range(0, nbr.size(0), self.chunk_size):
             c, d = nbr[start:start + self.chunk_size], dist[start:start + self.chunk_size]
             ok = c >= 0
@@ -309,15 +314,17 @@ class SpacePointGraph(BaseTransform):
                 chosen[:, p] = (top[:, p] > 0) & ~close.any(dim=1)
             inside = ((u @ dirs.transpose(1, 2)) >= cos_cone).transpose(1, 2)
             inside &= (ok & (d > 0) & (d < reach))[:, None, :] & chosen[:, :, None]
-            take = inside & (inside.cumsum(dim=2) <= per_stub)
-            i = torch.arange(start, start + c.size(0), device=pos.device)[:, None, None].expand_as(take)
-            pairs.append(torch.stack((i[take], c[:, None, :].expand_as(take)[take]), dim=0))
+            takes.append(inside & (inside.cumsum(dim=2) <= per_stub))
             if return_stubs:
                 stub_dirs.append(dirs * chosen[:, :, None])
                 stub_votes.append(top * chosen)
+        # select edges once, after the loop, since selecting makes the CPU wait on the GPU
+        take = torch.cat(takes)
+        i = torch.arange(nbr.size(0), device=pos.device)[:, None, None].expand_as(take)
+        pairs = torch.stack((i[take], nbr[:, None, :].expand_as(take)[take]), dim=0)
         if return_stubs:
-            return torch.cat(pairs, dim=1), torch.cat(stub_dirs), torch.cat(stub_votes)
-        return torch.cat(pairs, dim=1)
+            return pairs, torch.cat(stub_dirs), torch.cat(stub_votes)
+        return pairs
 
     def merge_short_delta_rays(self, data: NuGraphData, y: torch.Tensor) -> torch.Tensor:
         """
