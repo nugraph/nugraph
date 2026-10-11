@@ -3,7 +3,7 @@ from typing import Any
 import math
 import torch
 from torch import nn
-from torch_geometric.utils import scatter
+from torch_geometric.utils import scatter, softmax
 import torchmetrics as tm
 from torch_geometric.data import Batch
 from pytorch_lightning.loggers import Logger
@@ -49,6 +49,10 @@ class NexusDecoder(nn.Module):
         edge_layers: Number of hidden layers in the edge classifier
         edge_width: Width of the edge classifier's hidden layers (0 for
             nexus_features)
+        vertex_refine: Find the vertex from the spacepoints' votes and
+            direction lines (a fixed fit, without gradients), then refine it
+            with attention over the spacepoints near it, trained against the
+            true vertex (needs vertex "vote" and direction)
     """
     def __init__(self, nexus_features: int, vertex: str = None,
                  direction: bool = False, interaction_features: int = 32,
@@ -56,13 +60,17 @@ class NexusDecoder(nn.Module):
                  knn_shape: bool = False, edge_pos_weight: float = 1.,
                  semantic_classes: int = 0, balance_filter: bool = False,
                  log_length: bool = False, stub_count: bool = False,
-                 edge_layers: int = 1, edge_width: int = 0):
+                 edge_layers: int = 1, edge_width: int = 0,
+                 vertex_refine: bool = False):
         super().__init__()
+        if vertex_refine and not (vertex == "vote" and direction):
+            raise ValueError("nexus vertex refinement needs vertex votes and directions")
 
         if vertex not in (None, "pred", "vote", "true"):
             raise ValueError(f'"{vertex}" is not a valid nexus vertex option.')
         self.vertex = vertex
         self.direction = direction
+        self.vertex_refine = vertex_refine
         self.charge = charge
         self.knn_shape = knn_shape
         self.semantic_classes = semantic_classes
@@ -114,6 +122,18 @@ class NexusDecoder(nn.Module):
                 nn.Mish(),
                 nn.Linear(nexus_features, 3))
 
+        # vertex refinement: an attention weight and a correction (in units of
+        # 5 cm) from each spacepoint near the fitted vertex; zero at the start,
+        # so the refined vertex begins as the fit
+        if vertex_refine:
+            self.temp_refine = nn.Parameter(torch.tensor(0.))
+            self.refine_net = nn.Sequential(
+                nn.Linear(nexus_features + 10, nexus_features),
+                nn.Mish(),
+                nn.Linear(nexus_features, 4))
+            nn.init.zeros_(self.refine_net[-1].weight)
+            nn.init.zeros_(self.refine_net[-1].bias)
+
     def forward(self, data: Data, stage: str = None) -> dict[str, Any]:
         """
         NuGraph3 nexus decoder forward pass
@@ -138,6 +158,8 @@ class NexusDecoder(nn.Module):
             sp.direction = nn.functional.normalize(
                 self.direction_net(torch.cat((sp.x, shape), dim=1)), dim=1)
             extra_loss = extra_loss + self.direction_loss(data, metrics, stage)
+        if self.vertex_refine:
+            extra_loss = extra_loss + self.refine_vertex(data, x_node, metrics, stage)
         dpos = sp.pos[i] - sp.pos[j]
         feats = [sp.x[i], sp.x[j], dpos, dpos.norm(dim=1, keepdim=True)]
         if self.vertex:
@@ -216,6 +238,10 @@ class NexusDecoder(nn.Module):
                 if attr in sp:
                     data._slice_dict["sp"][attr] = sp.ptr
                     data._inc_dict["sp"][attr] = torch.zeros(data.num_graphs, device=sp.x.device)
+            for attr in ("v_fit", "v_refine"):
+                if attr in data["evt"]:
+                    data._slice_dict["evt"][attr] = torch.arange(data.num_graphs + 1, device=sp.x.device)
+                    data._inc_dict["evt"][attr] = torch.zeros(data.num_graphs, device=sp.x.device)
 
         return loss, metrics
 
@@ -309,6 +335,108 @@ class NexusDecoder(nn.Module):
             metrics[f"nexus/vote-loss-{stage}"] = loss
             metrics[f"nexus/vote-resolution-{stage}"] = res.mean()
             metrics[f"nexus/vote-resolution-median-{stage}"] = res.median()
+        return loss
+
+    @staticmethod
+    def vote_fit(pos: torch.Tensor, votes: torch.Tensor, dirs: torch.Tensor, w: torch.Tensor,
+                 g: torch.Tensor, n: int, scale: float = 2., vote_sigma: float = 5.) -> torch.Tensor:
+        """
+        Vertex of each graph from its spacepoints' votes and direction lines:
+        the mode of the votes (Gaussian mean shift with a 10 cm, then a 3 cm
+        kernel, from their weighted mean), then the point closest to the
+        direction lines and votes of spacepoints within a shrinking radius of
+        it, by iteratively reweighted least squares with Cauchy weights.
+        Lines have resolution scale and votes vote_sigma. A batched form of
+        the fit in studies/vote_resolution.py, without per-cluster weights
+
+        Args:
+            pos: Spacepoint positions
+            votes: Spacepoint vertex votes
+            dirs: Spacepoint unit directions
+            w: Spacepoint vote weights (0 to leave a spacepoint out)
+            g: Graph index of each spacepoint
+            n: Number of graphs
+            scale: Line resolution, cm
+            vote_sigma: Vote resolution, cm
+        """
+        def total(x: torch.Tensor) -> torch.Tensor:
+            return scatter(x, g, dim=0, dim_size=n, reduce="sum")
+
+        v = total(w[:, None] * votes) / total(w).clamp(min=1e-6)[:, None]
+        for sigma in (10., 3.):
+            for _ in range(10):
+                k = w * (-0.5 * (votes - v[g]).square().sum(dim=1) / sigma ** 2).exp()
+                ks = total(k)
+                v = torch.where(ks[:, None] > 1e-12, total(k[:, None] * votes) / ks.clamp(min=1e-12)[:, None], v)
+        eye = torch.eye(3, device=pos.device, dtype=torch.float64)
+        proj = eye - dirs[:, :, None].double() * dirs[:, None, :].double()
+        pos, votes, use = pos.double(), votes.double(), w > 0
+        v = v.double()
+        for r in (50., 30., 20., 20., 20.):
+            near = use & ((pos - v[g]).norm(dim=1) < r)
+            enough = total(near.double()) >= 2
+            for _ in range(5):
+                perp = torch.einsum("nij,nj->ni", proj, v[g] - pos)
+                wl = near / (1. + perp.square().sum(dim=1) / scale ** 2)
+                wv = near * (scale / vote_sigma) ** 2 / (1. + (v[g] - votes).square().sum(dim=1) / vote_sigma ** 2)
+                a = total(wl[:, None, None] * proj) + total(wv)[:, None, None] * eye
+                b = total(wl[:, None] * torch.einsum("nij,nj->ni", proj, pos)) + total(wv[:, None] * votes)
+                ok = enough & (torch.linalg.cond(a) < 1e8)
+                a = torch.where(ok[:, None, None], a, eye)
+                v = torch.where(ok[:, None], torch.linalg.solve(a, b), v)
+        return v.to(dirs.dtype)
+
+    def refine_vertex(self, data: Data, x_node: torch.Tensor, metrics: dict,
+                      stage: str, radius: float = 20.) -> torch.Tensor:
+        """
+        Fit each graph's vertex from the votes and directions of spacepoints
+        kept by the ghost filter (all of them if it keeps none; no gradients), refine it with attention over
+        all spacepoints within radius of it, and return the loss of the
+        refined vertex against the true vertex
+
+        Args:
+            data: Graph data object
+            x_node: Ghost filter logits
+            metrics: Metrics dictionary to add to
+            stage: Stage name (train/val/test)
+            radius: Neighbourhood of the fitted vertex the refinement sees, cm
+        """
+        sp, evt = data["sp"], data["evt"]
+        g = self.graph_index(data)
+        n = data.num_graphs if isinstance(data, Batch) else 1
+        offset, dirs, keep = sp.offset.detach(), sp.direction.detach(), x_node.detach().sigmoid()
+        votes = sp.pos + offset
+        with torch.no_grad():
+            # graphs whose filter keeps no spacepoint (early in training) use them all
+            kept = keep > 0.5
+            any_kept = scatter(kept.float(), g, dim=0, dim_size=n, reduce="sum") > 0
+            w = (-offset.norm(dim=1) / 10.).exp() * (kept | ~any_kept[g])
+            fit = self.vote_fit(sp.pos, votes, dirs, w, g, n)
+        rel = sp.pos - fit[g]
+        near = rel.norm(dim=1) < radius
+        gn = g[near]
+        out = self.refine_net(torch.cat((sp.x[near], rel[near] / radius,
+                                         (votes - fit[g])[near] / radius, dirs[near],
+                                         keep[near][:, None]), dim=1))
+        att = softmax(out[:, 0], gn, num_nodes=n)
+        refine = fit + 5. * scatter(att[:, None] * out[:, 1:], gn, dim=0, dim_size=n, reduce="sum")
+        evt.v_fit, evt.v_refine = fit, refine
+        has = scatter(near.float(), g, dim=0, dim_size=n, reduce="sum") > 0
+        true = evt.y_vtx.reshape(-1, 3)
+        err = (refine - true).norm(dim=1)[has] / 2.
+        logcosh = err + nn.functional.softplus(-2. * err) - math.log(2.)
+        loss = logcosh.mean() if has.any() else refine.sum() * 0.
+        loss = (-1 * self.temp_refine).exp() * loss + self.temp_refine
+        if stage:
+            res_fit = (fit - true).norm(dim=1)
+            res_refine = (refine.detach() - true).norm(dim=1)
+            metrics[f"nexus/refine-loss-{stage}"] = loss
+            metrics[f"nexus/fit-resolution-median-{stage}"] = res_fit.median()
+            metrics[f"nexus/refine-resolution-median-{stage}"] = res_refine.median()
+            metrics[f"nexus/refine-within-3cm-{stage}"] = (res_refine < 3.).float().mean()
+            metrics[f"nexus/fit-within-3cm-{stage}"] = (res_fit < 3.).float().mean()
+        if stage == "train":
+            metrics["temperature/nexus-refine"] = self.temp_refine
         return loss
 
     def direction_loss(self, data: Data, metrics: dict, stage: str) -> torch.Tensor:
