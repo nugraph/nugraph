@@ -115,6 +115,10 @@ class NuGraph3(LightningModule):
 
         warnings.filterwarnings("ignore", ".*NaN values found in confusion matrix.*")
 
+        # batches skipped because they did not fit in GPU memory
+        self.oom_skipped = 0
+        self.oom_in_a_row = 0
+
         self.save_hyperparameters()
 
         self.nexus_features = nexus_features
@@ -244,10 +248,51 @@ class NuGraph3(LightningModule):
         # metrics make the CPU wait on the GPU, so only compute them on steps the logger keeps
         n = self.trainer.log_every_n_steps
         log_step = n > 0 and (self.global_step + 1) % n == 0
-        loss, metrics = self(batch, 'train' if log_step else None)
+        if log_step and self.oom_skipped:
+            self.log('oom/skipped', float(self.oom_skipped), batch_size=1)
+        if batch is None:  # its graph did not fit in GPU memory
+            return self.skip_batch('train', batch_idx)
+        oom = False
+        try:
+            loss, metrics = self(batch, 'train' if log_step else None)
+        except torch.OutOfMemoryError:
+            oom = True
+        if oom:  # outside the except block, so that the failed step's tensors are freed
+            return self.skip_batch('train', batch_idx)
         self.log('loss/train', loss, batch_size=batch.num_graphs, prog_bar=True, sync_dist=True)
         self.log_dict(metrics, batch_size=batch.num_graphs, sync_dist=True)
         return loss
+
+    def backward(self, loss: torch.Tensor, *args, **kwargs) -> None:
+        oom = False
+        try:
+            super().backward(loss, *args, **kwargs)
+        except torch.OutOfMemoryError:
+            oom = True
+        if oom:
+            # without gradients the optimizer step leaves every parameter unchanged
+            self.zero_grad(set_to_none=True)
+            self.skip_batch('train', None)
+        else:
+            self.oom_in_a_row = 0
+
+    def skip_batch(self, stage: str, batch_idx: int | None) -> None:
+        """
+        Skip a batch that did not fit in GPU memory instead of ending the run;
+        ten in a row still end it, as does any on more than one GPU, where the
+        other processes would wait for this one
+
+        Args:
+            stage: Stage name (train/val)
+            batch_idx: Index of the batch, if known
+        """
+        self.oom_skipped += 1
+        self.oom_in_a_row += 1
+        if self.trainer.world_size > 1 or self.oom_in_a_row >= 10:
+            raise torch.OutOfMemoryError(f"{self.oom_in_a_row} batches in a row did not fit in GPU memory")
+        torch.cuda.empty_cache()
+        warnings.warn(f"{stage} batch {'' if batch_idx is None else batch_idx} skipped: "
+                      f"CUDA out of memory ({self.oom_skipped} skipped so far)")
 
     def on_train_epoch_end(self) -> None:
         # stop updating running average for feature norm
@@ -261,7 +306,18 @@ class NuGraph3(LightningModule):
     def validation_step(self,
                         batch,
                         batch_idx: int) -> None:
-        loss, metrics = self(batch, 'val')
+        if batch is None:
+            self.skip_batch('val', batch_idx)
+            return
+        oom = False
+        try:
+            loss, metrics = self(batch, 'val')
+        except torch.OutOfMemoryError:
+            oom = True
+        if oom:
+            self.skip_batch('val', batch_idx)
+            return
+        self.oom_in_a_row = 0
         self.log('loss/val', loss, batch_size=batch.num_graphs, sync_dist=True)
         self.log_dict(metrics, batch_size=batch.num_graphs, sync_dist=True)
 
