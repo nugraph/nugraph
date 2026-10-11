@@ -10,6 +10,24 @@ from pynuml.data import NuGraphData
 GRAPHS = ("knn", "gabriel", "gabriel+stubs")
 IONI = (2, 3, 4, 5)   # pynuml start-process codes of muIoni, hIoni, eIoni, ionIoni
 
+def stub_scores(u: torch.Tensor, shell: torch.Tensor, grid: torch.Tensor,
+                kappa: float) -> torch.Tensor:
+    """
+    Votes of each spacepoint's shell neighbours for each grid direction: the
+    von Mises-Fisher kernel exp(kappa (u.g - 1)) summed over the shell, with
+    u.g written out so that the compiled kernel never stores the votes
+
+    Args:
+        u: Unit vectors to each spacepoint's neighbours
+        shell: Whether each neighbour is in the voting shell
+        grid: Grid directions
+        kappa: Kernel concentration
+    """
+    cos = u[:, :, None, 0] * grid[:, 0] + u[:, :, None, 1] * grid[:, 1] + u[:, :, None, 2] * grid[:, 2]
+    return torch.where(shell[:, :, None], torch.exp(kappa * (cos - 1)), 0.).sum(dim=1)
+
+stub_scores_gpu = torch.compile(stub_scores, dynamic=True)
+
 class SpacePointGraph(BaseTransform):
     """
     Add a 3D graph over spacepoint nodes
@@ -300,11 +318,9 @@ class SpacePointGraph(BaseTransform):
             rel = pos[c.clamp(min=0)] - pos[start:start + c.size(0), None]
             u = rel / d.clamp(min=1e-6)[:, :, None]
             shell = ok & (d >= r_min) & (d < r_max)
-            # votes are the costliest step: in half precision on GPU, with the
-            # kernel evaluated in place and summed over the shell by a matmul
-            half = torch.float16 if pos.is_cuda else torch.float32
-            votes = (u.to(half) @ grid.to(half).T).sub_(1).mul_(kappa).exp_()
-            score = (shell.to(half)[:, None, :] @ votes).squeeze(1).float()
+            # votes are the costliest step: on GPU, one compiled kernel sums
+            # them over the shell without storing them
+            score = (stub_scores_gpu if pos.is_cuda else stub_scores)(u, shell, grid, kappa)
             peak = (score >= min_votes) & (score >= score[:, grid_nbr].amax(dim=2))
             top, cand = torch.where(peak, score, -1.).topk(min(max_stubs, grid.size(0)), dim=1)
             dirs = grid[cand]
