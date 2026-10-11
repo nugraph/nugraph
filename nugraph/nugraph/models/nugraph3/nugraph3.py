@@ -240,7 +240,10 @@ class NuGraph3(LightningModule):
     def training_step(self,
                       batch: Data,
                       batch_idx: int) -> float:
-        loss, metrics = self(batch, 'train')
+        # metrics make the CPU wait on the GPU, so only compute them on steps the logger keeps
+        n = self.trainer.log_every_n_steps
+        log_step = n > 0 and (self.global_step + 1) % n == 0
+        loss, metrics = self(batch, 'train' if log_step else None)
         self.log('loss/train', loss, batch_size=batch.num_graphs, prog_bar=True, sync_dist=True)
         self.log_dict(metrics, batch_size=batch.num_graphs, sync_dist=True)
         return loss
