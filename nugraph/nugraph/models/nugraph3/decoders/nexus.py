@@ -43,6 +43,9 @@ class NexusDecoder(nn.Module):
             semantic class (normalised to mean 1, at most 10), so that rare
             classes such as Michel electrons count more (needs
             data["sp"].y_semantic)
+        filter_weights: Extra weight of each true semantic class in the
+            ghost-filter loss of real spacepoints, one per class (None for
+            all 1; needs data["sp"].y_semantic)
         log_length: Give the edge classifier each edge's log length
         stub_count: Give the edge classifier the larger and smaller number
             of Hough stubs at the edge's two ends (needs data["sp"].stub_count)
@@ -61,7 +64,7 @@ class NexusDecoder(nn.Module):
                  semantic_classes: int = 0, balance_filter: bool = False,
                  log_length: bool = False, stub_count: bool = False,
                  edge_layers: int = 1, edge_width: int = 0,
-                 vertex_refine: bool = False):
+                 vertex_refine: bool = False, filter_weights: list[float] = None):
         super().__init__()
         if vertex_refine and not (vertex == "vote" and direction):
             raise ValueError("nexus vertex refinement needs vertex votes and directions")
@@ -75,6 +78,10 @@ class NexusDecoder(nn.Module):
         self.knn_shape = knn_shape
         self.semantic_classes = semantic_classes
         self.balance_filter = balance_filter
+        if filter_weights is not None:
+            self.register_buffer("filter_weights", torch.tensor(filter_weights), persistent=False)
+        else:
+            self.filter_weights = None
         self.log_length = log_length
         self.stub_count = stub_count
 
@@ -205,6 +212,13 @@ class NexusDecoder(nn.Module):
             w = freq[cls].clamp(min=1).rsqrt()
             w = w / ((w * real).sum() / real.sum().clamp(min=1)).clamp(min=1e-6)
             w = torch.where(real, w.clamp(max=10.), 1.)
+            if self.filter_weights is not None:
+                w = torch.where(real, w * self.filter_weights[cls], w)
+            loss_node = w_node * nn.functional.binary_cross_entropy_with_logits(
+                x_node, y_node, weight=w) + self.temp_node
+        elif self.filter_weights is not None:
+            real = sp.y_semantic >= 0
+            w = torch.where(real, self.filter_weights[sp.y_semantic.clamp(min=0)], 1.)
             loss_node = w_node * nn.functional.binary_cross_entropy_with_logits(
                 x_node, y_node, weight=w) + self.temp_node
         else:
