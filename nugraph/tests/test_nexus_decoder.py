@@ -265,3 +265,23 @@ def test_vertex_refine_training_step():
     assert model.nexus_decoder.refine_net[-1].weight.grad.abs().sum() > 0
     events = batch.to_data_list()
     assert events[1]["evt"].v_refine.shape == (1, 3)
+
+
+def test_filter_weights():
+    """Per-class filter weights raise the ghost-filter loss of real spacepoints of those classes,
+    with and without class balancing, and must name semantic classes"""
+    import pytest
+    with pytest.raises(RuntimeError):
+        nexus_model(nexus_filter_weights={"proton": 3.})
+    assert (nexus_batch(0, 1)["sp"].y_semantic == SEMANTIC_CLASSES.index("HIP")).any()
+    for balance in (False, True):
+        node_loss = []
+        for weights in (None, {"HIP": 3.}):
+            batch = nexus_batch(0, 1)  # the forward pass changes the batch in place
+            model = nexus_model(semantic_head=True, nexus_semantic=True, nexus_balance_filter=balance,
+                                nexus_filter_weights=weights)
+            model.train()
+            _, metrics = model(batch, stage="train")
+            node_loss.append(metrics["nexus/node-loss-train"])
+        assert model.nexus_decoder.filter_weights.tolist() == [1., 3., 1., 1., 1.]
+        assert node_loss[1] > node_loss[0]
