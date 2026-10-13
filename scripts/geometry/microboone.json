@@ -1,5 +1,6 @@
 {
-  "description": "MicroBooNE wire planes for --plane-geometry, in the open-data file's coordinates. Wire coordinates fitted against spacepoint positions (10-11): u = -0.866 y + 0.5 z + 101.44, v = 0.866 y + 0.5 z + 99.76, y = z - 0.25; hit drift coordinate = x + 44. Resolutions are the 0.3 cm wire pitch and one 0.5 us tick at a nominal 0.111 cm/us drift velocity.",
+  "description": "MicroBooNE wire planes for --plane-geometry and --sp-build, in the open-data file's coordinates. Wire coordinates fitted against spacepoint positions (10-11): u = -0.866 y + 0.5 z + 101.44, v = 0.866 y + 0.5 z + 99.76, y = z - 0.25; hit drift coordinate = x + 44. Resolutions are the 0.3 cm wire pitch and one 0.5 us tick at a nominal 0.111 cm/us drift velocity. active_volume is the TPC, cm.",
+  "active_volume": [[0, -116.5, 0], [256.35, 116.5, 1036.8]],
   "planes": [
     {"name": "u", "axes": [{"direction": [0, -0.8660254, 0.5], "origin": 101.44, "resolution": 0.3},
                            {"direction": [1, 0, 0], "origin": 44.0, "resolution": 0.055}]},
