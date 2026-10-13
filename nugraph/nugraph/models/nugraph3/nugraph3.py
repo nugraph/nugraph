@@ -118,6 +118,7 @@ class NuGraph3(LightningModule):
         # batches skipped because they did not fit in GPU memory
         self.oom_skipped = 0
         self.oom_in_a_row = 0
+        self.oom_scale = None
 
         self.save_hyperparameters()
 
@@ -272,6 +273,13 @@ class NuGraph3(LightningModule):
         if oom:
             # without gradients the optimizer step leaves every parameter unchanged
             self.zero_grad(set_to_none=True)
+            scaler = getattr(self.trainer.precision_plugin, 'scaler', None)
+            if scaler is not None:
+                # a gradient scaler refuses to step without gradients, so give one
+                # parameter an infinite gradient and let the scaler skip the step
+                p = next(p for p in self.parameters() if p.requires_grad)
+                p.grad = torch.full_like(p, float('inf'))
+                self.oom_scale = scaler.get_scale()
             self.skip_batch('train', None)
         else:
             self.oom_in_a_row = 0
@@ -293,6 +301,11 @@ class NuGraph3(LightningModule):
         torch.cuda.empty_cache()
         warnings.warn(f"{stage} batch {'' if batch_idx is None else batch_idx} skipped: "
                       f"CUDA out of memory ({self.oom_skipped} skipped so far)")
+
+    def on_train_batch_end(self, outputs, batch, batch_idx: int) -> None:
+        if self.oom_scale is not None:  # undo the scaler's backoff for a skipped step
+            self.trainer.precision_plugin.scaler.update(self.oom_scale)
+            self.oom_scale = None
 
     def on_train_epoch_end(self) -> None:
         # stop updating running average for feature norm
