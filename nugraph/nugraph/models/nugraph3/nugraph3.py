@@ -20,6 +20,22 @@ from .decoders import (SemanticDecoder, FilterDecoder, EventDecoder, VertexDecod
 from ...data import H5DataModule
 from ...util import InputNorm
 
+def plane_geometry(values: list[float], planes: tuple[str]) -> list[list[float]]:
+    """
+    Split --plane-geometry into (direction y, direction z, offset) per plane
+
+    Args:
+        values: Three numbers per plane, in plane order
+        planes: Detector plane names
+    """
+    if not values:
+        return None
+    if len(values) != 3 * len(planes):
+        raise RuntimeError(f"--plane-geometry needs three numbers for each of the {len(planes)} "
+                           f"planes {tuple(planes)}, got {len(values)}")
+    return [values[3 * i:3 * i + 3] for i in range(len(planes))]
+
+
 class NuGraph3(LightningModule):
     """
     NuGraph3 model architecture.
@@ -47,6 +63,9 @@ class NuGraph3(LightningModule):
         spacepoint_head: Whether to enable spacepoint decoder
         nexus_head: Whether to enable nexus decoder and spacepoint graph message-passing
         nexus_in_features: Number of nexus node input features
+        plane_geometry: Per plane, in the order of planes, the (y, z) direction the wire
+            coordinate measures along and its value at the origin (see TPCEncoder)
+        geometry_columns: Input feature columns holding the wire coordinate and the plane index
         nexus_geometry: Whether spacepoint messages see spacepoint displacements
         nexus_vertex: Vertex given to the nexus edge classifier ("pred", "vote" or "true")
         nexus_direction: Whether to regress spacepoint directions for the nexus edge classifier
@@ -95,6 +114,8 @@ class NuGraph3(LightningModule):
                  spacepoint_head: bool = False,
                  nexus_head: bool = False,
                  nexus_in_features: int = 0,
+                 plane_geometry: list[list[float]] = None,
+                 geometry_columns: tuple[int] = (0, -1),
                  nexus_geometry: bool = False,
                  nexus_vertex: str = None,
                  nexus_direction: bool = False,
@@ -141,7 +162,7 @@ class NuGraph3(LightningModule):
         self.tpc_encoder = TPCEncoder(in_features, hit_features,
                                       nexus_features, interaction_features,
                                       beta_features, coord_features,
-                                      nexus_in_features)
+                                      nexus_in_features, plane_geometry, geometry_columns)
 
         self.core_net = NuGraphCore(hit_features,
                                     nexus_features,
@@ -404,6 +425,15 @@ class NuGraph3(LightningModule):
                            help='Number of message-passing iterations')
         model.add_argument('--in-feats', type=int, default=5,
                            help='Number of input node features')
+        model.add_argument("--plane-geometry", type=float, nargs="+", default=None,
+                           metavar="DY DZ OFFSET",
+                           help="Replace the hit plane index with each plane's wire geometry: three numbers "
+                                "per plane, in plane order (the y and z direction the wire coordinate "
+                                "measures along, and its value at the origin, cm)")
+        model.add_argument("--geometry-columns", type=int, nargs=2, default=[0, -1],
+                           metavar=("WIRE", "PLANE"),
+                           help="Input feature columns of the wire coordinate and the plane index, for "
+                                "--plane-geometry (default 0 -1, the MicroBooNE open-data layout)")
         model.add_argument('--hit-feats', type=int, default=128,
                            help='Hidden dimensionality of hit convolutions')
         model.add_argument('--nexus-feats', type=int, default=32,
@@ -528,6 +558,8 @@ class NuGraph3(LightningModule):
             spacepoint_head=args.spacepoint,
             nexus_head=args.nexus,
             nexus_in_features=args.nexus_in_feats,
+            plane_geometry=plane_geometry(args.plane_geometry, nudata.planes),
+            geometry_columns=tuple(args.geometry_columns),
             nexus_geometry=args.nexus_geometry,
             nexus_vertex=args.nexus_vertex,
             nexus_direction=args.nexus_direction,
