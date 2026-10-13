@@ -69,7 +69,10 @@ def train(args, Model):
                   sp_graph=args.sp_graph, sp_candidates=args.sp_candidates,
                   sp_stub_radius=args.sp_stub_radius,
                   sp_gpu=args.sp_gpu, sp_charge=args.sp_charge,
-                  sp_merge_delta=args.sp_merge_delta, sp_extra_knn=args.sp_extra_knn)
+                  sp_merge_delta=args.sp_merge_delta, sp_extra_knn=args.sp_extra_knn,
+                  sp_build=args.sp_build,
+                  sp_build_window=args.sp_build_window, sp_build_tolerance=args.sp_build_tolerance,
+                  sp_build_cap=args.sp_build_cap)
 
     if args.resume:
         model = Model.load_from_checkpoint(args.resume)

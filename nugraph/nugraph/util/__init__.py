@@ -6,6 +6,7 @@ from .obj_con_loss import ObjConLoss
 from .position_features import PositionFeatures
 from .spacepoint_graph import SpacePointGraph
 from .nexus_features import NexusFeatures
+from .spacepoint_builder import SpacePointBuilder
 from .feature_extension import FeatureExtension
 from .hierarchical_edges import HierarchicalEdges
 from .event_labels import EventLabels
