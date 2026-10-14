@@ -37,15 +37,11 @@ class DecoderBase(torch.nn.Module, ABC):
         self.loss_func = loss_func
         self.weight = weight
         self.temp = torch.nn.Parameter(torch.tensor(temperature))
-        self.cm = torch.nn.ModuleDict()
         self.cm_logger = ConfusionMatrixLogger(classes)
 
         self.recall = tm.Recall(**metric_args)
         self.precision = tm.Precision(**metric_args)
-        self.cm[f"{name}/recall_matrix"] = tm.ConfusionMatrix(
-            normalize='true', **metric_args)
-        self.cm[f"{name}/precision_matrix"] = tm.ConfusionMatrix(
-            normalize='pred', **metric_args)
+        self.cm = tm.ConfusionMatrix(**metric_args)
 
     def arrange(self, data: NuGraphData) -> tuple[T, T]:
         """
@@ -86,8 +82,7 @@ class DecoderBase(torch.nn.Module, ABC):
         if stage == 'train':
             metrics[f'temperature/{self.name}'] = self.temp
         if stage in ("val", "test"):
-            for cm in self.cm.values():
-                cm.update(x, y)
+            self.cm.update(x, y)
         return loss, metrics
 
     def on_epoch_end(self, logger: Logger | list[Logger], stage: str, epoch: int) -> None:
@@ -99,8 +94,7 @@ class DecoderBase(torch.nn.Module, ABC):
             stage: Name of current stage
             epoch: Epoch number
         """
-        for name, cm in self.cm.items():
-            self.cm_logger.log(f"{name}-{stage}", cm=cm, logger=logger, epoch=epoch, stage=stage)
+        self.cm_logger.log(self.name, stage, self.cm, logger, epoch)
 
 class SemanticDecoder(DecoderBase):
     """
