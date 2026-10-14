@@ -22,7 +22,8 @@ class SpacePointBuilder(BaseTransform):
     MicroBooNE product's mix. If there are more than cap, the triplets are kept
     first, then the doublets with the closest drift coordinates.
 
-    The candidates replace data["sp"] and the hit-to-spacepoint links, so the
+    The candidates replace data["sp"], the hit-to-spacepoint links and, when
+    present, the spacepoint-to-event links, so the
     spacepoint graph, truth labels and features are built on them as on the
     provided spacepoints. Expects the merged hit format (after the NuGraph3
     transform), with hit positions (wire coordinate, drift coordinate) in cm.
@@ -130,4 +131,8 @@ class SpacePointBuilder(BaseTransform):
         data["sp"].pos = pos.float()
         data["sp"].num_nodes = len(pos)
         data["hit", "nexus", "sp"].edge_index = torch.stack((hit, sp), dim=0)
+        # the model transform links the file's spacepoints to the event node
+        if ("sp", "in", "evt") in data.edge_types:
+            data["sp", "in", "evt"].edge_index = torch.stack(
+                (torch.arange(len(pos)), torch.zeros(len(pos), dtype=torch.long)), dim=0)
         return data
