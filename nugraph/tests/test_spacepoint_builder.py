@@ -79,3 +79,11 @@ def test_cap_keeps_triplets_first():
     full, _ = candidates(SpacePointBuilder(GEOMETRY, VOLUME)(event(pts, skip={(2, 2)})))
     sp, hits = candidates(SpacePointBuilder(GEOMETRY, VOLUME, cap=2)(data))
     assert len(full) > 2 and len(sp) == 2 and all(len(h) == 3 for h in hits)
+
+
+def test_event_links_follow_candidates():
+    """Spacepoint-to-event links made for the file's spacepoints are remade for the candidates"""
+    data = event([[100., 20., 500.]])
+    data["sp", "in", "evt"].edge_index = torch.stack((torch.arange(5), torch.zeros(5, dtype=torch.long)))
+    data = SpacePointBuilder(GEOMETRY, VOLUME)(data)
+    assert data["sp", "in", "evt"].edge_index.tolist() == [[0], [0]]
