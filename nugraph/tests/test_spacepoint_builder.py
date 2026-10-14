@@ -87,3 +87,13 @@ def test_event_links_follow_candidates():
     data["sp", "in", "evt"].edge_index = torch.stack((torch.arange(5), torch.zeros(5, dtype=torch.long)))
     data = SpacePointBuilder(GEOMETRY, VOLUME)(data)
     assert data["sp", "in", "evt"].edge_index.tolist() == [[0], [0]]
+
+
+def test_best_keeps_each_hits_closest_partner():
+    """Two points 0.15 cm apart in drift cross in two ghosts as well; keeping each hit's best
+    candidate drops the ghosts, whose hits all have a closer partner"""
+    data = event([[100., 20., 500.], [100.15, -20., 520.]], skip={(0, 2), (1, 2)})
+    full, _ = candidates(SpacePointBuilder(GEOMETRY, VOLUME)(data.clone()))
+    sp, hits = candidates(SpacePointBuilder(GEOMETRY, VOLUME, best=1)(data))
+    assert len(full) == 4
+    assert sorted(hits) == [[0, 1], [2, 3]]

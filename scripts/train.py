@@ -72,7 +72,7 @@ def train(args, Model):
                   sp_merge_delta=args.sp_merge_delta, sp_extra_knn=args.sp_extra_knn,
                   sp_build=args.sp_build,
                   sp_build_window=args.sp_build_window, sp_build_tolerance=args.sp_build_tolerance,
-                  sp_build_cap=args.sp_build_cap)
+                  sp_build_cap=args.sp_build_cap, sp_build_best=args.sp_build_best)
 
     if args.resume:
         model = Model.load_from_checkpoint(args.resume)

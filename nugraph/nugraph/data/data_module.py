@@ -42,7 +42,8 @@ class NuGraphDataModule(LightningDataModule):
                  sp_build: str = None,
                  sp_build_window: float = 0.3,
                  sp_build_tolerance: float = 0.45,
-                 sp_build_cap: int = 20000):
+                 sp_build_cap: int = 20000,
+                 sp_build_best: int = 0):
         super().__init__()
 
         # for this HDF5 dataloader, worker processes slow things down
@@ -130,7 +131,7 @@ class NuGraphDataModule(LightningDataModule):
                 volume = json.load(f)["active_volume"]
             transform.append(SpacePointBuilder(plane_geometry(sp_build, self.planes), volume,
                                                window=sp_build_window, tolerance=sp_build_tolerance,
-                                               cap=sp_build_cap))
+                                               cap=sp_build_cap, best=sp_build_best))
         # the spacepoint graph is built here, or on each batch once it is on
         # the training device
         self.sp_transform = None
@@ -289,4 +290,7 @@ class NuGraphDataModule(LightningDataModule):
                           help='Largest third-plane wire-coordinate residual of a triplet (cm)')
         data.add_argument('--sp-build-cap', type=int, default=20000,
                           help='Largest number of spacepoint candidates per event')
+        data.add_argument('--sp-build-best', type=int, default=0,
+                          help='Keep only candidates among the best this many of one of their hits '
+                               '(0 keeps all)')
         return parser
