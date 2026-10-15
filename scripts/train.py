@@ -50,6 +50,8 @@ def configure():
                         help='Random seed for weight initialisation and data shuffling')
     parser.add_argument('--save-every-epoch', action='store_true',
                         help='Keep a checkpoint at the end of every epoch')
+    parser.add_argument('--gradient-clip', type=float, default=None,
+                        help='Clip the total gradient norm to this value')
     parser = Data.add_data_args(parser)
     parser = Model.add_model_args(parser)
     return parser.parse_args(), Model
@@ -127,6 +129,7 @@ def train(args, Model):
         precision=args.precision,
         callbacks=callbacks,
         plugins=plugins,
+        gradient_clip_val=args.gradient_clip,
         strategy=("ddp_find_unused_parameters_true"
                   if isinstance(devices, list) and len(devices) > 1 else "auto"),
     )
