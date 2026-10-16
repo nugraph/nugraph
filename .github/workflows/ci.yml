@@ -17,6 +17,8 @@ jobs:
       run:
         shell: bash -el {0}
     steps:
+    - name: checking out repository
+      uses: actions/checkout@v6
     - name: building nugraph
       uses: ./.github/actions/build-nugraph
 
@@ -27,6 +29,8 @@ jobs:
         shell: bash -el {0}
     needs: build
     steps:
+    - name: checking out repository
+      uses: actions/checkout@v6
     - name: building nugraph
       uses: ./.github/actions/build-nugraph
     - name: analysing the code with pylint
@@ -39,6 +43,10 @@ jobs:
         shell: bash -el {0}
     needs: build
     steps:
+    - name: checking out repository
+      uses: actions/checkout@v6
+      with:
+        lfs: true
     - name: building nugraph
       uses: ./github/actions/build-nugraph
     - name: running python unit tests
