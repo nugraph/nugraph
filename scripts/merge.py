@@ -11,6 +11,8 @@ def configure():
     parser = argparse.ArgumentParser()
     parser.add_argument('-f', '--file', type=str, required=True,
                         help='HDF5 file pattern')
+    parser.add_argument('--seed', type=int, default=0,
+                        help='Random seed for the train/validation/test split')
     return parser.parse_args()
 
 def merge(args):
@@ -38,7 +40,7 @@ def merge(args):
             os.remove(fname)
 
     # prepare dataset
-    H5DataModule.generate_samples(args.file)
+    H5DataModule.generate_samples(args.file, args.seed)
 
 if __name__ == '__main__':
     args = configure()
