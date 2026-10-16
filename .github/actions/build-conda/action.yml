@@ -10,7 +10,7 @@ runs:
       miniforge-version: latest
       activate-environment: nugraph-cpu
       auto-update-conda: true
-      auto-activate-base: false
+      auto-activate: false
 
   - name: caching conda packages
     uses: actions/cache@v6

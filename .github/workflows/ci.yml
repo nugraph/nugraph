@@ -36,7 +36,7 @@ jobs:
       with:
         miniforge-version: latest
         activate-environment: nugraph-cpu
-        auto-activate-base: false
+        auto-activate: false
     - name: caching conda packages
       uses: actions/cache@v6
       with:
