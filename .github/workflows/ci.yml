@@ -36,13 +36,6 @@ jobs:
       with:
         miniforge-version: latest
         activate-environment: nugraph-cpu
-        auto-activate: false
-    - name: caching conda packages
-      uses: actions/cache@v6
-      with:
-        path: ${{ env.CONDA }}/pkgs
-        key:
-          conda-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('nugraph-cpu.yaml') }}
     - name: installing local packages
       run: |
         conda list
@@ -67,13 +60,6 @@ jobs:
       with:
         miniforge-version: latest
         activate-environment: nugraph-cpu
-        auto-activate-base: false
-    - name: caching conda packages
-      uses: actions/cache@v6
-      with:
-        path: ${{ env.CONDA }}/pkgs
-        key:
-          conda-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('nugraph-cpu.yaml') }}
     - name: installing local packages
       run: |
         pip install --no-deps -e ./pynuml

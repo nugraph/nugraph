@@ -10,17 +10,28 @@ runs:
       miniforge-version: latest
       activate-environment: nugraph-cpu
       auto-update-conda: true
-      auto-activate: false
+
+  - name: getting date
+    shell: bash
+    id: get-date
+    run: echo "today=$(/bin/date -u '+%Y%m%d')" >> $GITHUB_OUTPUT
 
   - name: caching conda packages
     uses: actions/cache@v6
     with:
-      path: ${{ env.CONDA }}/pkgs
+      path: ${{ env.CONDA }}/envs
       key:
-        conda-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('nugraph-cpu.yaml') }}
+          conda-${{ runner.os }}--${{ runner.arch }}--${{
+          steps.get-date.outputs.today }}-${{
+          hashFiles('nugraph-cpu.yaml') }}-${{ env.CACHE_NUMBER
+          }}
+      env:
+        CACHE_NUMBER: 0
+      id: cache
 
   - name: updating conda environment
     shell: bash
     run: |
       mamba list
       mamba env update -n nugraph-cpu -f nugraph-cpu.yaml
+    if: steps.cache.outputs.cache-hit != 'true'
