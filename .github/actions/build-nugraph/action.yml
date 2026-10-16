@@ -1,0 +1,45 @@
+name: build-conda
+
+runs:
+  using: "composite"
+  steps:
+
+  - name: checking out repository
+    uses: actions/checkout@v6
+    with:
+      lfs: true
+
+  - name: initializing environment
+    uses: conda-incubator/setup-miniconda@v4
+    with:
+      miniforge-version: latest
+      activate-environment: nugraph-cpu
+      auto-update-conda: true
+      auto-activate: false
+      conda-remove-defaults: true
+
+  - name: getting date
+    id: get-date
+    run: echo "today=$(/bin/date -u '+%Y%m%d')" >> $GITHUB_OUTPUT
+
+  - name: caching environment
+    id: cache
+    uses: actions/cache@v6
+    with:
+      path: ${{ env.CONDA }}/envs
+      key:
+          conda-${{ runner.os }}--${{ runner.arch }}--${{
+          steps.get-date.outputs.today }}-${{
+          hashFiles('nugraph-cpu.yaml') }}
+
+  - name: updating environment
+    run: mamba env update -n nugraph-cpu -f nugraph-cpu.yaml
+    if: steps.cache.outputs.cache-hit != 'true'
+
+  - name: printing environment
+    run: mamba list
+
+  - name: installing local packages
+    run: |
+      pip install --no-deps -e ./pynuml
+      pip install --no-deps -e ./nugraph
