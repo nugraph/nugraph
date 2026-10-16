@@ -110,6 +110,7 @@ def train(args, Model):
         max_epochs=args.epochs,
         limit_train_batches=args.limit_train_batches,
         limit_val_batches=args.limit_val_batches,
+        limit_test_batches=args.limit_test_batches,
         logger=logger,
         profiler=args.profiler,
         callbacks=callbacks,
@@ -117,6 +118,7 @@ def train(args, Model):
     )
 
     trainer.fit(model, datamodule=nudata, ckpt_path=args.resume)
+    trainer.test(model, datamodule=nudata)
 
 if __name__ == '__main__':
     args, Model = configure()
