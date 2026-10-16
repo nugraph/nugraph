@@ -37,21 +37,16 @@ jobs:
         miniforge-version: latest
         activate-environment: nugraph-cpu
         auto-activate-base: false
-    - name: getting date
-      id: get-date
-      run: echo "today=$(/bin/date -u '+%Y%m%d')" >> $GITHUB_OUTPUT
-    - name: setting up conda environment cache
+    - name: caching conda packages
       uses: actions/cache@v3
       with:
-        path: ${{ env.CONDA }}/envs
+        path: ${{ env.CONDA }}/pkgs
         key:
-          conda-${{ runner.os }}--${{ runner.arch }}--${{
-          steps.get-date.outputs.today }}-${{
-          hashFiles('nugraph-cpu.yaml') }}-${{ env.CACHE_NUMBER
-          }}
-      env:
-        CACHE_NUMBER: 0
-      id: cache
+          conda-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('nugraph-cpu.yaml') }}
+        restore-keys: |
+          conda-${{ runner.os }}-${{ runner.arch }}-
+    - name: updating conda environment
+      run: mamba env update -n nugraph-cpu -f nugraph-cpu.yaml
     - name: installing local packages
       run: |
         conda list
@@ -77,21 +72,16 @@ jobs:
         miniforge-version: latest
         activate-environment: nugraph-cpu
         auto-activate-base: false
-    - name: getting date
-      id: get-date
-      run: echo "today=$(/bin/date -u '+%Y%m%d')" >> $GITHUB_OUTPUT
-    - name: setting up conda environment cache
+    - name: caching conda packages
       uses: actions/cache@v3
       with:
-        path: ${{ env.CONDA }}/envs
+        path: ${{ env.CONDA }}/pkgs
         key:
-          conda-${{ runner.os }}--${{ runner.arch }}--${{
-          steps.get-date.outputs.today }}-${{
-          hashFiles('nugraph-cpu.yaml') }}-${{ env.CACHE_NUMBER
-          }}
-      env:
-        CACHE_NUMBER: 0
-      id: cache
+          conda-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('nugraph-cpu.yaml') }}
+        restore-keys: |
+          conda-${{ runner.os }}-${{ runner.arch }}-
+    - name: updating conda environment
+      run: mamba env update -n nugraph-cpu -f nugraph-cpu.yaml
     - name: installing local packages
       run: |
         pip install --no-deps -e ./pynuml
