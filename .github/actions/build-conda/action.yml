@@ -23,10 +23,7 @@ runs:
       key:
           conda-${{ runner.os }}--${{ runner.arch }}--${{
           steps.get-date.outputs.today }}-${{
-          hashFiles('nugraph-cpu.yaml') }}-${{ env.CACHE_NUMBER
-          }}
-      env:
-        CACHE_NUMBER: 0
+          hashFiles('nugraph-cpu.yaml') }}
       id: cache
 
   - name: updating conda environment
