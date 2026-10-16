@@ -53,7 +53,4 @@ jobs:
     - name: analysing the code with pylint
       run: pylint --fail-under=8 $(git ls-files '*.py')
     - name: running python unit tests
-      run: |
-        pwd
-        ls
-        pytest
+      run: pytest
