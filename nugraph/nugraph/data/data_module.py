@@ -183,6 +183,8 @@ class NuGraphDataModule(LightningDataModule):
                           help='Max number of training batches to be used')
         data.add_argument('--limit_val_batches', type=int, default=None,
                           help='Max number of validation batches to be used')
+        data.add_argument('--limit_test_batches', type=int, default=None,
+                          help='Max number of test batches to be used')
         data.add_argument('--shuffle', type=str, default='balance',
                           help='Dataset shuffling scheme to use')
         data.add_argument('--balance-frac', type=float, default=0.1,
