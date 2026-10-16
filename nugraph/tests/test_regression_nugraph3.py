@@ -250,7 +250,6 @@ def test_balance_sampler_without_outliers():
     assert sorted(iter(sampler)) == list(range(40))
 
 
-@bug("BalanceSampler", "__len__ returns the dataset size, not the number of indices yielded")
 def test_balance_sampler_length_matches_iteration():
     sampler = BalanceSampler(datasize=list(range(45)), batch_size=8, balance_frac=0.1)
     assert len(sampler) == len(list(iter(sampler)))
