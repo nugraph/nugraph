@@ -18,7 +18,6 @@ def bug(number: int, text: str):
     return pytest.mark.xfail(strict=True, reason=f"bug {number}: {text}")
 
 
-@bug(7, "label() range check references an undefined name `label` instead of `idx`")
 @pytest.mark.parametrize("labeller, name", [
     (StandardLabels(), "pion"),
     (FlavorLabels(), "cc_nue"),
@@ -26,6 +25,14 @@ def bug(number: int, text: str):
 ])
 def test_label_lookup(labeller, name):
     assert labeller.label(0) == name
+
+
+@pytest.mark.parametrize("labeller", [StandardLabels(), FlavorLabels(), PDKLabels()])
+def test_label_out_of_range(labeller):
+    """label() rejects indices outside the class list"""
+    for idx in (-1, len(labeller.labels)):
+        with pytest.raises(Exception, match="out of range"):
+            labeller.label(idx)
 
 
 def test_label_index_round_trip():

@@ -9,7 +9,7 @@ class PDKLabels:
         return self._labels
 
     def label(self, idx: int):
-        if not 0 <= label < len(self._labels):
+        if not 0 <= idx < len(self._labels):
             raise Exception(f'index {idx} out of range for {len(self._labels)} labels.')
         return self._labels[idx]
 
