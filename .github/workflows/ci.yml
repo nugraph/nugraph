@@ -43,8 +43,6 @@ jobs:
         path: ${{ env.CONDA }}/pkgs
         key:
           conda-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('nugraph-cpu.yaml') }}
-    - name: updating conda environment
-      run: mamba env update -n nugraph-cpu -f nugraph-cpu.yaml
     - name: installing local packages
       run: |
         conda list
@@ -76,8 +74,6 @@ jobs:
         path: ${{ env.CONDA }}/pkgs
         key:
           conda-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('nugraph-cpu.yaml') }}
-    - name: updating conda environment
-      run: mamba env update -n nugraph-cpu -f nugraph-cpu.yaml
     - name: installing local packages
       run: |
         pip install --no-deps -e ./pynuml
