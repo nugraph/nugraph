@@ -139,3 +139,27 @@ def test_truth_edges_with_ordered_hits():
     for row, hit_id in enumerate(data["hit"].id.tolist()):
         assert int(g4[y_i[row]]) == truth[hit_id]
     assert torch.equal(data["hit"].id, torch.arange(data["hit"].num_nodes))
+
+
+def test_invisible_hits_are_unlabelled():
+    """Hits from a particle labelled invisible get semantic label -1, not the invisible index"""
+    evt, truth = shuffled_event()
+    particles = evt._tables["particle_table"] # pylint: disable=protected-access
+    particles["type"] = [13, 22] # a photon that leaves the detector is invisible
+    labeller = StandardLabels()
+    producer = HitGraphProducer(FakeFile(), semantic_labeller=labeller, lower_bound=1)
+    _, data = producer(evt)
+    for hit_id, y in zip(data["hit"].id.tolist(), data["hit"].y_semantic.tolist()):
+        assert y == (labeller.muon if truth[hit_id] == 1 else -1)
+
+
+def test_labelling_error_skips_event(capsys):
+    """An exception in the labeller skips the event instead of stopping processing"""
+    def broken_labeller(_):
+        raise RuntimeError("unknown process")
+    broken_labeller.labels = fake_labeller.labels
+    evt, _ = shuffled_event()
+    producer = HitGraphProducer(FakeFile(), semantic_labeller=broken_labeller,
+                                lower_bound=1)
+    assert producer(evt) == (evt.name, None)
+    assert "unknown process" in capsys.readouterr().out

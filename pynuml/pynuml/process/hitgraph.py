@@ -134,8 +134,8 @@ class HitGraphProducer(ProcessorBase):
 
             try:
                 particles = self.semantic_labeller(evt['particle_table'])
-            except:
-                print("exception occurred during particle labelling for event", name)
+            except Exception as exc: # pylint: disable=broad-exception-caught
+                print(f"exception occurred during particle labelling for event {evt.name}: {exc}")
                 return evt.name, None
 
             try:
@@ -218,7 +218,11 @@ class HitGraphProducer(ProcessorBase):
 
         # truth information
         if self.semantic_labeller:
-            data["hit"].y_semantic = torch.tensor(hits['semantic_label'].fillna(-1).values).long()
+            # "invisible" is used inside the labeller, but is not a semantic class
+            semantic = hits['semantic_label'].fillna(-1)
+            if "invisible" in self.semantic_labeller.labels:
+                semantic[semantic == self.semantic_labeller.labels.index("invisible")] = -1
+            data["hit"].y_semantic = torch.tensor(semantic.values).long()
 
             # each hit is associated with an instance via the g4_id
             # we define the particle truth node store as all true particles
