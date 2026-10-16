@@ -43,8 +43,6 @@ jobs:
         path: ${{ env.CONDA }}/pkgs
         key:
           conda-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('nugraph-cpu.yaml') }}
-        restore-keys: |
-          conda-${{ runner.os }}-${{ runner.arch }}-
     - name: updating conda environment
       run: mamba env update -n nugraph-cpu -f nugraph-cpu.yaml
     - name: installing local packages
@@ -78,8 +76,6 @@ jobs:
         path: ${{ env.CONDA }}/pkgs
         key:
           conda-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('nugraph-cpu.yaml') }}
-        restore-keys: |
-          conda-${{ runner.os }}-${{ runner.arch }}-
     - name: updating conda environment
       run: mamba env update -n nugraph-cpu -f nugraph-cpu.yaml
     - name: installing local packages
