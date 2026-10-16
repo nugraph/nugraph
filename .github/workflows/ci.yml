@@ -19,6 +19,8 @@ jobs:
     steps:
     - name: checking out repository
       uses: actions/checkout@v6
+      with:
+        lfs: true
     - name: initializing environment
       uses: conda-incubator/setup-miniconda@v4
       with:
