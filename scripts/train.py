@@ -25,8 +25,8 @@ def configure():
     parser = argparse.ArgumentParser()
     parser.add_argument('--nugraph2', action='store_true', default=False,
                         help='Train NuGraph2 instead of NuGraph3 (default)')
-    parser.add_argument('--device', type=int, default=None,
-                        help="Index of GPU device to train with")
+    parser.add_argument('--device', type=int, nargs='+', default=None,
+                        help="Index of GPU device(s) to train with")
     parser.add_argument('--logger', type=str, default="tensorboard",
                         choices=("wandb", "tensorboard"),
                         help="Which logging method to use")
@@ -43,10 +43,15 @@ def configure():
     parser.add_argument('--profiler', type=str, default=None,
                         help='Enable requested profiler')
     parser.add_argument('--precision', type=str, default='32',
-                        choices=('32', 'bf16-mixed'),
-                        help='Precision for training (default: 32, or bf16-mixed for AMP)')
+                        choices=('32', 'bf16-mixed', '16-mixed'),
+                        help='Precision for training (default: 32, or bf16-mixed or 16-mixed '
+                             'for AMP; 16-mixed on GPUs without bf16, e.g. V100)')
     parser.add_argument('--seed', type=int, default=1,
                         help='Random seed for weight initialisation and data shuffling')
+    parser.add_argument('--save-every-epoch', action='store_true',
+                        help='Keep a checkpoint at the end of every epoch')
+    parser.add_argument('--gradient-clip', type=float, default=None,
+                        help='Clip the total gradient norm to this value')
     parser = Data.add_data_args(parser)
     parser = Model.add_model_args(parser)
     return parser.parse_args(), Model
@@ -104,11 +109,13 @@ def train(args, Model):
         callbacks.append(LearningRateMonitor(logging_interval='step'))
     if isinstance(logger, pl.loggers.WandbLogger) and not args.offline:
         callbacks.append(ModelCheckpoint(monitor="loss/val", mode="min"))
+    if args.save_every_epoch:
+        callbacks.append(ModelCheckpoint(filename="epoch={epoch:02d}-step={step}",
+                                         auto_insert_metric_name=False,
+                                         save_top_k=-1, every_n_epochs=1))
 
     # configure plugins
-    plugins = [
-        SLURMEnvironment(),
-    ]
+    plugins = [SLURMEnvironment()] if SLURMEnvironment.detect() else []
 
     accelerator, devices = ng.util.configure_device(args.device)
     trainer = pl.Trainer(
@@ -119,8 +126,12 @@ def train(args, Model):
         limit_val_batches=args.limit_val_batches,
         logger=logger,
         profiler=args.profiler,
+        precision=args.precision,
         callbacks=callbacks,
         plugins=plugins,
+        gradient_clip_val=args.gradient_clip,
+        strategy=("ddp_find_unused_parameters_true"
+                  if isinstance(devices, list) and len(devices) > 1 else "auto"),
     )
 
     trainer.fit(model, datamodule=nudata, ckpt_path=args.resume)
