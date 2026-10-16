@@ -17,6 +17,7 @@ from .decoders import (SemanticDecoder, FilterDecoder, EventDecoder, VertexDecod
                        SpacepointDecoder)
 
 from ...data import H5DataModule
+from ...util import InputNorm
 
 class NuGraph3(LightningModule):
     """
@@ -185,6 +186,9 @@ class NuGraph3(LightningModule):
     def on_train_epoch_end(self) -> None:
         # stop updating running average for feature norm
         self.tpc_encoder.input_norm.update = False
+
+    def on_load_checkpoint(self, checkpoint: dict) -> None:
+        InputNorm.upgrade_checkpoint(self, checkpoint)
 
     def validation_step(self,
                         batch,
