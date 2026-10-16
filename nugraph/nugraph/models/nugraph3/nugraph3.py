@@ -46,10 +46,22 @@ class NuGraph3(LightningModule):
         nexus_head: Whether to enable nexus decoder and spacepoint graph message-passing
         nexus_in_features: Number of nexus node input features
         nexus_geometry: Whether spacepoint messages see spacepoint displacements
+        nexus_vertex: Vertex given to the nexus edge classifier ("pred", "vote" or "true")
+        nexus_direction: Whether to regress spacepoint directions for the nexus edge classifier
+        nexus_charge: Whether the nexus edge classifier sees hit charge and width across edges
+        nexus_knn_shape: Whether the nexus direction head sees k-nearest-neighbour shapes
+        nexus_edge_pos_weight: Weight of same-particle edges in the nexus edge loss
+        nexus_semantic: Whether the nexus edge classifier sees semantic predictions at both ends
+        nexus_balance_filter: Whether to weight the nexus ghost-filter loss by semantic class
+        nexus_log_length: Whether the nexus edge classifier sees each edge's log length
+        nexus_stub_count: Whether the nexus edge classifier sees the Hough stub counts at both ends
+        nexus_edge_layers: Number of hidden layers in the nexus edge classifier
+        nexus_edge_width: Width of the nexus edge classifier's hidden layers (0 for nexus_features)
         use_optical: Whether to perform message-passing in optical system
         dbscan_eps: Epsilon hyperparameter for DBSCAN algorithm
         particle_loss: Whether to include particle loss term for object condensation"
         use_checkpointing: Whether to use checkpointing
+        residual: Whether core message-passing blocks add residual updates
         lr: Learning rate
         no_one_cycle_sched: Whether to disable the OneCycleLR scheduler
     """
@@ -77,10 +89,22 @@ class NuGraph3(LightningModule):
                  nexus_head: bool = False,
                  nexus_in_features: int = 0,
                  nexus_geometry: bool = False,
+                 nexus_vertex: str = None,
+                 nexus_direction: bool = False,
+                 nexus_charge: bool = False,
+                 nexus_knn_shape: bool = False,
+                 nexus_edge_pos_weight: float = 1.,
+                 nexus_semantic: bool = False,
+                 nexus_balance_filter: bool = False,
+                 nexus_log_length: bool = False,
+                 nexus_stub_count: bool = False,
+                 nexus_edge_layers: int = 1,
+                 nexus_edge_width: int = 0,
                  dbscan_eps: float = 0.3,
                  particle_loss: bool = False,
                  use_optical: bool = False,
                  use_checkpointing: bool = False,
+                 residual: bool = False,
                  lr: float = 0.001,
                  no_one_cycle_sched: bool = False):
         super().__init__()
@@ -111,7 +135,8 @@ class NuGraph3(LightningModule):
                                     coord_features,
                                     use_checkpointing,
                                     nexus_head,
-                                    nexus_geometry)
+                                    nexus_geometry,
+                                    residual)
 
         if self.use_optical:
             self.optical_encoder = OpticalEncoder(ophit_features=ophit_features,
@@ -152,8 +177,17 @@ class NuGraph3(LightningModule):
             self.spacepoint_decoder = SpacepointDecoder(hit_features, len(planes))
             self.decoders.append(self.spacepoint_decoder)
 
+        if nexus_vertex == "pred" and not vertex_head:
+            raise RuntimeError("nexus_vertex=\"pred\" requires the vertex head!")
+        if nexus_semantic and not semantic_head:
+            raise RuntimeError("nexus_semantic requires the semantic head!")
         if nexus_head:
-            self.nexus_decoder = NexusDecoder(nexus_features)
+            self.nexus_decoder = NexusDecoder(nexus_features, nexus_vertex, nexus_direction,
+                                              interaction_features,
+                                              nexus_charge, nexus_knn_shape, nexus_edge_pos_weight,
+                                              len(semantic_classes) if nexus_semantic else 0,
+                                              nexus_balance_filter, nexus_log_length, nexus_stub_count,
+                                              nexus_edge_layers, nexus_edge_width)
             self.decoders.append(self.nexus_decoder)
 
         if not self.decoders:
@@ -302,6 +336,31 @@ class NuGraph3(LightningModule):
                            help="Number of nexus node input features")
         model.add_argument("--nexus-geometry", action="store_true",
                            help="Pass spacepoint displacements into spacepoint messages")
+        model.add_argument("--nexus-vertex", type=str, default=None, choices=("pred", "vote", "true"),
+                           help="Give the nexus edge classifier edge geometry relative to the "
+                                "predicted, spacepoint-voted or (diagnostic only) true vertex")
+        model.add_argument("--nexus-direction", action="store_true",
+                           help="Regress spacepoint directions for the nexus edge classifier")
+        model.add_argument("--nexus-charge", action="store_true",
+                           help="Give the nexus edge classifier hit charge and width across edges "
+                                "(needs --sp-charge)")
+        model.add_argument("--nexus-knn-shape", action="store_true",
+                           help="Give the nexus direction head k-nearest-neighbour neighbourhood shapes")
+        model.add_argument("--nexus-edge-pos-weight", type=float, default=1.,
+                           help="Weight of same-particle edges in the nexus edge loss")
+        model.add_argument("--nexus-semantic", action="store_true",
+                           help="Give the nexus edge classifier semantic predictions at both ends")
+        model.add_argument("--nexus-balance-filter", action="store_true",
+                           help="Weight the nexus ghost-filter loss by true semantic class frequency")
+        model.add_argument("--nexus-log-length", action="store_true",
+                           help="Give the nexus edge classifier each edge's log length")
+        model.add_argument("--nexus-stub-count", action="store_true",
+                           help="Give the nexus edge classifier the Hough stub counts at both ends "
+                                "(needs --sp-graph gabriel+stubs)")
+        model.add_argument("--nexus-edge-layers", type=int, default=1,
+                           help="Number of hidden layers in the nexus edge classifier")
+        model.add_argument("--nexus-edge-width", type=int, default=0,
+                           help="Width of the nexus edge classifier's hidden layers (0 for --nexus-feats)")
         model.add_argument("--dbscan-eps", type=float, default=0.3,
                            help="Epsilon hyperparameter for DBSCAN algorithm")
         model.add_argument("--particle-loss", action="store_true",
@@ -311,6 +370,9 @@ class NuGraph3(LightningModule):
         model.add_argument('--no-checkpointing', action='store_false',
                            dest="use_checkpointing",
                            help='Disable checkpointing during training')
+        model.add_argument('--no-residual', action='store_false',
+                           dest="residual",
+                           help='Disable residual connections in core message-passing blocks')
         model.add_argument('--epochs', type=int, default=80,
                            help='Maximum number of epochs to train for')
         model.add_argument('--learning-rate', type=float, default=0.001,
@@ -353,9 +415,21 @@ class NuGraph3(LightningModule):
             nexus_head=args.nexus,
             nexus_in_features=args.nexus_in_feats,
             nexus_geometry=args.nexus_geometry,
+            nexus_vertex=args.nexus_vertex,
+            nexus_direction=args.nexus_direction,
+            nexus_charge=args.nexus_charge,
+            nexus_knn_shape=args.nexus_knn_shape,
+            nexus_edge_pos_weight=args.nexus_edge_pos_weight,
+            nexus_semantic=args.nexus_semantic,
+            nexus_balance_filter=args.nexus_balance_filter,
+            nexus_log_length=args.nexus_log_length,
+            nexus_stub_count=args.nexus_stub_count,
+            nexus_edge_layers=args.nexus_edge_layers,
+            nexus_edge_width=args.nexus_edge_width,
             dbscan_eps=args.dbscan_eps,
             particle_loss=args.particle_loss,
             use_optical=args.optical,
             use_checkpointing=args.use_checkpointing,
+            residual=args.residual,
             lr=args.learning_rate,
             no_one_cycle_sched=args.no_one_cycle_sched)

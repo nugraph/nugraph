@@ -14,15 +14,22 @@ class NuGraphBlock(MessagePassing): # pylint: disable=abstract-method
     the source node features in order to form messages. These messages are
     then aggregated into the target nodes using softmax aggregation, and
     then fed into a two-layer MLP to generate updated target node features.
+    With a residual connection, the MLP output (without its final activation,
+    and initialised to zero) is instead added to the target node features.
 
     Args:
         source_features: Number of source node input features
         target_features: Number of target node input features
         out_features: Number of target node output features
+        residual: Whether to add the update to the target node features
     """
     def __init__(self, source_features: int, target_features: int,
-                 out_features: int):
+                 out_features: int, residual: bool = False):
         super().__init__(aggr="softmax")
+
+        if residual and target_features != out_features:
+            raise ValueError("A residual block needs as many output as target features.")
+        self.residual = residual
 
         self.edge_net = nn.Sequential(
             nn.Linear(source_features+target_features, 1),
@@ -33,6 +40,10 @@ class NuGraphBlock(MessagePassing): # pylint: disable=abstract-method
             nn.Mish(),
             nn.Linear(out_features, out_features),
             nn.Mish())
+        if residual:
+            self.net = self.net[:-1]
+            nn.init.zeros_(self.net[-1].weight)
+            nn.init.zeros_(self.net[-1].bias)
 
     def forward(self, x: T, edge_index: T) -> T: # pylint: disable=arguments-differ
         """
@@ -72,7 +83,8 @@ class NuGraphBlock(MessagePassing): # pylint: disable=abstract-method
         """
         if isinstance(x, tuple):
             _, x = x
-        return self.net(torch.cat((aggr_out, x), dim=1))
+        out = self.net(torch.cat((aggr_out, x), dim=1))
+        return x + out if self.residual else out
 
 class NuGraphGeometryBlock(NuGraphBlock): # pylint: disable=abstract-method
     """
@@ -81,9 +93,10 @@ class NuGraphGeometryBlock(NuGraphBlock): # pylint: disable=abstract-method
 
     Args:
         features: Number of node features
+        residual: Whether to add the update to the target node features
     """
-    def __init__(self, features: int):
-        super().__init__(features, features, features)
+    def __init__(self, features: int, residual: bool = False):
+        super().__init__(features, features, features, residual)
         self.edge_net = nn.Sequential(
             nn.Linear(2 * features + 4, 1),
             nn.Sigmoid())
@@ -128,6 +141,7 @@ class NuGraphCore(nn.Module):
         use_checkpointing: Whether to use checkpointing
         nexus_edges: Whether to message-pass along spacepoint graph edges
         nexus_geometry: Whether spacepoint messages see spacepoint displacements
+        residual: Whether message-passing blocks add residual updates
     """
     def __init__(self,
                  hit_features: int,
@@ -137,41 +151,42 @@ class NuGraphCore(nn.Module):
                  coord_features: int,
                  use_checkpointing: bool = True,
                  nexus_edges: bool = False,
-                 nexus_geometry: bool = False):
+                 nexus_geometry: bool = False,
+                 residual: bool = False):
         super().__init__()
 
         self.use_checkpointing = use_checkpointing
 
         # internal planar message-passing
         self.plane_net = NuGraphBlock(hit_features, hit_features,
-                                      hit_features)
+                                      hit_features, residual)
 
         # message-passing from planar nodes to nexus nodes
         self.plane_to_nexus = NuGraphBlock(hit_features, nexus_features,
-                                           nexus_features)
+                                           nexus_features, residual)
 
         # message-passing between nexus nodes
         self.nexus_edges = nexus_edges
         self.nexus_geometry = nexus_geometry
         if nexus_edges and nexus_geometry:
-            self.nexus_net = NuGraphGeometryBlock(nexus_features)
+            self.nexus_net = NuGraphGeometryBlock(nexus_features, residual)
         elif nexus_edges:
             self.nexus_net = NuGraphBlock(nexus_features, nexus_features,
-                                          nexus_features)
+                                          nexus_features, residual)
 
         # message-passing from nexus nodes to interaction nodes
         self.nexus_to_interaction = NuGraphBlock(nexus_features,
                                                  interaction_features,
-                                                 interaction_features)
+                                                 interaction_features, residual)
 
         # message-passing from interaction nodes to nexus nodes
         self.interaction_to_nexus = NuGraphBlock(interaction_features,
                                                  nexus_features,
-                                                 nexus_features)
+                                                 nexus_features, residual)
 
         # message-passing from nexus nodes to planar nodes
         self.nexus_to_plane = NuGraphBlock(nexus_features, hit_features,
-                                           hit_features)
+                                           hit_features, residual)
 
         # object condensation beta embedding
         self.beta_net = nn.Sequential(

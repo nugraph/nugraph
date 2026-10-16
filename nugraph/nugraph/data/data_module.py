@@ -30,7 +30,14 @@ class NuGraphDataModule(LightningDataModule):
                  featext: bool = False,
                  sp_knn: int = 0,
                  sp_feats: bool = False,
-                 sp_majority: bool = True):
+                 sp_majority: bool = True,
+                 sp_graph: str = "knn",
+                 sp_candidates: int = 64,
+                 sp_stub_radius: float = 24.,
+                 sp_gpu: bool = False,
+                 sp_charge: bool = False,
+                 sp_merge_delta: float = 0.,
+                 sp_extra_knn: int = 0):
         super().__init__()
 
         # for this HDF5 dataloader, worker processes slow things down
@@ -51,6 +58,13 @@ class NuGraphDataModule(LightningDataModule):
         self.sp_knn = sp_knn
         self.sp_feats = sp_feats
         self.sp_majority = sp_majority
+        self.sp_graph = sp_graph
+        self.sp_candidates = sp_candidates
+        self.sp_stub_radius = sp_stub_radius
+        self.sp_gpu = sp_gpu
+        self.sp_charge = sp_charge
+        self.sp_merge_delta = sp_merge_delta
+        self.sp_extra_knn = sp_extra_knn
 
         with h5py.File(self.filename) as f:
 
@@ -103,10 +117,23 @@ class NuGraphDataModule(LightningDataModule):
             transform.append(model.transform(planes=self.planes))
         if self.featext:
             transform.append(FeatureExtension(planes=self.planes))
+        # the spacepoint graph is built here, or on each batch once it is on
+        # the training device
+        self.sp_transform = None
         if self.sp_knn:
-            transform.append(SpacePointGraph(k=self.sp_knn, majority=self.sp_majority))
+            sp_transform = SpacePointGraph(k=self.sp_knn, majority=self.sp_majority,
+                                           chunk_size=4096 if self.sp_gpu else 1024,
+                                           graph=self.sp_graph, candidates=self.sp_candidates,
+                                           stub_radius=self.sp_stub_radius,
+                                           merge_delta=self.sp_merge_delta,
+                                           extra_knn=self.sp_extra_knn)
+            if self.sp_gpu:
+                self.sp_transform = sp_transform
+            else:
+                transform.append(sp_transform)
         if self.sp_feats:
-            transform.append(NexusFeatures(planes=self.planes, positions=False))
+            transform.append(NexusFeatures(planes=self.planes, positions=False,
+                                           charge=self.sp_charge))
         transform = Compose(transform) if transform else None
 
         self.train_dataset = NuGraphDataset(self.filename, train_samples, transform)
@@ -170,15 +197,23 @@ class NuGraphDataModule(LightningDataModule):
                           batch_size=self.batch_size,
                           num_workers=self.num_workers,
                           sampler=sampler, drop_last=True,
-                          shuffle=shuffle, pin_memory=True)
+                          shuffle=shuffle, pin_memory=True,
+                          persistent_workers=self.num_workers > 0)
 
     def val_dataloader(self) -> DataLoader:
         return DataLoader(self.val_dataset, num_workers=self.num_workers,
-                          batch_size=self.batch_size, pin_memory=True)
+                          batch_size=self.batch_size, pin_memory=True,
+                          persistent_workers=self.num_workers > 0)
 
     def test_dataloader(self) -> DataLoader:
         return DataLoader(self.test_dataset, num_workers=self.num_workers,
                           batch_size=self.batch_size, pin_memory=True)
+
+    def on_after_batch_transfer(self, batch, dataloader_idx: int):
+        """Build the spacepoint graph on the training device, if requested"""
+        if self.sp_transform is not None:
+            batch = self.sp_transform(batch)
+        return batch
 
     @staticmethod
     def add_data_args(parser: ArgumentParser) -> ArgumentParser:
@@ -205,4 +240,19 @@ class NuGraphDataModule(LightningDataModule):
                           help='Enable spacepoint delta_T and chi2 input features')
         data.add_argument('--no-sp-majority', action='store_false', dest='sp_majority',
                           help='Leave three-hit spacepoints with two hits from one particle unlabelled')
+        data.add_argument('--sp-graph', type=str, default='knn',
+                          choices=('knn', 'gabriel', 'gabriel+stubs'),
+                          help='Spacepoint graph type')
+        data.add_argument('--sp-candidates', type=int, default=64,
+                          help='Nearest neighbours searched for Gabriel spacepoint edges')
+        data.add_argument('--sp-stub-radius', type=float, default=24.,
+                          help='Radius (cm) of the local Hough transform for spacepoint stub edges')
+        data.add_argument('--sp-gpu', action='store_true', default=False,
+                          help='Build the spacepoint graph on each batch on the training device')
+        data.add_argument('--sp-charge', action='store_true', default=False,
+                          help='Add hit charge and width spacepoint features (with --sp-feats)')
+        data.add_argument('--sp-merge-delta', type=float, default=0.,
+                          help='Label delta rays shorter than this (cm) as their parent particle')
+        data.add_argument('--sp-extra-knn', type=int, default=0,
+                          help='Add this many nearest-neighbour edges per spacepoint to Gabriel graphs')
         return parser
