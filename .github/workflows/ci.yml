@@ -42,8 +42,7 @@ jobs:
             steps.get-date.outputs.today }}-${{
             hashFiles('nugraph-cpu.yaml') }}
     - name: updating environment
-      run: |
-        mamba env update -n nugraph-cpu -f nugraph-cpu.yaml
+      run: mamba env update -n nugraph-cpu -f nugraph-cpu.yaml
       if: steps.cache.outputs.cache-hit != 'true'
     - name: printing environment
       run: mamba list
@@ -54,4 +53,7 @@ jobs:
     - name: analysing the code with pylint
       run: pylint --fail-under=8 $(git ls-files '*.py')
     - name: running python unit tests
-      run: pytest
+      run: |
+        pwd
+        ls
+        pytest
