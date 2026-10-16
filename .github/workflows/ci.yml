@@ -32,6 +32,7 @@ jobs:
       id: get-date
       run: echo "today=$(/bin/date -u '+%Y%m%d')" >> $GITHUB_OUTPUT
     - name: caching environment
+      id: cache
       uses: actions/cache@v6
       with:
         path: ${{ env.CONDA }}/envs
@@ -39,7 +40,6 @@ jobs:
             conda-${{ runner.os }}--${{ runner.arch }}--${{
             steps.get-date.outputs.today }}-${{
             hashFiles('nugraph-cpu.yaml') }}
-        id: cache
     - name: updating environment
       run: |
         mamba env update -n nugraph-cpu -f nugraph-cpu.yaml
