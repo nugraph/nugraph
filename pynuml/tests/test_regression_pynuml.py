@@ -104,8 +104,6 @@ def shuffled_event(seed: int = 0) -> tuple[FakeEvent, dict[int, int]]:
     return FakeEvent(tables), truth
 
 
-@bug(6, "truth hit->particle edges use hit_id as the node index, "
-        "so labels are wrong whenever hit rows are not ordered by hit_id")
 def test_truth_edges_follow_hit_rows():
     """Each hit node's true particle must match its own hit_id's energy deposit"""
     evt, truth = shuffled_event()
@@ -113,6 +111,21 @@ def test_truth_edges_follow_hit_rows():
                                 lower_bound=1)
     _, data = producer(evt)
     assert data is not None
+    y_i = data.y_i()
+    g4 = data["particle-truth"].g4_id
+    for row, hit_id in enumerate(data["hit"].id.tolist()):
+        assert int(g4[y_i[row]]) == truth[hit_id], f"hit row {row} (hit_id {hit_id})"
+
+
+def test_truth_edges_with_dropped_hits():
+    """Hits missing from the hit table (eg. filtered out) do not shift other hits' labels"""
+    evt, truth = shuffled_event()
+    hits = evt._tables["hit_table"] # pylint: disable=protected-access
+    evt._tables["hit_table"] = hits[hits.hit_id % 5 != 0] # pylint: disable=protected-access
+    producer = HitGraphProducer(FakeFile(), semantic_labeller=fake_labeller,
+                                lower_bound=1)
+    _, data = producer(evt)
+    assert data["hit"].num_nodes == (hits.hit_id % 5 != 0).sum()
     y_i = data.y_i()
     g4 = data["particle-truth"].g4_id
     for row, hit_id in enumerate(data["hit"].id.tolist()):
