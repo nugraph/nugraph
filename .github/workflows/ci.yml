@@ -42,8 +42,8 @@ jobs:
       run: |
         mamba env update -n nugraph-cpu -f nugraph-cpu.yaml
       if: steps.cache.outputs.cache-hit != 'true'
-    - name: activating environment
-      run: mamba activate nugraph-cpu
+    - name: printing environment
+      run: mamba list
     - name: installing local packages
       run: |
         pip install --no-deps -e ./pynuml
