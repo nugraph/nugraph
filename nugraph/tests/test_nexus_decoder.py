@@ -222,3 +222,66 @@ def test_nexus_log_length_stub_count_and_deeper_edge_classifier():
     assert net[0].in_features == 2 * 32 + 4 + 3 and net[0].out_features == 48 and len(net) == 5
     assert net[0].weight.grad.abs().sum() > 0
     assert len(nexus_model().nexus_decoder.edge_net) == 3
+
+
+def test_vote_fit_finds_vertex_of_lines():
+    """The batched vote and line fit recovers each graph's vertex from straight
+    tracks with noisy votes, and leaves a graph with no weighted spacepoints finite"""
+    from nugraph.models.nugraph3.decoders.nexus import NexusDecoder
+    torch.manual_seed(0)
+    vertices = torch.tensor([[10., 20., 30.], [-50., 0., 100.], [0., 0., 0.]])
+    pos, dirs, votes, g, w = [], [], [], [], []
+    for k, vtx in enumerate(vertices):
+        for _ in range(4):
+            d = torch.nn.functional.normalize(torch.randn(3), dim=0)
+            t = torch.arange(1., 41.)[:, None]
+            pos.append(vtx + t * d)
+            dirs.append(d.expand(40, 3))
+            votes.append(vtx + 8. * torch.randn(40, 3))
+            g.append(torch.full((40,), k))
+            w.append(torch.full((40,), 0. if k == 2 else 1.))
+    fit = NexusDecoder.vote_fit(torch.cat(pos), torch.cat(votes), torch.cat(dirs),
+                                torch.cat(w), torch.cat(g), 3)
+    assert (fit[:2] - vertices[:2]).norm(dim=1).max() < 0.2
+    assert torch.isfinite(fit).all()
+
+
+def test_vertex_refine_training_step():
+    """Vertex refinement starts at the fit, trains, and adds per-event vertices to the output"""
+    import pytest
+    with pytest.raises(ValueError):
+        nexus_model(nexus_vertex="vote", nexus_vertex_refine=True)
+    model = nexus_model(nexus_vertex="vote", nexus_direction=True, nexus_vertex_refine=True)
+    model.train()
+    batch = nexus_batch(0, 1)
+    batch["sp"].y_direction[:5] = torch.tensor([1., 0., 0.])
+    loss, metrics = model(batch, stage="train")
+    loss.backward()
+    assert torch.isfinite(loss)
+    assert torch.isfinite(metrics["nexus/refine-loss-train"])
+    evt = batch["evt"]
+    assert evt.v_refine.shape == (2, 3)
+    assert torch.allclose(evt.v_refine, evt.v_fit)
+    assert model.nexus_decoder.refine_net[-1].weight.grad.abs().sum() > 0
+    events = batch.to_data_list()
+    assert events[1]["evt"].v_refine.shape == (1, 3)
+
+
+def test_filter_weights():
+    """Per-class filter weights raise the ghost-filter loss of real spacepoints of those classes,
+    with and without class balancing, and must name semantic classes"""
+    import pytest
+    with pytest.raises(RuntimeError):
+        nexus_model(nexus_filter_weights={"proton": 3.})
+    assert (nexus_batch(0, 1)["sp"].y_semantic == SEMANTIC_CLASSES.index("HIP")).any()
+    for balance in (False, True):
+        node_loss = []
+        for weights in (None, {"HIP": 3.}):
+            batch = nexus_batch(0, 1)  # the forward pass changes the batch in place
+            model = nexus_model(semantic_head=True, nexus_semantic=True, nexus_balance_filter=balance,
+                                nexus_filter_weights=weights)
+            model.train()
+            _, metrics = model(batch, stage="train")
+            node_loss.append(metrics["nexus/node-loss-train"])
+        assert model.nexus_decoder.filter_weights.tolist() == [1., 3., 1., 1., 1.]
+        assert node_loss[1] > node_loss[0]

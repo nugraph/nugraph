@@ -49,6 +49,10 @@ class NuGraph3(LightningModule):
         nexus_geometry: Whether spacepoint messages see spacepoint displacements
         nexus_vertex: Vertex given to the nexus edge classifier ("pred", "vote" or "true")
         nexus_direction: Whether to regress spacepoint directions for the nexus edge classifier
+        nexus_vertex_refine: Whether to fit the vertex from the nexus votes and directions and
+            refine it with attention over nearby spacepoints
+        nexus_filter_weights: Extra weight of real spacepoints of each named semantic class
+            in the nexus ghost-filter loss, as {class: weight}
         nexus_charge: Whether the nexus edge classifier sees hit charge and width across edges
         nexus_knn_shape: Whether the nexus direction head sees k-nearest-neighbour shapes
         nexus_edge_pos_weight: Weight of same-particle edges in the nexus edge loss
@@ -93,6 +97,8 @@ class NuGraph3(LightningModule):
                  nexus_geometry: bool = False,
                  nexus_vertex: str = None,
                  nexus_direction: bool = False,
+                 nexus_vertex_refine: bool = False,
+                 nexus_filter_weights: dict = None,
                  nexus_charge: bool = False,
                  nexus_knn_shape: bool = False,
                  nexus_edge_pos_weight: float = 1.,
@@ -189,13 +195,19 @@ class NuGraph3(LightningModule):
             raise RuntimeError("nexus_vertex=\"pred\" requires the vertex head!")
         if nexus_semantic and not semantic_head:
             raise RuntimeError("nexus_semantic requires the semantic head!")
+        if nexus_filter_weights and not set(nexus_filter_weights) <= set(semantic_classes):
+            raise RuntimeError(f"nexus filter weights must name semantic classes {semantic_classes}")
         if nexus_head:
             self.nexus_decoder = NexusDecoder(nexus_features, nexus_vertex, nexus_direction,
                                               interaction_features,
                                               nexus_charge, nexus_knn_shape, nexus_edge_pos_weight,
                                               len(semantic_classes) if nexus_semantic else 0,
                                               nexus_balance_filter, nexus_log_length, nexus_stub_count,
-                                              nexus_edge_layers, nexus_edge_width)
+                                              nexus_edge_layers, nexus_edge_width,
+                                              vertex_refine=nexus_vertex_refine,
+                                              filter_weights=[nexus_filter_weights.get(c, 1.)
+                                                              for c in semantic_classes]
+                                              if nexus_filter_weights else None)
             self.decoders.append(self.nexus_decoder)
 
         self.feedback = None
@@ -429,6 +441,13 @@ class NuGraph3(LightningModule):
                                 "predicted, spacepoint-voted or (diagnostic only) true vertex")
         model.add_argument("--nexus-direction", action="store_true",
                            help="Regress spacepoint directions for the nexus edge classifier")
+        model.add_argument("--nexus-vertex-refine", action="store_true",
+                           help="Fit the vertex from the nexus votes and directions and refine it with "
+                                "attention over nearby spacepoints (needs --nexus-vertex vote "
+                                "--nexus-direction)")
+        model.add_argument("--nexus-filter-weight", nargs="+", default=None, metavar="CLASS=WEIGHT",
+                           help="Extra weight of real spacepoints of these semantic classes in the nexus "
+                                "ghost-filter loss, e.g. hadron=3")
         model.add_argument("--nexus-charge", action="store_true",
                            help="Give the nexus edge classifier hit charge and width across edges "
                                 "(needs --sp-charge)")
@@ -508,6 +527,9 @@ class NuGraph3(LightningModule):
             nexus_geometry=args.nexus_geometry,
             nexus_vertex=args.nexus_vertex,
             nexus_direction=args.nexus_direction,
+            nexus_vertex_refine=args.nexus_vertex_refine,
+            nexus_filter_weights={c: float(w) for c, w in (s.split("=") for s in args.nexus_filter_weight)}
+            if args.nexus_filter_weight else None,
             nexus_charge=args.nexus_charge,
             nexus_knn_shape=args.nexus_knn_shape,
             nexus_edge_pos_weight=args.nexus_edge_pos_weight,
