@@ -28,6 +28,7 @@ jobs:
         activate-environment: nugraph-cpu
         auto-update-conda: true
         auto-activate: false
+        conda-remove-defaults: true
     - name: getting date
       id: get-date
       run: echo "today=$(/bin/date -u '+%Y%m%d')" >> $GITHUB_OUTPUT
