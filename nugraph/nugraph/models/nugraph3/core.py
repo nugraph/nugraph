@@ -13,7 +13,8 @@ class NuGraphBlock(MessagePassing): # pylint: disable=abstract-method
     the source and target node features, and then applies those weights to
     the source node features in order to form messages. These messages are
     then aggregated into the target nodes using softmax aggregation, and
-    then fed into a two-layer MLP to generate updated target node features.
+    then fed into a two-layer MLP followed by layer normalization to generate
+    updated target node features.
 
     Args:
         source_features: Number of source node input features
@@ -33,6 +34,8 @@ class NuGraphBlock(MessagePassing): # pylint: disable=abstract-method
             nn.Mish(),
             nn.Linear(out_features, out_features),
             nn.Mish())
+
+        self.norm = nn.LayerNorm(out_features)
 
     def forward(self, x: T, edge_index: T) -> T: # pylint: disable=arguments-differ
         """
@@ -72,7 +75,7 @@ class NuGraphBlock(MessagePassing): # pylint: disable=abstract-method
         """
         if isinstance(x, tuple):
             _, x = x
-        return self.net(torch.cat((aggr_out, x), dim=1))
+        return self.norm(self.net(torch.cat((aggr_out, x), dim=1)))
 
 class NuGraphCore(nn.Module):
     """
