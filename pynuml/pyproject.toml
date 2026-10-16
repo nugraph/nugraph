@@ -27,3 +27,8 @@ dynamic = ["version", "description"]
 
 [project.urls]
 Home = "https://github.com/nugraph/pynuml"
+
+[pytest]
+minversion = "9.0"
+addopts = ["-ra", "-q", "-v"]
+testpaths = ["tests"]
