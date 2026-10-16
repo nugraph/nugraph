@@ -8,7 +8,10 @@ whoever fixes the bug removes the marker in the same PR.
 import importlib.util
 import pathlib
 
+import h5py
+import pandas as pd
 import pytest
+import pytorch_lightning as pl
 import torch
 from torch_geometric.data import Batch
 
@@ -19,7 +22,7 @@ from nugraph.util import FeatureExtension, InputNorm, ObjConLoss
 from pynuml.data import NuGraphData
 
 from synthetic import (EVENT_CLASSES, IN_FEATURES, PLANES, SEMANTIC_CLASSES,
-                       make_batch)
+                       make_batch, make_event)
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 
@@ -244,6 +247,47 @@ def test_train_passes_precision_to_trainer(monkeypatch, tmp_path):
 def test_train_accepts_fp16_precision(monkeypatch, tmp_path):
     kwargs = trainer_kwargs(monkeypatch, tmp_path, ["--precision", "16-mixed"])
     assert kwargs.get("precision") == "16-mixed"
+
+
+def write_graph_file(path: pathlib.Path, n_events: int = 4) -> None:
+    """Write synthetic events to a NuGraph graph file: one test event, one validation event"""
+    names = [f"r0_sr0_evt{i}" for i in range(n_events)]
+    with h5py.File(path, "w") as f:
+        for i, name in enumerate(names):
+            data = make_event(i)
+            data["metadata"].run = 0
+            data["metadata"].subrun = 0
+            data["metadata"].event = i
+            data.save(f, f"dataset/{name}")
+        f["planes"] = list(PLANES)
+        f["semantic_classes"] = list(SEMANTIC_CLASSES)
+        f["event_classes"] = list(EVENT_CLASSES)
+        f["gen"] = torch.tensor([2])
+        f["samples/train"] = names[2:]
+        f["samples/validation"] = names[1:2]
+        f["samples/test"] = names[:1]
+        f["datasize/train"] = [1] * (n_events - 2)
+
+
+def test_test_script_runs(monkeypatch, tmp_path):
+    """scripts/test.py runs inference from a checkpoint and writes a hit table"""
+    write_graph_file(tmp_path / "graphs.h5")
+    model = build_model()
+    trainer = pl.Trainer(accelerator="cpu", logger=False, max_epochs=0)
+    trainer.strategy.connect(model)
+    trainer.save_checkpoint(tmp_path / "model.ckpt")
+
+    script = load_script("test")
+    monkeypatch.setattr("sys.argv", [
+        "test.py", "--checkpoint", str(tmp_path / "model.ckpt"),
+        "--data-path", str(tmp_path / "graphs.h5"),
+        "--outfile", str(tmp_path / "out.h5"), "--num-workers", "0"])
+    script.test(script.configure())
+
+    df = pd.read_hdf(tmp_path / "out.h5", "hits")
+    assert len(df) == make_event(0)["hit"].id.numel()
+    assert (df.event == 0).all()
+    assert {"x_semantic", "x_filter", "i", *SEMANTIC_CLASSES} <= set(df.columns)
 
 
 @bug("BalanceSampler", "with balance_frac=0 the loop variable idx is never defined")
