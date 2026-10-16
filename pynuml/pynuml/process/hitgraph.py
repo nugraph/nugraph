@@ -225,10 +225,10 @@ class HitGraphProducer(ProcessorBase):
             # TODO: draw edges from particles to their parents
 
             # draw edges from hits to particle instances
-            edges = hits[["hit_id", "instance_g4_id"]].rename(columns={"instance_g4_id": "g4_id"})
+            edges = hits[["index_2d", "instance_g4_id"]].rename(columns={"instance_g4_id": "g4_id"})
             edges = edges.dropna()
             edges = edges.merge(particles[["g4_id"]].reset_index(names="particle_id"), on="g4_id")
-            edges = torch.tensor(edges[["hit_id", "particle_id"]].values.transpose()).long()
+            edges = torch.tensor(edges[["index_2d", "particle_id"]].values.transpose()).long()
             data["hit", "cluster-truth", "particle-truth"].edge_index = edges
 
             if self.filter_true_particles:
