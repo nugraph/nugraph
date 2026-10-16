@@ -30,5 +30,5 @@ Home = "https://github.com/nugraph/pynuml"
 
 [pytest]
 minversion = "9.0"
-addopts = ["-ra", "-q"]
+addopts = ["-ra", "-q", "-v"]
 testpaths = ["tests"]
