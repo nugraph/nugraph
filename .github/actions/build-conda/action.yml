@@ -5,7 +5,7 @@ runs:
   steps:
 
   - name: initializing conda environment
-    uses: conda-incubator/setup-miniconda@v3
+    uses: conda-incubator/setup-miniconda@v4
     with:
       miniforge-version: latest
       activate-environment: nugraph-cpu
@@ -13,7 +13,7 @@ runs:
       auto-activate-base: false
 
   - name: caching conda packages
-    uses: actions/cache@v3
+    uses: actions/cache@v6
     with:
       path: ${{ env.CONDA }}/pkgs
       key:
