@@ -28,3 +28,8 @@ dynamic = ["version", "description"]
 
 [project.urls]
 Home = "https://github.com/vhewes/nugraph"
+
+[tool.pytest]
+minversion = "9.0"
+addopts = ["-ra", "-q"]
+testpaths = ["tests"]
