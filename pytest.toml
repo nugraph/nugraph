@@ -1,0 +1,7 @@
+[pytest]
+minversion = "9.0"
+addopts = ["-ra", "-q", "-v"]
+testpaths = [
+    "pynuml/tests",
+    "nugraph/tests",
+]
