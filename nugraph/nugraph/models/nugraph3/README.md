@@ -324,3 +324,31 @@ radial edges near it with suspicion. The recipe uses `vote`.
 **Evidence.** Not tested on its own: these features were always trained
 together with the votes and directions of 11, so see that section. Off by
 default; no new parameters without the flag.
+
+## 11 Spacepoint vertex votes and directions
+
+**What.**
+- `--nexus-vertex vote`: each spacepoint regresses its offset to the
+  vertex; the event vertex is the mode of the votes. The vote head also sees
+  the interaction embedding.
+- `--nexus-direction`: each spacepoint regresses its local particle
+  direction (truth: principal axis of same-particle neighbours, added to
+  `SpacePointGraph`); the edge classifier sees the direction alignment along
+  each edge. The direction head is an MLP that also sees the neighbourhood
+  shape.
+
+**Evidence** (kNN graph, strict labels):
+
+| | votes + directions | without | |
+|---|---|---|---|
+| 3 epochs, 2 GPUs: grouping ARI | 0.447 | 0.422 | |
+| 3 epochs: wrong edges kept per event | 12.2 | 16.2 | -25% |
+| 6 epochs: grouping ARI | 0.495 | 0.482 | |
+| 6 epochs: wrong edges kept per event | 9.2 | 10.7 | -14% |
+
+The 3-epoch gain (+0.025) is above seed noise; the 6-epoch gain (+0.013) is
+about twice it. Wrong edges near the vertex fall most (share within 5 cm of
+the vertex 50% -> 40% at 3 epochs). Earlier 5,000-step fine-tunes of the same
+heads showed no gain, so they need full training. Vertex from the votes and
+lines, 6 epochs: 4.0 cm median (2.0 cm in events with a spacepoint within
+5 cm of the vertex). Section 21 refines it.
