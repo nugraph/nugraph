@@ -552,3 +552,33 @@ epochs without NaN. It beat the 12-epoch runs on every metric (accuracy 95.8%
 vs 94.9%, ARI 0.827 vs 0.81), but that comparison is confounded: the gain
 comes with 40 epochs of training instead of 12, not from clipping. The effect
 of clipping on its own was not tested; here it only let a diverged run finish.
+
+## 21 Nexus vertex refinement
+
+**What.** `--nexus-vertex-refine` (needs `--nexus-vertex vote
+--nexus-direction`):
+- **Fit, no gradients:** the vertex is the mode of the spacepoint votes
+  (mean shift, 10 then 3 cm), refined by an iteratively reweighted
+  least-squares fit to the direction lines and votes of nearby kept
+  spacepoints (`NexusDecoder.vote_fit`).
+- **Learned correction:** attention over the spacepoints within 20 cm of the
+  fit gives a weight and a correction per spacepoint, zero-initialised so
+  training starts at the fit, trained with a log-cosh loss. Outputs
+  `evt.v_fit` and `evt.v_refine`.
+
+**Evidence.**
+
+| Run | refined median | 68% | within 1 cm |
+|---|---|---|---|
+| semantic-feedback recipe + refine | 1.5 cm | 10.6 cm | 41% |
+| residual recipe + refine | 1.8 cm | 10.7 cm | 41% |
+| vote fit alone | 3.6-4.1 cm | 15-19 cm | — |
+
+Grouping and semantics are unchanged (ARI 0.724, AL 0.800 vs 0.721, 0.799), so
+the refinement costs nothing elsewhere. With the full recipe at 12 epochs the
+68% width is 1.9-2.0 cm; failures beyond 5 cm on contained νμ CC fall to
+7.4-8.2%. On a Pandora-like subset (contained νμ CC with a visible muon) the
+2-epoch refined 68% width is 1.4-1.7 cm; Pandora quotes 0.52 cm on a CC π0
+sample (arXiv:1708.03135), so the core is still ~3x wider.
+
+**Checkpoint compatibility.** `refine_net.*` exists only with the flag.
