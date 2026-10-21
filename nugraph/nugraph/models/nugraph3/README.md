@@ -478,3 +478,12 @@ flag. It needs `--semantic` and `--nexus`.
 
 **Evidence.** See 18: 16-mixed at batch 32 is part of the 1.6x speed-up
 with no measurable loss.
+
+## 17 Multi-GPU training outside SLURM
+
+**What.** `--device` takes several GPU indices. The SLURM environment
+plugin is added only under SLURM, and DDP tolerates parameters that do not
+contribute to a loss (optional heads).
+
+**Evidence.** Used for the 3-GPU 40-epoch runs; those runs also found the
+sampler bug fixed in 20.
