@@ -624,3 +624,27 @@ at 2 epochs, two seeds each: ARI, AL, accuracy and vertex equal, containment
 
 **Checkpoint compatibility.** Changes the encoder input width, so those
 models need the same flag and file.
+
+## 24 Own spacepoint candidates from hit crossings
+
+**What.** `--sp-build FILE`: `SpacePointBuilder` replaces the file's
+spacepoints with candidates built from the hits. Hits on two planes whose
+drift coordinates agree are crossed, and each crossing's 3D point is fitted
+from the measurement axes; a crossing with a matching third-plane hit is a
+triplet. Candidates are the triplets plus the doublets of hits no triplet
+uses, capped per event. They replace `data["sp"]` and its links before the
+graph is built, so truth labels, features and the ghost filter work unchanged.
+The spacepoint-to-event links are remade (before that, events with fewer
+candidates than file spacepoints crashed training). Options
+`--sp-build-window` 0.3 cm, `--sp-build-tolerance` 0.45 cm,
+`--sp-build-cap` 20000; the geometry file needs an `active_volume`.
+
+**Why.** With the file's spacepoints, 18.5% of hits are on no spacepoint,
+so the 3D stage cannot group them.
+
+**Evidence.** On its own, without the ranking of 25: hit containment @0.9
+0.617 vs 0.564 / 0.558 for the file's spacepoints, hits on no spacepoint
+7.9% vs 18.5%, but 3.2x more spacepoints and 3.5x slower training.
+
+**Compatibility.** A data option: evaluate a model with the same
+`--sp-build` options it was trained with.

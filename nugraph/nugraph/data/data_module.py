@@ -2,6 +2,7 @@
 from argparse import ArgumentParser
 import warnings
 
+import json
 import os
 import sys
 import h5py
@@ -13,7 +14,7 @@ from torch_geometric.transforms import Compose
 from pytorch_lightning import LightningDataModule
 
 from ..data import NuGraphDataset, BalanceSampler
-from ..util import FeatureExtension, PositionFeatures, SpacePointGraph, NexusFeatures
+from ..util import FeatureExtension, PositionFeatures, SpacePointGraph, NexusFeatures, SpacePointBuilder
 
 DEFAULT_DATA = ("$NUGRAPH_DATA/uboone-opendata/"
                 "uboone-opendata-19be46d89d0f22f5a78641d724c1fedd.gnn.h5")
@@ -37,7 +38,11 @@ class NuGraphDataModule(LightningDataModule):
                  sp_gpu: bool = False,
                  sp_charge: bool = False,
                  sp_merge_delta: float = 0.,
-                 sp_extra_knn: int = 0):
+                 sp_extra_knn: int = 0,
+                 sp_build: str = None,
+                 sp_build_window: float = 0.3,
+                 sp_build_tolerance: float = 0.45,
+                 sp_build_cap: int = 20000):
         super().__init__()
 
         # for this HDF5 dataloader, worker processes slow things down
@@ -65,6 +70,7 @@ class NuGraphDataModule(LightningDataModule):
         self.sp_charge = sp_charge
         self.sp_merge_delta = sp_merge_delta
         self.sp_extra_knn = sp_extra_knn
+        self.sp_build = sp_build
 
         with h5py.File(self.filename) as f:
 
@@ -117,6 +123,14 @@ class NuGraphDataModule(LightningDataModule):
             transform.append(model.transform(planes=self.planes))
         if self.featext:
             transform.append(FeatureExtension(planes=self.planes))
+        # our own spacepoint candidates in place of the file's
+        if sp_build:
+            from ..models.nugraph3.nugraph3 import plane_geometry  # pylint: disable=import-outside-toplevel
+            with open(sp_build) as f:
+                volume = json.load(f)["active_volume"]
+            transform.append(SpacePointBuilder(plane_geometry(sp_build, self.planes), volume,
+                                               window=sp_build_window, tolerance=sp_build_tolerance,
+                                               cap=sp_build_cap))
         # the spacepoint graph is built here, or on each batch once it is on
         # the training device
         self.sp_transform = None
@@ -279,4 +293,13 @@ class NuGraphDataModule(LightningDataModule):
                           help='Label delta rays shorter than this (cm) as their parent particle')
         data.add_argument('--sp-extra-knn', type=int, default=0,
                           help='Add this many nearest-neighbour edges per spacepoint to Gabriel graphs')
+        data.add_argument('--sp-build', type=str, default=None, metavar='FILE',
+                          help='Replace the spacepoints with candidates built from hit crossings, using '
+                               'this geometry file (as for --plane-geometry, with an active_volume)')
+        data.add_argument('--sp-build-window', type=float, default=0.3,
+                          help='Largest drift-coordinate difference between a candidate\'s hits (cm)')
+        data.add_argument('--sp-build-tolerance', type=float, default=0.45,
+                          help='Largest third-plane wire-coordinate residual of a triplet (cm)')
+        data.add_argument('--sp-build-cap', type=int, default=20000,
+                          help='Largest number of spacepoint candidates per event')
         return parser
