@@ -104,12 +104,23 @@ class NuGraphDataModule(LightningDataModule):
         self.test_dataset = NuGraphDataset(self.filename, test_samples, transform)
 
     @staticmethod
-    def generate_samples(data_path: str):
+    def generate_samples(data_path: str, seed: int = 0):
+        """
+        Draw train, validation and test splits and store them in the file
+
+        Files that already hold splits keep them until this is run again.
+
+        Args:
+            data_path: Graph file to split
+            seed: Random seed, so the same file always gives the same splits
+        """
         with h5py.File(data_path) as f:
             samples = list(f['dataset'].keys())
         split = int(0.05 * len(samples))
         splits = [ len(samples)-(2*split), split, split ]
-        train, val, test = torch.utils.data.random_split(samples, splits)
+        generator = torch.Generator().manual_seed(seed)
+        train, val, test = torch.utils.data.random_split(samples, splits,
+                                                         generator=generator)
 
         with h5py.File(data_path, "r+") as f:
             for name in [ 'train', 'validation', 'test' ]:
