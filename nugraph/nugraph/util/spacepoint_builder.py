@@ -19,8 +19,14 @@ class SpacePointBuilder(BaseTransform):
     within tolerance, and whose drift coordinate is in window, is a triplet,
     refitted from all three hits. Candidates are the triplets, plus the
     two-plane crossings of hits that no triplet uses, which is the provided
-    MicroBooNE product's mix. If there are more than cap, the triplets are kept
-    first, then the doublets with the closest drift coordinates.
+    MicroBooNE product's mix. With best, a candidate is kept only when it is
+    among the best best candidates of at least one of its hits, scoring
+    triplets by wire residual / tolerance + drift spread / window and doublets
+    by 1 + drift difference / window (lower is better): a hit that spans many
+    ticks, or a track parallel to the wire planes, otherwise gives many
+    overlapping candidates of one particle. If there are more than cap, the
+    triplets are kept first, then the doublets with the closest drift
+    coordinates.
 
     The candidates replace data["sp"], the hit-to-spacepoint links and, when
     present, the spacepoint-to-event links, so the
@@ -35,15 +41,18 @@ class SpacePointBuilder(BaseTransform):
         window: Largest drift-coordinate difference between a candidate's hits, cm
         tolerance: Largest third-plane wire-coordinate residual of a triplet, cm
         cap: Largest number of candidates per event
+        best: Candidates kept per hit (0 keeps all)
     """
     def __init__(self, geometry: list[list[float]], volume: list[list[float]],
-                 window: float = 0.3, tolerance: float = 0.45, cap: int = 20000):
+                 window: float = 0.3, tolerance: float = 0.45, cap: int = 20000,
+                 best: int = 0):
         super().__init__()
         self.geometry = torch.tensor(geometry, dtype=torch.float64)
         self.volume = torch.tensor(volume, dtype=torch.float64)
         self.window = window
         self.tolerance = tolerance
         self.cap = cap
+        self.best = best
 
     def measurements(self, data: NuGraphData) -> tuple:
         """Each hit's two measurement directions, values from the origin and weights"""
@@ -74,6 +83,21 @@ class SpacePointBuilder(BaseTransform):
         start = torch.repeat_interleave(lo - torch.cumsum(hi - lo, 0) + (hi - lo), hi - lo)
         b = o[torch.arange(len(a)) + start] if len(a) else a
         return i[a], j[b]
+
+    def keep_best(self, cands: list[torch.Tensor], scores: list[torch.Tensor]) -> list[torch.Tensor]:
+        """Masks of the candidates (rows of hit indices) among the best of at least one of their hits"""
+        n = [len(c) for c in cands]
+        cand = torch.cat([torch.arange(len(c)).repeat_interleave(c.size(1)) + sum(n[:i])
+                          for i, c in enumerate(cands)])
+        hit = torch.cat([c.flatten() for c in cands])
+        score = torch.cat(scores)[cand]
+        o = score.argsort(stable=True)
+        o = o[hit[o].argsort(stable=True)]
+        hs = hit[o]
+        rank = torch.arange(len(hs)) - torch.searchsorted(hs, hs)
+        keep = torch.zeros(sum(n), dtype=torch.bool)
+        keep[cand[o][rank < self.best]] = True
+        return list(keep.split(n))
 
     def inside(self, pos: torch.Tensor) -> torch.Tensor:
         return ((pos >= self.volume[0]) & (pos <= self.volume[1])).all(dim=1)
@@ -110,12 +134,20 @@ class SpacePointBuilder(BaseTransform):
             t = (drift[pq[k, 0]] + drift[pq[k, 1]]) / 2
             ok = (drift[h3] - t).abs() < self.window
             triplets = torch.cat((pq[k[ok]], h3[ok, None]), dim=1)
+            residual = (pred[k] - vals[h3, 0]).abs()[ok]
 
         # doublets of hits no triplet uses, nearest drift agreement first
         used = torch.zeros(len(plane), dtype=torch.bool)
         used[triplets.flatten()] = True
         doublets = torch.cat(doublets) if doublets else torch.zeros(0, 2, dtype=torch.long)
         doublets = doublets[~used[doublets].any(dim=1)]
+        if self.best and len(triplets) + len(doublets):
+            d = drift[triplets]
+            t_score = residual / self.tolerance + (d.max(dim=1).values - d.min(dim=1).values) / self.window \
+                if len(triplets) else drift.new_zeros(0)
+            d_score = 1 + (drift[doublets[:, 0]] - drift[doublets[:, 1]]).abs() / self.window
+            kt, kd = self.keep_best([triplets, doublets], [t_score, d_score])
+            triplets, doublets = triplets[kt], doublets[kd]
         doublets = doublets[(drift[doublets[:, 0]] - drift[doublets[:, 1]]).abs().argsort()]
         n_dbl = max(0, min(len(doublets), self.cap - len(triplets)))
         triplets, doublets = triplets[:self.cap], doublets[:n_dbl]

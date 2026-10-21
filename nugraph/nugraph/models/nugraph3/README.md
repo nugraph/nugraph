@@ -648,3 +648,34 @@ so the 3D stage cannot group them.
 
 **Compatibility.** A data option: evaluate a model with the same
 `--sp-build` options it was trained with.
+
+## 25 Best-K spacepoint candidates per hit
+
+**What.** `--sp-build-best K` keeps a candidate only if it is among the K
+best of at least one of its hits (triplets ranked by wire residual and drift
+spread, doublets by drift difference). K = 2 gives ~1,300 candidates per event
+instead of ~5,100; coverage of labelled hits by pure candidates goes from
+0.905 to 0.896.
+
+**Evidence** (2 epochs, hit-level evaluation):
+
+| | best 2 (2 seeds) | all candidates | file's spacepoints |
+|---|---|---|---|
+| hit containment @0.9 | 0.657 / 0.661 | 0.617 | 0.564 / 0.558 |
+| hits on no spacepoint | 4.7% | 7.9% | 18.5% |
+| refined vertex, 68% | 5.6 cm | — | 8.2 cm |
+| background hits per event | 12 | — | 10 |
+| pieces per particle | ~1.97 | — | ~1.75 |
+
+At equal pieces per particle (threshold sweep) it still leads by +0.08-0.09
+containment, with about 20% more background. Training speed returns to
+about that with the file's spacepoints (1.72 it/s). Spacepoint-level ARI and AL are not comparable across spacepoint
+sets, so they are not quoted.
+
+**The full recipe, 12 epochs, two seeds each:** every recipe flag above
+(full12, full12s2) against the same recipe on the file's spacepoints, that is
+without `--sp-build` and `--sp-build-best 2` (stackhw12, stackhw12s2; both
+arms use `hadron=3`). Hit containment @0.9 0.692 / 0.693 vs 0.593 / 0.592,
+accuracy 94.9% vs 94.0%, vertex 68% width 1.9-2.0 vs 2.6-2.9 cm, background
+hits per event 8.4 / 9.3 vs 7.3 / 7.4. Only the spacepoints differ, so this is
+a clean comparison.
