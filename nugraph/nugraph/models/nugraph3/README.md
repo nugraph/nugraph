@@ -309,3 +309,18 @@ new parameters, so existing checkpoints load unchanged.
 All 3D edges give ARI 0.104 and perfect edges 0.669, so the 3-epoch run closes
 about 57% of that gap. Training length dominates: the same setup at 6 epochs
 gives 0.478.
+
+## 10 Vertex-relative edge features
+
+**What.** `--nexus-vertex pred|vote|true`: the edge classifier also sees the
+log distance of both spacepoints from a vertex and |cos| between the edge and
+the radial direction. `pred` uses the vertex head, `vote` the spacepoint votes
+of 11, `true` is a diagnostic only.
+
+**How it fits.** Near the vertex, edges between different particles look like
+edges along one track. Knowing where the vertex is lets the classifier treat
+radial edges near it with suspicion. The recipe uses `vote`.
+
+**Evidence.** Not tested on its own: these features were always trained
+together with the votes and directions of 11, so see that section. Off by
+default; no new parameters without the flag.
