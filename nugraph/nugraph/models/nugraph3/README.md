@@ -487,3 +487,35 @@ contribute to a loss (optional heads).
 
 **Evidence.** Used for the 3-GPU 40-epoch runs; those runs also found the
 sampler bug fixed in 20.
+
+## 18 Fewer host syncs and a compiled stub kernel
+
+**What.** Speed changes with unchanged results:
+- training metrics are computed only on steps the logger keeps
+  (torchmetrics calls make the CPU wait for the GPU);
+- the GPU graph build reads chunk bounds back once per batch and selects
+  edges once (graphs identical edge for edge);
+- class-balanced ghost weights and the direction loss weight entries by 0
+  instead of selecting; `RecallLoss` counts per-class recall with
+  `index_add` (losses and gradients unchanged to <1e-6);
+- Hough stub votes are summed in one `torch.compile` kernel in fp32 without
+  storing the ~840 MB vote tensor: graph build 61 instead of 98 ms per batch
+  of 16.
+
+**Evidence.** Lightning bench 3.49 -> 4.73 steps/s (+35%). With batch 32 and
+16-mixed (16), the semantic-feedback recipe trains 2 epochs in 2h17 instead of
+~3h45 (1.6x) with no measurable loss:
+
+| | AL | components ARI | accuracy | Michel recall |
+|---|---|---|---|---|
+| new code, batch 32, fp16 | 0.808 | 0.722 | 91.1% | 69.8% |
+| old code, 3 seeds | 0.799-0.808 | 0.721-0.723 | 91.1-91.4% | 67.6-69.4% |
+
+**Behaviour change.** The fp32 stub votes pick slightly different local
+maxima than the old fp16 path: +13% stub edges (74% same-particle, like the
+unchanged edges), and stub counts change on 25% of spacepoints. A 2-epoch run
+matched the seeds on every metric. A model trained on old graphs sees slightly
+different stub edges.
+
+**Notes.** The compiled kernel needs Triton (and CUDA 12 headers on hosts
+without a toolkit); the CPU path is not compiled.
