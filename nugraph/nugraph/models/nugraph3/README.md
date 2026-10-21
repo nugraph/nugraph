@@ -379,3 +379,35 @@ Its main remaining loss is same-particle edges that are dropped.
 
 **Compatibility.** A data option; the default stays `knn`. Graph
 construction is deterministic given the spacepoints.
+
+## 13 Residual message-passing blocks
+
+**What.** Each `NuGraphBlock` can add its update to the target features
+instead of replacing them. The update MLP drops its final activation and its
+last layer starts at zero, so a new residual block passes features through
+unchanged until it trains. `train.py --seed` (default 1, the old fixed seed)
+allows repeat runs.
+
+**Flags and defaults.** The **training CLI turns residuals on**;
+`--no-residual` turns them off. The constructor default stays
+`residual=False`, so code that builds the model directly is unchanged.
+
+**Checkpoint compatibility.** Old checkpoints load (constructor default off,
+same parameter names). A residual block has one layer fewer in `net`, so
+residual and non-residual checkpoints do not load into each other.
+
+**Evidence** (2 epochs, Gabriel+stubs, votes and directions; plain vs
+residual):
+
+| | plain (vd2) | residual (res2) |
+|---|---|---|
+| grouping ARI @0.7 | 0.608 | 0.704 |
+| edge AUC / ghost AUC | 0.975 / 0.982 | 0.985 / 0.989 |
+| hit accuracy | 0.873 | 0.899 |
+| Michel recall | 0.45 | 0.60 |
+| vertex median (votes + lines) | 7.9 cm | 4.2 cm |
+
+Three seeds give 0.704, 0.704 and 0.710, so the +0.10 gain is far above seed
+noise (~0.006). LayerNorm on block outputs (Andrii's #180) was tested with and
+without residuals: LayerNorm alone 0.645, residual + LayerNorm 0.681, so
+LayerNorm costs ~0.02 on top of residuals and is not included.
