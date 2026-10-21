@@ -59,4 +59,5 @@ class BalanceSampler(Sampler):
         return iter(indices)
 
     def __len__(self):
-        return len(self.datasize)
+        # only whole batches are yielded
+        return len(self.datasize) // self.batch_size * self.batch_size

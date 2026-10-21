@@ -533,3 +533,22 @@ loss scale restored in `on_train_batch_end`.
 the 16-mixed fix after a crash after 79 skips. Skipped batches (~1.2% at batch
 32 over 12 epochs) showed no bias against large events. The GPU-only 16-mixed
 scaler test is skipped on CPU.
+
+## 20 BalanceSampler length fix and --gradient-clip
+
+**What.**
+- `BalanceSampler` yields only whole batches but reported the dataset size.
+  Lightning's distributed wrapper splits the reported length between GPUs, so
+  multi-GPU runs died in the first epoch with an `IndexError`. It now reports
+  what it yields (removes a Phase 0 `xfail`).
+- `--gradient-clip N` clips the total gradient norm. Off by default.
+
+**Evidence.** A 3-GPU 40-epoch run died in epoch 1 on the sampler length.
+Another 3-GPU run (lr 0.0024) diverged to NaN at epoch 19 of 40 after loss
+spikes; at its last finite checkpoint the gradient norm was ~21 (median) and
+48 (largest of 30 batches), so it resumed with `--gradient-clip 100`, which
+only cuts spikes. The resumed run (full40r, 1 seed) then finished all 40
+epochs without NaN. It beat the 12-epoch runs on every metric (accuracy 95.8%
+vs 94.9%, ARI 0.827 vs 0.81), but that comparison is confounded: the gain
+comes with 40 epochs of training instead of 12, not from clipping. The effect
+of clipping on its own was not tested; here it only let a diverged run finish.
