@@ -605,3 +605,22 @@ lower (0.513 / 0.518 vs 0.525). Accuracy and vertex are unchanged.
 
 **Checkpoint compatibility.** The weights are a non-persistent buffer set
 from the hyperparameters.
+
+## 23 Plane geometry encoding
+
+**What.** `--plane-geometry FILE` encodes each hit's plane by its readout
+geometry instead of a plane index: each plane's two 3D measurement axes (wire
+coordinate and drift for a wire TPC), their origins and resolutions, read from
+a JSON file. `scripts/geometry/microboone.json` is included;
+`--geometry-columns` names the input columns.
+
+**Why.** A plane index means a different plane in every detector, while
+geometry is shared, which matters for training across detectors (DUNE).
+24 reuses the geometry file.
+
+**Evidence.** Ties the same recipe without `--plane-geometry` on MicroBooNE
+at 2 epochs, two seeds each: ARI, AL, accuracy and vertex equal, containment
+@0.9 -0.012.
+
+**Checkpoint compatibility.** Changes the encoder input width, so those
+models need the same flag and file.
