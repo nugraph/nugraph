@@ -43,10 +43,13 @@ def configure():
     parser.add_argument('--profiler', type=str, default=None,
                         help='Enable requested profiler')
     parser.add_argument('--precision', type=str, default='32',
-                        choices=('32', 'bf16-mixed'),
-                        help='Precision for training (default: 32, or bf16-mixed for AMP)')
+                        choices=('32', 'bf16-mixed', '16-mixed'),
+                        help='Precision for training (default: 32, or bf16-mixed or 16-mixed '
+                             'for AMP; 16-mixed on GPUs without bf16, e.g. V100)')
     parser.add_argument('--seed', type=int, default=1,
                         help='Random seed for weight initialisation and data shuffling')
+    parser.add_argument('--save-every-epoch', action='store_true',
+                        help='Keep a checkpoint at the end of every epoch')
     parser = Data.add_data_args(parser)
     parser = Model.add_model_args(parser)
     return parser.parse_args(), Model
@@ -104,6 +107,10 @@ def train(args, Model):
         callbacks.append(LearningRateMonitor(logging_interval='step'))
     if isinstance(logger, pl.loggers.WandbLogger) and not args.offline:
         callbacks.append(ModelCheckpoint(monitor="loss/val", mode="min"))
+    if args.save_every_epoch:
+        callbacks.append(ModelCheckpoint(filename="epoch={epoch:02d}-step={step}",
+                                         auto_insert_metric_name=False,
+                                         save_top_k=-1, every_n_epochs=1))
 
     # configure plugins
     plugins = [
@@ -120,6 +127,7 @@ def train(args, Model):
         limit_test_batches=args.limit_test_batches,
         logger=logger,
         profiler=args.profiler,
+        precision=args.precision,
         callbacks=callbacks,
         plugins=plugins,
     )
