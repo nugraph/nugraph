@@ -90,3 +90,38 @@ def test_checkpoint_without_nexus_head_unchanged():
     model = NuGraph3(in_features=IN_FEATURES, planes=PLANES,
                      semantic_classes=SEMANTIC_CLASSES, event_classes=EVENT_CLASSES)
     assert not any("nexus_net" in k or "nexus_decoder" in k for k in model.state_dict())
+
+
+def test_vertex_features():
+    """Radial edges have |cos| 1 and tangential edges 0; distances are measured from the vertex"""
+    from pynuml.data import NuGraphData # pylint: disable=import-outside-toplevel
+    from nugraph.models.nugraph3.decoders import NexusDecoder # pylint: disable=import-outside-toplevel
+    data = NuGraphData()
+    data["sp"].pos = torch.tensor([[10., 0., 0.], [20., 0., 0.], [10., -5., 0.], [10., 5., 0.]])
+    data["evt"].y_vtx = torch.zeros(1, 3)
+    i, j = torch.tensor([1, 3]), torch.tensor([0, 2]) # radial edge, then tangential edge
+    dpos = data["sp"].pos[i] - data["sp"].pos[j]
+    r_i, r_j, cos = NexusDecoder(4, vertex="true").vertex_features(data, i, j, dpos)
+    torch.testing.assert_close(r_i.squeeze(1), torch.tensor([20., 125. ** 0.5]).log1p())
+    torch.testing.assert_close(r_j.squeeze(1), torch.tensor([10., 125. ** 0.5]).log1p())
+    torch.testing.assert_close(cos.squeeze(1), torch.tensor([1., 0.]))
+
+
+def test_nexus_vertex_training_step():
+    """Vertex-relative edge features train with the predicted or the true vertex"""
+    for vertex, vertex_head in (("pred", True), ("true", False)):
+        model = nexus_model(nexus_vertex=vertex, vertex_head=vertex_head)
+        model.train()
+        loss, _ = model(nexus_batch(0, 1), stage="train")
+        loss.backward()
+        assert torch.isfinite(loss)
+        assert model.nexus_decoder.edge_net[0].in_features == 2 * 32 + 7
+
+
+def test_nexus_vertex_pred_requires_vertex_head():
+    """Using the predicted vertex without the vertex head is an error"""
+    try:
+        nexus_model(nexus_vertex="pred")
+    except RuntimeError:
+        return
+    raise AssertionError("expected a RuntimeError")
