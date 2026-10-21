@@ -352,3 +352,30 @@ the vertex 50% -> 40% at 3 epochs). Earlier 5,000-step fine-tunes of the same
 heads showed no gain, so they need full training. Vertex from the votes and
 lines, 6 epochs: 4.0 cm median (2.0 cm in events with a spacepoint within
 5 cm of the vertex). Section 21 refines it.
+
+## 12 Gabriel+stubs spacepoint graph on the GPU
+
+**What.**
+- `--sp-graph gabriel`: Gabriel graph (an edge survives if no other
+  spacepoint lies in the sphere on it as diameter), searched among the
+  `--sp-candidates` (64) nearest neighbours.
+- `gabriel+stubs`: plus "stub" edges from a local Hough transform within
+  `--sp-stub-radius` (24 cm), which bridge gaps along straight segments.
+- `--sp-gpu`: builds the graph per batch on the training device
+  (`on_after_batch_transfer`) instead of in the dataset transform.
+- Data options `--sp-charge` (hit charge and width spacepoint features, used by
+  14), `--sp-merge-delta`, `--sp-extra-knn`.
+
+**Why.** kNN graphs miss the long edges that bridge gaps, so even perfect edge
+scores cannot group the particles well. Truth-level ceiling (perfect edge
+scores, strict labels): 0.962 for Gabriel+stubs vs 0.636 for kNN16.
+Trained, 2 epochs with votes and directions: grouping ARI 0.608 (thr 0.7) vs
+0.441 for kNN at 3 epochs and 0.494 at 6 epochs. The kNN runs trained longer,
+so this comparison favours kNN.
+
+The Gabriel graph keeps more cross-particle edges (39.1 wrong edges kept per
+event at 2 epochs), but only 5% of them within 5 cm of the vertex (kNN 30-40%).
+Its main remaining loss is same-particle edges that are dropped.
+
+**Compatibility.** A data option; the default stays `knn`. Graph
+construction is deterministic given the spacepoints.
