@@ -1,5 +1,6 @@
 """NuGraph3 model architecture"""
 import argparse
+import json
 import warnings
 
 import torch.cuda
@@ -19,6 +20,35 @@ from .decoders import (SemanticDecoder, FilterDecoder, EventDecoder, VertexDecod
 
 from ...data import H5DataModule
 from ...util import InputNorm
+
+def plane_geometry(path: str, planes: tuple[str]) -> list[list[float]]:
+    """
+    Read a --plane-geometry file: {"planes": [{"name": ..., "axes": [axis, axis]}, ...]}
+    in the data's plane order, each axis {"direction": [x, y, z], "origin": cm,
+    "resolution": cm}. Returns ten numbers per plane, as TPCEncoder takes them
+
+    Args:
+        path: Geometry file, or None
+        planes: Detector plane names
+    """
+    if not path:
+        return None
+    with open(path) as f:
+        views = json.load(f)["planes"]
+    if [v["name"] for v in views] != list(planes):
+        raise RuntimeError(f"{path} describes planes {[v['name'] for v in views]}, "
+                           f"but the data has {list(planes)}")
+    out = []
+    for v in views:
+        if len(v["axes"]) != 2:
+            raise RuntimeError(f"{path}: plane {v['name']} needs two axes, got {len(v['axes'])}")
+        row = []
+        for a in v["axes"]:
+            d = torch.tensor(a["direction"], dtype=torch.float)
+            row += (d / d.norm()).tolist() + [float(a["origin"]), float(a["resolution"])]
+        out.append(row)
+    return out
+
 
 class NuGraph3(LightningModule):
     """
@@ -47,6 +77,9 @@ class NuGraph3(LightningModule):
         spacepoint_head: Whether to enable spacepoint decoder
         nexus_head: Whether to enable nexus decoder and spacepoint graph message-passing
         nexus_in_features: Number of nexus node input features
+        plane_geometry: Per plane, in the order of planes, the two axes its hits measure
+            position along (see TPCEncoder)
+        geometry_columns: Input feature columns holding the two coordinates and the plane index
         nexus_geometry: Whether spacepoint messages see spacepoint displacements
         nexus_vertex: Vertex given to the nexus edge classifier ("pred", "vote" or "true")
         nexus_direction: Whether to regress spacepoint directions for the nexus edge classifier
@@ -95,6 +128,8 @@ class NuGraph3(LightningModule):
                  spacepoint_head: bool = False,
                  nexus_head: bool = False,
                  nexus_in_features: int = 0,
+                 plane_geometry: list[list[float]] = None,
+                 geometry_columns: tuple[int] = (0, 1, -1),
                  nexus_geometry: bool = False,
                  nexus_vertex: str = None,
                  nexus_direction: bool = False,
@@ -141,7 +176,7 @@ class NuGraph3(LightningModule):
         self.tpc_encoder = TPCEncoder(in_features, hit_features,
                                       nexus_features, interaction_features,
                                       beta_features, coord_features,
-                                      nexus_in_features)
+                                      nexus_in_features, plane_geometry, geometry_columns)
 
         self.core_net = NuGraphCore(hit_features,
                                     nexus_features,
@@ -404,6 +439,14 @@ class NuGraph3(LightningModule):
                            help='Number of message-passing iterations')
         model.add_argument('--in-feats', type=int, default=5,
                            help='Number of input node features')
+        model.add_argument("--plane-geometry", type=str, default=None, metavar="FILE",
+                           help="JSON file of each plane's two measurement axes (direction, origin, "
+                                "resolution); replaces the hit plane index with them, as in "
+                                "scripts/geometry/microboone.json")
+        model.add_argument("--geometry-columns", type=int, nargs=3, default=[0, 1, -1],
+                           metavar=("FIRST", "SECOND", "PLANE"),
+                           help="Input feature columns of the two coordinates and the plane index, for "
+                                "--plane-geometry (default 0 1 -1, the MicroBooNE open-data layout)")
         model.add_argument('--hit-feats', type=int, default=128,
                            help='Hidden dimensionality of hit convolutions')
         model.add_argument('--nexus-feats', type=int, default=32,
@@ -528,6 +571,8 @@ class NuGraph3(LightningModule):
             spacepoint_head=args.spacepoint,
             nexus_head=args.nexus,
             nexus_in_features=args.nexus_in_feats,
+            plane_geometry=plane_geometry(args.plane_geometry, nudata.planes),
+            geometry_columns=tuple(args.geometry_columns),
             nexus_geometry=args.nexus_geometry,
             nexus_vertex=args.nexus_vertex,
             nexus_direction=args.nexus_direction,
