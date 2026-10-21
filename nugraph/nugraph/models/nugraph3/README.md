@@ -247,3 +247,34 @@ in one split, same seed same split, different seed different split.
 **Evidence.** On the MicroBooNE test file no hit is invisible, so graphs are
 unchanged. Tests cover each fix; the old code fails them with label 7 and a
 `NameError`.
+
+## 08 Spacepoint graph with truth labels
+
+**What.** `nugraph.util.SpacePointGraph(k)` builds a 3D k-nearest-neighbour
+graph over spacepoints (`("sp", "sp3d", "sp")` edges, the kNN construction and
+edge name from @cerati's `feature/edge-features-nexus`). With hit truth
+present it labels:
+- `sp.y_instance`: the particle shared by the spacepoint's hits, else -1
+  (ghost, mixed or background);
+- edge `y`: 1 if both ends belong to the same particle.
+
+**Majority labels (default).** A three-hit spacepoint with two hits from one
+particle and an odd hit takes the majority particle. On 500 validation events
+the strict -1 spacepoints are: background 68%; odd hit from another particle
+16% (median 2.0 cm from the majority particle); odd diffuse hit 4% (1.2 cm);
+odd noise hit, true ghosts 9% (22 cm); no majority 3%. Majority labels left
+grouping unchanged in a 5,000-step fine-tune. `--no-sp-majority` (09) restores
+strict labels.
+
+**Why.** Oracle study, 2,000 events: perfect same-particle spacepoint edges,
+used as a candidate filter for particle formation, raise the nearest-particle
+ARI ceiling from 0.38 to 0.55 in events with three or more particles;
+unfiltered kNN edges do not help, so the edges need supervision. k = 8
+fragments trajectories; k = 16-32 is recommended.
+
+**On real data** (300 events): k = 16 gives 0.81 single-particle spacepoints,
+0.79 positive edges, 22k edges and 13.5 ms per event; k = 32 gives 0.81, 0.78,
+45k and 15.9 ms.
+
+Labels come from the hit truth already in the files, so no reprocessing is
+needed.
