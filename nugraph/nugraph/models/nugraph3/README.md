@@ -411,3 +411,29 @@ Three seeds give 0.704, 0.704 and 0.710, so the +0.10 gain is far above seed
 noise (~0.006). LayerNorm on block outputs (Andrii's #180) was tested with and
 without residuals: LayerNorm alone 0.645, residual + LayerNorm 0.681, so
 LayerNorm costs ~0.02 on top of residuals and is not included.
+
+## 14 Edge-classifier inputs and size
+
+**What.** Options for the spacepoint edge classifier, all off by default:
+- `--nexus-semantic`: first-pass semantic class probabilities at both
+  ends (needs `--semantic`);
+- `--nexus-balance-filter`: ghost-filter loss weighted by semantic class
+  frequency;
+- `--nexus-log-length`, `--nexus-stub-count` (needs `gabriel+stubs`);
+- `--nexus-edge-layers N`, `--nexus-edge-width W`: deeper or wider edge MLP;
+- also available, but no gain: `--nexus-charge` (needs `--sp-charge`),
+  `--nexus-knn-shape`, `--nexus-edge-pos-weight`.
+
+**Checkpoint compatibility.** With the defaults the edge MLP keeps its old
+layer layout, so old checkpoints load.
+
+**Evidence** (2 epochs, residual baseline):
+- Semantic inputs + balanced ghost loss, two seeds each: ghosts removed 0.877
+  vs 0.865, Michel recall 0.61-0.63 vs 0.59-0.60. The first seed also showed
+  +0.006 ARI, but the second seed did not reproduce it, so ARI is within noise.
+- Log length + stub count + 2x64 edge MLP: wrong edges kept per event 24.3
+  vs 28.7; ARI within noise. Wider spacepoint features (`--nexus-feats 64`, an
+  existing flag) add +0.02-0.03 ARI on two recipes.
+- Explicit charge inputs: for delta-ray vs same-track edges, the edge score
+  of a model trained with `--nexus-charge` has AUC 0.946, against 0.952
+  without, so `--nexus-charge` is not in the recipe.
