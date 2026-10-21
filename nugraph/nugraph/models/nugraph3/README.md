@@ -231,3 +231,19 @@ until the split is regenerated.
 
 **Evidence.** `test_data_module.py`: sizes 36/2/2 from 40 events, every event
 in one split, same seed same split, different seed different split.
+
+## 07 Labeller label(), invisible hits, labelling errors
+
+**What.** Three pynuml labeller fixes (Phase 0 bug 7):
+1. A labeller exception skips the event instead of stopping processing.
+   This is V Hewes's commit from `v/michel-filter-decoder`, with authorship kept.
+2. `label()` in StandardLabels, FlavorLabels and PDKLabels compared the
+   method, not the index, so every call raised. This ports Soamasina Herilala
+   Razafinime's StandardLabels fix to all three (credited).
+3. Hits of neutral particles that leave the detector got the `invisible`
+   class, one past the last semantic class. They now get -1, like other
+   unlabelled hits, following Soamasina's fix (credited).
+
+**Evidence.** On the MicroBooNE test file no hit is invisible, so graphs are
+unchanged. Tests cover each fix; the old code fails them with label 7 and a
+`NameError`.
