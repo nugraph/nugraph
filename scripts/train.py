@@ -45,13 +45,15 @@ def configure():
     parser.add_argument('--precision', type=str, default='32',
                         choices=('32', 'bf16-mixed'),
                         help='Precision for training (default: 32, or bf16-mixed for AMP)')
+    parser.add_argument('--seed', type=int, default=1,
+                        help='Random seed for weight initialisation and data shuffling')
     parser = Data.add_data_args(parser)
     parser = Model.add_model_args(parser)
     return parser.parse_args(), Model
 
 def train(args, Model):
 
-    torch.manual_seed(1)
+    torch.manual_seed(args.seed)
 
     # Load dataset
     nudata = Data(args.data_path, batch_size=args.batch_size,
