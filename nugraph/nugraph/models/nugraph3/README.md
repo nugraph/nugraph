@@ -467,3 +467,14 @@ is not just extra compute. Grouping (AL) is unchanged within noise.
 
 **Checkpoint compatibility.** `feedback.*` parameters exist only with the
 flag. It needs `--semantic` and `--nexus`.
+
+## 16 --precision fix, 16-mixed, per-epoch checkpoints
+
+**What.**
+- `--precision` was parsed but never passed to `pl.Trainer`, so every run
+  trained in fp32. It is now passed, and `16-mixed` is allowed for GPUs
+  without bf16 (V100). Removes two Phase 0 `xfail` markers.
+- `--save-every-epoch` keeps a checkpoint at the end of every epoch.
+
+**Evidence.** See 18: 16-mixed at batch 32 is part of the 1.6x speed-up
+with no measurable loss.
