@@ -1,4 +1,12 @@
 #!/usr/bin/env python
+"""
+Run a trained NuGraph3 checkpoint over the test split of a graph file
+
+Writes one row per hit, with true labels and model predictions, to the
+"hits" table of an HDF5 file (read it with pandas.read_hdf(outfile, "hits")).
+
+  scripts/test.py --checkpoint model.ckpt --data-path graphs.h5 --outfile out.h5
+"""
 import os
 import time
 import argparse
@@ -26,7 +34,8 @@ def test(args):
 
     print('data path =',args.data_path)
     nudata = Data(args.data_path, batch_size=args.batch_size,
-                  transform=Model.transform())
+                  model=Model, num_workers=args.num_workers,
+                  featext=args.featext)
 
     print('using checkpoint =',args.checkpoint)
     model = Model.load_from_checkpoint(args.checkpoint, map_location='cpu')
@@ -53,7 +62,7 @@ def test(args):
         for data in batch.to_data_list():
             df.append(plot.to_dataframe(data))
     df = pd.concat(df)
-    df.to_hdf(args.outfile, 'hits', format='table')
+    df.to_hdf(args.outfile, key='hits', format='table')
 
 if __name__ == '__main__':
     args = configure()
