@@ -11,11 +11,12 @@ from synthetic import EVENT_CLASSES, IN_FEATURES, PLANES, SEMANTIC_CLASSES, make
 E_SP = ("sp", "sp3d", "sp")
 
 
-def nexus_batch(*seeds: int, sp_feats: bool = False) -> Batch:
+def nexus_batch(*seeds: int, sp_feats: bool = False, charge: bool = False,
+                graph: str = "knn") -> Batch:
     """Batch of synthetic events with spacepoint graph and truth labels"""
-    transforms = [Transform(PLANES), SpacePointGraph(k=4)]
+    transforms = [Transform(PLANES), SpacePointGraph(k=4, graph=graph)]
     if sp_feats:
-        transforms.append(NexusFeatures(PLANES, positions=False))
+        transforms.append(NexusFeatures(PLANES, positions=False, charge=charge))
     events = []
     for s in seeds:
         data = make_event(s)
@@ -154,3 +155,70 @@ def test_local_shape():
     i, j = torch.zeros(3, dtype=torch.long), torch.tensor([1, 2, 3])
     shape = NexusDecoder.local_shape(pos, i, j)
     torch.testing.assert_close(shape[0], torch.tensor([1., 0., 0., 0., 0., 0.]))
+
+
+def test_nexus_charge_training_step():
+    """Hit charge and width reach spacepoints and the edge classifier"""
+    batch = nexus_batch(0, 1, sp_feats=True, charge=True)
+    assert batch["sp"].x.size(1) == 5 and batch["sp"].calo.size(1) == 3
+    assert torch.isfinite(batch["sp"].calo).all()
+    model = nexus_model(nexus_in_features=5, nexus_charge=True)
+    model.train()
+    loss, _ = model(batch, stage="train")
+    loss.backward()
+    assert torch.isfinite(loss)
+    assert model.nexus_decoder.edge_net[0].in_features == 2 * 32 + 4 + 3
+    assert model.nexus_decoder.edge_net[0].weight.grad[:, -3:].abs().sum() > 0
+
+
+def test_nexus_knn_shape_and_edge_weight():
+    """The direction head can take the stored k-nearest-neighbour shape, and
+    up-weighting same-particle edges raises the edge loss"""
+    batch = nexus_batch(0, 1)
+    assert batch["sp"].local_shape.shape == (batch["sp"].num_nodes, 6)
+    model = nexus_model(nexus_direction=True, nexus_knn_shape=True)
+    model.train()
+    loss, _ = model(batch, stage="train")
+    loss.backward()
+    assert torch.isfinite(loss)
+    assert model.nexus_decoder.direction_net[0].weight.grad.abs().sum() > 0
+    edge = []
+    for w in (1., 3.):
+        model = nexus_model(nexus_edge_pos_weight=w)
+        model.eval()
+        _, metrics = model(nexus_batch(0, 1), stage="val")
+        edge.append(metrics["nexus/edge-loss-val"] - model.nexus_decoder.temp_edge)
+    assert edge[1] > edge[0]
+
+
+def test_nexus_semantic_and_balanced_filter():
+    """Semantic predictions feed the edge classifier, and the balanced ghost
+    filter loss trains"""
+    batch = nexus_batch(0, 1)
+    assert batch["sp"].y_semantic.shape == (batch["sp"].num_nodes,)
+    model = nexus_model(semantic_head=True, nexus_semantic=True, nexus_balance_filter=True)
+    model.train()
+    loss, _ = model(batch, stage="train")
+    loss.backward()
+    assert torch.isfinite(loss)
+    assert model.nexus_decoder.edge_net[0].in_features == 2 * 32 + 4 + 2 * len(SEMANTIC_CLASSES)
+    assert model.nexus_decoder.node_net.weight.grad.abs().sum() > 0
+
+
+def test_nexus_log_length_stub_count_and_deeper_edge_classifier():
+    """The edge classifier can take log edge lengths and stub counts, and have
+    more and wider hidden layers; by default it keeps one hidden layer"""
+    batch = nexus_batch(0, 1, graph="gabriel+stubs")
+    count = batch["sp"].stub_count
+    assert count.shape == (batch["sp"].num_nodes,) and (count >= 0).all()
+    assert torch.equal(torch.cat([d["sp"].stub_count for d in batch.to_data_list()]), count)
+    model = nexus_model(nexus_log_length=True, nexus_stub_count=True,
+                        nexus_edge_layers=2, nexus_edge_width=48)
+    model.train()
+    loss, _ = model(batch, stage="train")
+    loss.backward()
+    assert torch.isfinite(loss)
+    net = model.nexus_decoder.edge_net
+    assert net[0].in_features == 2 * 32 + 4 + 3 and net[0].out_features == 48 and len(net) == 5
+    assert net[0].weight.grad.abs().sum() > 0
+    assert len(nexus_model().nexus_decoder.edge_net) == 3
