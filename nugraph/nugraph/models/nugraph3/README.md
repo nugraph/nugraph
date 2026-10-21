@@ -217,3 +217,17 @@ outputs when present, run/subrun/event.
 **Evidence.** `test_test_script_runs` trains a tiny checkpoint and runs the
 script on synthetic events; it also ran by hand on graphs made from the LFS
 MicroBooNE test file.
+
+## 06 Seeded train/validation/test split
+
+**What.** `generate_samples` (called by `scripts/merge.py`) drew the split
+unseeded, so a test set could not be reproduced. It now takes `seed`
+(default 0), and `merge.py --seed`. `PositionFeatures` overrode `__call__`
+instead of `forward`, which current torch_geometric rejects, so it is fixed
+too: without it `generate_samples` could not finish.
+
+**Compatibility.** Splits are stored in the file; existing files keep theirs
+until the split is regenerated.
+
+**Evidence.** `test_data_module.py`: sizes 36/2/2 from 40 events, every event
+in one split, same seed same split, different seed different split.
