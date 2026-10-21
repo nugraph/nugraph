@@ -582,3 +582,26 @@ the refinement costs nothing elsewhere. With the full recipe at 12 epochs the
 sample (arXiv:1708.03135), so the core is still ~3x wider.
 
 **Checkpoint compatibility.** `refine_net.*` exists only with the flag.
+
+## 22 Per-class ghost-filter weights
+
+**What.** `--nexus-filter-weight CLASS=W ...` puts extra weight on the
+ghost-filter loss of real spacepoints of the named semantic classes, with or
+without `--nexus-balance-filter`. Unknown class names are rejected. The recipe
+uses `hadron=3`.
+
+**Evidence** (12 epochs, two seeds vs a control):
+
+| | hadron=3 | control |
+|---|---|---|
+| hit-level containment | 0.593 / 0.592 | 0.583 |
+| hadron containment | 0.544 / 0.542 | 0.521 |
+| Michel containment | 0.513 / 0.518 | 0.525 |
+| background hits per event | 7.3 / 7.4 | 7.9 |
+| AL | 0.848 | 0.850 |
+
+Hadron containment gains +0.02 on both seeds; Michel containment is slightly
+lower (0.513 / 0.518 vs 0.525). Accuracy and vertex are unchanged.
+
+**Checkpoint compatibility.** The weights are a non-persistent buffer set
+from the hyperparameters.
