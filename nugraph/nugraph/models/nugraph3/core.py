@@ -74,6 +74,45 @@ class NuGraphBlock(MessagePassing): # pylint: disable=abstract-method
             _, x = x
         return self.net(torch.cat((aggr_out, x), dim=1))
 
+class NuGraphGeometryBlock(NuGraphBlock): # pylint: disable=abstract-method
+    """
+    NuGraph message-passing block whose attention weights also see the
+    displacement between source and target node positions
+
+    Args:
+        features: Number of node features
+    """
+    def __init__(self, features: int):
+        super().__init__(features, features, features)
+        self.edge_net = nn.Sequential(
+            nn.Linear(2 * features + 4, 1),
+            nn.Sigmoid())
+
+    def forward(self, x: T, pos: T, edge_index: T) -> T: # pylint: disable=arguments-differ
+        """
+        NuGraphGeometryBlock forward pass
+
+        Args:
+            x: Node feature tensor
+            pos: Node position tensor
+            edge_index: Edge index tensor
+        """
+        return self.propagate(edge_index, x=x, pos=pos)
+
+    def message(self, x_i: T, x_j: T, pos_i: T, pos_j: T) -> T: # pylint: disable=arguments-differ
+        """
+        NuGraphGeometryBlock message function
+
+        Args:
+            x_i: Edge features from target nodes
+            x_j: Edge features from source nodes
+            pos_i: Positions of target nodes
+            pos_j: Positions of source nodes
+        """
+        d = pos_j - pos_i
+        w = self.edge_net(torch.cat((x_i, x_j, d, d.norm(dim=1, keepdim=True)), dim=1))
+        return w * x_j
+
 class NuGraphCore(nn.Module):
     """
     NuGraph core message-passing engine
@@ -87,6 +126,8 @@ class NuGraphCore(nn.Module):
         beta_features: Number of features in object condensation beta embedding
         coord_features: Number of features in object condensation coordinate embedding
         use_checkpointing: Whether to use checkpointing
+        nexus_edges: Whether to message-pass along spacepoint graph edges
+        nexus_geometry: Whether spacepoint messages see spacepoint displacements
     """
     def __init__(self,
                  hit_features: int,
@@ -94,7 +135,9 @@ class NuGraphCore(nn.Module):
                  interaction_features: int,
                  beta_features: int,
                  coord_features: int,
-                 use_checkpointing: bool = True):
+                 use_checkpointing: bool = True,
+                 nexus_edges: bool = False,
+                 nexus_geometry: bool = False):
         super().__init__()
 
         self.use_checkpointing = use_checkpointing
@@ -106,6 +149,15 @@ class NuGraphCore(nn.Module):
         # message-passing from planar nodes to nexus nodes
         self.plane_to_nexus = NuGraphBlock(hit_features, nexus_features,
                                            nexus_features)
+
+        # message-passing between nexus nodes
+        self.nexus_edges = nexus_edges
+        self.nexus_geometry = nexus_geometry
+        if nexus_edges and nexus_geometry:
+            self.nexus_net = NuGraphGeometryBlock(nexus_features)
+        elif nexus_edges:
+            self.nexus_net = NuGraphBlock(nexus_features, nexus_features,
+                                          nexus_features)
 
         # message-passing from nexus nodes to interaction nodes
         self.nexus_to_interaction = NuGraphBlock(nexus_features,
@@ -174,6 +226,16 @@ class NuGraphCore(nn.Module):
         sp.x = self.checkpoint(
             self.plane_to_nexus, (h.x, sp.x),
             data["hit", "nexus", "sp"].edge_index)
+
+        # message-passing between nexus nodes
+        if self.nexus_geometry:
+            sp.x = self.checkpoint(
+                self.nexus_net, sp.x, sp.pos,
+                data["sp", "sp3d", "sp"].edge_index)
+        elif self.nexus_edges:
+            sp.x = self.checkpoint(
+                self.nexus_net, sp.x,
+                data["sp", "sp3d", "sp"].edge_index)
 
         # message-passing from nexus to interaction
         evt.x = self.checkpoint(
