@@ -200,3 +200,20 @@ saved optimizer state. New checkpoints do not load strictly into old code.
 optimizer state; TorchScript export; two gloo ranks on CPU gather the same
 statistics as one process. A real old NuGraph3 checkpoint loads strictly and
 resumes. Not tested: a multi-GPU NCCL run.
+
+## 05 scripts/test.py runs end to end
+
+**What.** `scripts/test.py` called `Model.transform()` without the planes and
+failed before reading data; pandas also no longer takes the HDF5 key
+positionally. The data module now builds the transform (as in `train.py`),
+`to_hdf` gets `key="hits"`, and `--num-workers` and `--featext` are passed on
+(Phase 0 bug 10).
+
+**Use.** `scripts/test.py --checkpoint model.ckpt --data-path graphs.gnn.h5
+--outfile out.h5` writes one row per hit of the test split: ids, plane,
+coordinates, true labels, predicted class and scores, filter score, instance
+outputs when present, run/subrun/event.
+
+**Evidence.** `test_test_script_runs` trains a tiny checkpoint and runs the
+script on synthetic events; it also ran by hand on graphs made from the LFS
+MicroBooNE test file.
