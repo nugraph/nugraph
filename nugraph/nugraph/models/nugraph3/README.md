@@ -176,3 +176,27 @@ before and after (`hit_id` equals the row in every event), so existing files
 are unaffected. The fix matters for other detectors' files and any hit
 filtering. Tests shuffle the hit rows and drop every fifth hit; the old code
 gives wrong or out-of-range particles.
+
+## 04 InputNorm statistics in buffers, freeze flag saved
+
+**What.** `InputNorm` kept its running mean, variance and count as
+Parameters, so the optimizer saw them, DDP never synchronised them (each rank
+normalised with its own shard's statistics), and the freeze flag was not saved
+(after `--resume` or a fine-tune the statistics kept updating). Now
+(Phase 0 bug 9):
+- the statistics are buffers with the **same state-dict keys**;
+- the freeze flag is a saved bool buffer (`input_norm.frozen`); a checkpoint
+  without it counts as frozen when `count > 0`;
+- under DDP the batch count, sum and sum of squares are all-reduced in
+  float64 until the statistics freeze;
+- the variance starts at 1, so the norm is the identity before any data.
+
+**Checkpoint compatibility.** Old checkpoints load with `strict=True`, and
+`--resume` of an old run works: `InputNorm.upgrade_checkpoint` (called from
+`on_load_checkpoint` in NuGraph2 and NuGraph3) drops the statistics from the
+saved optimizer state. New checkpoints do not load strictly into old code.
+
+**Evidence.** Tests: save/load round trip; old-format checkpoints; old
+optimizer state; TorchScript export; two gloo ranks on CPU gather the same
+statistics as one process. A real old NuGraph3 checkpoint loads strictly and
+resumes. Not tested: a multi-GPU NCCL run.

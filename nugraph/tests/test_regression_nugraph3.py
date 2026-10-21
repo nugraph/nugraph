@@ -184,7 +184,6 @@ def test_materialize_batch_vector():
                                torch.tensor([0, 0, 0, 1, 1, 1]))
 
 
-@bug(9, "the update flag is a plain attribute, so a resumed run starts updating again")
 def test_input_norm_freeze_survives_checkpoint():
     """Freezing the input norm must survive a save and reload"""
     norm = InputNorm(3)
@@ -194,11 +193,115 @@ def test_input_norm_freeze_survives_checkpoint():
     assert restored.update is False
 
 
-@bug(9, "running stats are Parameters, so DDP never broadcasts them and "
-        "the optimiser receives them")
 def test_input_norm_stats_are_buffers():
     """Running normalization statistics must be buffers, not parameters"""
     assert not list(InputNorm(3).parameters())
+
+
+def trained_input_norm() -> InputNorm:
+    """An InputNorm that has seen one batch and been frozen"""
+    norm = InputNorm(3)
+    norm.train()
+    norm(torch.randn(50, 3, generator=torch.Generator().manual_seed(0)) * 4 + 2)
+    norm.update = False
+    return norm
+
+
+def test_input_norm_round_trip(tmp_path):
+    """A saved and reloaded norm keeps its statistics and stays frozen in training"""
+    norm = trained_input_norm()
+    torch.save(norm.state_dict(), tmp_path / "norm.pt")
+    restored = InputNorm(3)
+    restored.load_state_dict(torch.load(tmp_path / "norm.pt"))
+    for key in ("mean", "var", "count"):
+        torch.testing.assert_close(restored.norm[key], norm.norm[key])
+    restored.train()
+    restored(torch.randn(20, 3) + 10)
+    for key in ("mean", "var", "count"):
+        torch.testing.assert_close(restored.norm[key], norm.norm[key])
+
+
+class OldInputNorm(torch.nn.Module): # pylint: disable=too-few-public-methods
+    """InputNorm as it was saved before bug 9: a ParameterDict and no frozen flag"""
+    def __init__(self, num_features: int, count: int):
+        super().__init__()
+        self.norm = torch.nn.ParameterDict({
+            "mean": torch.nn.Parameter(torch.arange(num_features).float(), requires_grad=False),
+            "var": torch.nn.Parameter(torch.full((num_features,), 4.), requires_grad=False),
+            "count": torch.nn.Parameter(torch.full((1,), count), requires_grad=False)})
+
+
+@pytest.mark.parametrize("count, frozen", [(100, True), (0, False)])
+def test_input_norm_loads_old_checkpoint(tmp_path, count, frozen):
+    """Checkpoints written before bug 9 load strictly; trained statistics count as frozen"""
+    torch.save(OldInputNorm(3, count).state_dict(), tmp_path / "old.pt")
+    norm = InputNorm(3)
+    norm.load_state_dict(torch.load(tmp_path / "old.pt"))
+    torch.testing.assert_close(norm.norm["mean"], torch.tensor([0., 1., 2.]))
+    torch.testing.assert_close(norm.norm["var"], torch.full((3,), 4.))
+    assert norm.update is not frozen
+    assert bool(norm.frozen) is frozen
+
+
+def test_input_norm_upgrades_old_optimizer_state():
+    """Optimizer state saved while the statistics were parameters can resume training"""
+    def model(norm: torch.nn.Module) -> torch.nn.Module:
+        m = torch.nn.Module()
+        m.input_norm = norm
+        m.net = torch.nn.Linear(3, 2)
+        return m
+    old = model(OldInputNorm(3, 10))
+    optimizer = torch.optim.AdamW(old.parameters())
+    old.net(torch.randn(4, 3)).sum().backward()
+    optimizer.step()
+    expected = optimizer.state[old.net.weight]["exp_avg"].clone()
+    checkpoint = {"state_dict": old.state_dict(),
+                  "optimizer_states": [optimizer.state_dict()]}
+    new = model(InputNorm(3))
+    InputNorm.upgrade_checkpoint(new, checkpoint)
+    new.load_state_dict(checkpoint["state_dict"])
+    optimizer = torch.optim.AdamW(new.parameters())
+    optimizer.load_state_dict(checkpoint["optimizer_states"][0])
+    torch.testing.assert_close(optimizer.state[new.net.weight]["exp_avg"], expected)
+
+
+def test_input_norm_scriptable():
+    """NuGraph2.export scripts the encoder, so InputNorm must stay TorchScript-compatible"""
+    norm = trained_input_norm().eval()
+    x = torch.randn(5, 3)
+    torch.testing.assert_close(torch.jit.script(norm)(x), norm(x))
+
+
+def test_input_norm_identity_before_data():
+    """Before any statistics are gathered (sanity check) the norm passes inputs through"""
+    x = torch.randn(10, 3)
+    torch.testing.assert_close(InputNorm(3).eval()(x), x, atol=1e-4, rtol=1e-4)
+
+
+def ddp_input_norm(rank: int, init: str, x: torch.Tensor, out: str):
+    """Update an InputNorm with one rank's half of the batch under a gloo process group"""
+    torch.distributed.init_process_group("gloo", init_method=init, rank=rank, world_size=2)
+    norm = InputNorm(x.size(1)).train()
+    for chunk in x.split(40):
+        norm(chunk.chunk(2)[rank])
+    torch.save(norm.state_dict(), f"{out}.{rank}")
+    torch.distributed.destroy_process_group()
+
+
+def test_input_norm_ddp_matches_single_process(tmp_path):
+    """Two ranks, each seeing half of every batch, gather the same statistics as one process"""
+    x = torch.randn(120, 3, generator=torch.Generator().manual_seed(0)) * 3 + 5
+    out = str(tmp_path / "norm")
+    torch.multiprocessing.spawn(ddp_input_norm, nprocs=2,
+                                args=(f"file://{tmp_path}/pg", x, out))
+    single = InputNorm(3).train()
+    for chunk in x.split(40):
+        single(chunk)
+    torch.testing.assert_close(single.norm["mean"], x.mean(dim=0))
+    for rank in range(2):
+        state = torch.load(f"{out}.{rank}")
+        for key in ("mean", "var", "count"):
+            torch.testing.assert_close(state[f"norm.{key}"], single.norm[key])
 
 
 def load_script(name: str):
