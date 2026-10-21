@@ -136,3 +136,30 @@ labellers; InputNorm freeze flag and Parameters; BalanceSampler with
 
 **Run.** `pytest -rx nugraph/tests pynuml/tests`, and
 `pytest --runxfail --tb=short ...` to watch each bug fail.
+
+## 02 Object condensation loss independent of batch size
+
+**What.** Two OC fixes (Phase 0 bugs 2 and 3).
+- The potential term built a hit x condensation-point matrix over the whole
+  batch, so hits were repelled by particles in *other* events. It is now
+  masked to same-event pairs, using the hit `batch` vector.
+- `RecallLoss(reduction="none")` divided each hit's loss by the number of
+  valid hits, so the particle loss shrank as the batch grew. It now returns
+  unnormalised per-hit losses; the normalisation (and its DDP average) moves to
+  `RecallLoss.n_valid()`. The semantic loss value is unchanged.
+
+**Effect** (synthetic event, 1 / 2 / 4 copies in one batch): potential 2.28 /
+5.19 / 11.0 before, 2.28 / 2.28 / 2.28 after; particle loss 1.6e-2 / 8.0e-3 /
+4.0e-3 before, 1.25 each after; semantic loss 2.50 each, before and after.
+
+**Training evidence.** None yet. The single-event potential is unchanged, but
+in training batches the cross-event repulsion disappears, which changes its
+balance against the other losses. With `--particle-loss` (off by default) that
+term is now ~100x larger, on the cross-entropy scale. No controlled training
+comparison exists: the nexus runs below do not train the hit-level instance
+head. A before/after comparison of instance ARI is still to be run.
+
+**Notes.** The dense matrix is still built and then masked, so memory use is
+unchanged; computing it event by event can follow once profiled.
+`test_potential_repels_within_event_only` (suggested by Andrii) checks both
+directions: within-event repulsion stays, cross-event repulsion goes.
