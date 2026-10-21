@@ -163,3 +163,16 @@ head. A before/after comparison of instance ARI is still to be run.
 unchanged; computing it event by event can follow once profiled.
 `test_potential_repels_within_event_only` (suggested by Andrii) checks both
 directions: within-event repulsion stays, cross-event repulsion goes.
+
+## 03 Truth hit-particle edges from the hit row
+
+**What.** pynuml's `HitGraphProducer` used each hit's `hit_id` as its node
+index in the hit -> particle truth edges. That holds only while the hit table
+is dense and ordered by `hit_id`. The edges now use the row index, as the
+nexus edges already do (Phase 0 bug 6).
+
+**Evidence.** The 40 MicroBooNE test-file events give identical truth edges
+before and after (`hit_id` equals the row in every event), so existing files
+are unaffected. The fix matters for other detectors' files and any hit
+filtering. Tests shuffle the hit rows and drop every fifth hit; the old code
+gives wrong or out-of-range particles.
