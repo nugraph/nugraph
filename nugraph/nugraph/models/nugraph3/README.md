@@ -437,3 +437,33 @@ layer layout, so old checkpoints load.
 - Explicit charge inputs: for delta-ray vs same-track edges, the edge score
   of a model trained with `--nexus-charge` has AUC 0.946, against 0.952
   without, so `--nexus-charge` is not in the recipe.
+
+## 15 Semantic feedback from spacepoints to hits
+
+**What.** `--nexus-feedback` (`models/nugraph3/feedback.py`) adds a second
+semantic pass after the nexus decoder. Each spacepoint's embedding and its
+hits' first-pass class probabilities are smoothed over the spacepoint graph
+(two rounds, weighted by edge score) and returned to each hit as the mean over
+its spacepoints, weighted by ghost score, through a zero-initialised residual
+update. Edge and ghost scores are detached, so the semantic loss does not
+train the nexus decoder through them. Both semantic passes are trained; the
+second is reported. Feedback aggregates are summed in fp32, so it runs under
+16-bit autocast.
+
+**How it fits.** The 3D stage sees which hits belong together across
+planes; feedback lets the hit classifier use that.
+
+**Evidence.**
+
+| Comparison | Hit accuracy | Michel recall / precision |
+|---|---|---|
+| 2 epochs, 3 seeds each: feedback vs baseline | 0.9125 vs 0.8983 ± 0.0004 | 0.687 / 0.578 vs 0.611 / 0.482 |
+| 2-epoch feedback vs 4-epoch baseline | 0.9125 vs 0.9096 | — |
+| 4 epochs | 0.922 vs 0.910 | +6 / +8 points |
+| 6 epochs | 0.9255 vs 0.9178 | +5.5 points recall |
+
+The 2-epoch feedback model beats a baseline trained twice as long, so the gain
+is not just extra compute. Grouping (AL) is unchanged within noise.
+
+**Checkpoint compatibility.** `feedback.*` parameters exist only with the
+flag. It needs `--semantic` and `--nexus`.
