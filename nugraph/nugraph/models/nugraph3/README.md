@@ -519,3 +519,17 @@ different stub edges.
 
 **Notes.** The compiled kernel needs Triton (and CUDA 12 headers on hosts
 without a toolkit); the CPU path is not compiled.
+
+## 19 Out-of-memory guard
+
+**What.** A CUDA out-of-memory error in the GPU graph build, forward or
+backward pass skips that batch: it warns, logs `oom/skipped` and drops the
+gradients. The run still ends after ten skips in a row, or on any skip with
+more than one GPU. Under 16-mixed, a skipped backward used to stop the
+GradScaler from stepping; the step is now skipped through the scaler and the
+loss scale restored in `on_train_batch_end`.
+
+**Evidence.** Added after one oversized batch ended a 20-epoch run in epoch 8;
+the 16-mixed fix after a crash after 79 skips. Skipped batches (~1.2% at batch
+32 over 12 epochs) showed no bias against large events. The GPU-only 16-mixed
+scaler test is skipped on CPU.
