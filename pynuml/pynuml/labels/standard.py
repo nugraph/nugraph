@@ -1,3 +1,5 @@
+from collections import defaultdict
+
 import pandas as pd
 import particle
 
@@ -244,14 +246,18 @@ class StandardLabels:
                 "momentum": part.momentum,
                 "semantic_label": sl,
                 "instance_g4_id": il } ]
-            for _, row in particles[(part.g4_id==particles.parent_id)].iterrows():
+            for row in children[part.g4_id]:
                 ret += walk(row, particles, depth+1, slc, ilc)
             return ret
 
         ret = []
         part = part.set_index("g4_id", drop=False)
-        primaries = part[(part.parent_id==0)]
-        for _, primary in primaries.iterrows():
+        # children of each particle in table order, found once rather than
+        # by a scan of the whole table per particle
+        children = defaultdict(list)
+        for row in part.itertuples(index=False):
+            children[row.parent_id].append(row)
+        for primary in children[0]:
             ret += walk(primary, part, 0, None, None)
         if len(ret)==0: return
         labels = pd.DataFrame.from_dict(ret)
