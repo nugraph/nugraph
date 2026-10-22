@@ -8,6 +8,7 @@ class StandardLabels:
     def __init__(self,
                  gamma_threshold: float = 0.02,
                  hadron_threshold: float = 0.2,
+                 radiological_threshold: float = 0.0045,
                  beam_background: bool = False):
         self._labels = [
             'pion',
@@ -21,6 +22,7 @@ class StandardLabels:
         ]
         self._gamma_threshold = gamma_threshold
         self._hadron_threshold = hadron_threshold
+        self._radiological_threshold = radiological_threshold
         self._beam_background = beam_background
 
     @property
@@ -106,8 +108,13 @@ class StandardLabels:
                     # primaryBackground: beam-line background particles (ProtoDUNE-SP)
                     if part.start_process == 'primary' or (self._beam_background \
                         and part.start_process == 'primaryBackground'):
-                        sl = self.shower
-                        slc = self.shower
+                        if part.momentum < self._radiological_threshold:
+                            # radiological beta decays (Ar-39, Kr-85, Bi-214, K-42)
+                            sl = self.diffuse
+                            slc = self.diffuse
+                        else:
+                            sl = self.shower
+                            slc = self.shower
                     elif abs(parent_type) == 13 and (part.start_process == 'muMinusCaptureAtRest' \
                         or part.start_process == 'muPlusCaptureAtRest' or part.start_process == 'Decay'):
                         if part.start_process != 'Decay' and part.momentum <= 0.002:
