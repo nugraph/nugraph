@@ -110,8 +110,17 @@ class StandardLabels:
                         slc = self.shower
                     elif abs(parent_type) == 13 and (part.start_process == 'muMinusCaptureAtRest' \
                         or part.start_process == 'muPlusCaptureAtRest' or part.start_process == 'Decay'):
-                        sl = self.michel
-                        slc = self.michel
+                        if part.start_process != 'Decay' and part.momentum <= 0.002:
+                            # atomic and nuclear capture electrons, not decay in orbit
+                            sl = self.diffuse
+                            slc = self.diffuse
+                        elif part.start_process == 'Decay' and (parent_type == 13 or part.momentum > 0.0533):
+                            # decay in flight (stopped mu- decay through muMinusCaptureAtRest)
+                            sl = self.shower
+                            slc = self.shower
+                        else:
+                            sl = self.michel
+                            slc = self.michel
                     elif part.start_process == 'Decay':
                         # other decays, such as neutral pion Dalitz decays
                         sl = self.shower
@@ -231,7 +240,8 @@ class StandardLabels:
                     if sl == self.michel: ilc = il
                 return il, ilc
 
-            if sl is not None: slc = sl
+            # photons from a Michel electron follow the photon rules, in its instance
+            if sl is not None and not (sl == self.michel and part.type == 22): slc = sl
             else: sl, slc = s(part, particles)
 
             if il is not None: ilc = il
