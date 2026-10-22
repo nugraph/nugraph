@@ -82,3 +82,19 @@ def test_michel_photons():
     assert sl[6] == l.shower
     assert sl[7] == l.shower
     assert all(il[i] == 2 for i in range(2, 8))
+
+def test_radiological_electrons():
+    """Primary electrons below the radiological threshold are diffuse with no instance"""
+    rows = [
+        (1, 0, 11, "primary", "eIoni", 0.0009),
+        (2, 1, 22, "eBrem", "phot", 0.0001),
+        (3, 0, 11, "primary", "eIoni", 0.006)]
+    l = pynuml.labels.StandardLabels()
+    ret = l(particles(rows))
+    sl = dict(zip(ret.g4_id, ret.semantic_label))
+    il = dict(zip(ret.g4_id, ret.instance_g4_id))
+    assert sl[1] == l.diffuse and il[1] == -1
+    assert sl[2] == l.diffuse
+    assert sl[3] == l.shower and il[3] == 3
+    l = pynuml.labels.StandardLabels(radiological_threshold=0)
+    assert labels(l, rows)[1] == l.shower
