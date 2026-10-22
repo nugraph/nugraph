@@ -5,7 +5,8 @@ class StandardLabels:
 
     def __init__(self,
                  gamma_threshold: float = 0.02,
-                 hadron_threshold: float = 0.2):
+                 hadron_threshold: float = 0.2,
+                 beam_background: bool = False):
         self._labels = [
             'pion',
             'muon',
@@ -18,6 +19,7 @@ class StandardLabels:
         ]
         self._gamma_threshold = gamma_threshold
         self._hadron_threshold = hadron_threshold
+        self._beam_background = beam_background
 
     @property
     def labels(self):
@@ -99,13 +101,19 @@ class StandardLabels:
                     return sl, slc
 
                 def electron_positron_labeler(part, parent_type):
-                    if part.start_process == 'primary':
+                    # primaryBackground: beam-line background particles (ProtoDUNE-SP)
+                    if part.start_process == 'primary' or (self._beam_background \
+                        and part.start_process == 'primaryBackground'):
                         sl = self.shower
                         slc = self.shower
                     elif abs(parent_type) == 13 and (part.start_process == 'muMinusCaptureAtRest' \
                         or part.start_process == 'muPlusCaptureAtRest' or part.start_process == 'Decay'):
                         sl = self.michel
                         slc = self.michel
+                    elif part.start_process == 'Decay':
+                        # other decays, such as neutral pion Dalitz decays
+                        sl = self.shower
+                        slc = self.shower
                     elif part.start_process == 'conv' or part.end_process == 'conv' \
                         or part.start_process == 'compt' or part.end_process == 'compt':
                         if part.momentum >= self._gamma_threshold:
@@ -154,7 +162,8 @@ class StandardLabels:
                             sl = self.diffuse
                             slc = self.diffuse
                     elif part.start_process == 'eBrem' or part.end_process == 'phot' \
-                        or part.end_process == 'photonNuclear':
+                        or part.end_process == 'photonNuclear' or part.end_process == 'Transportation':
+                        # Transportation: left the world volume (Geant4 setups without CoupledTransportation)
                         sl = self.diffuse
                         slc = None
                     else:

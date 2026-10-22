@@ -12,6 +12,8 @@ def configure():
                       help='add true vertex label to graphs')
     args.add_argument("--label-position", action="store_true",
                       help="add true 3D hit position to graphs")
+    args.add_argument("--beam-background", action="store_true",
+                      help="label beam-line background e+- like primaries (test beam, e.g. ProtoDUNE-SP)")
     args.add_argument("--optical", action="store_true",
                       help="add optical hierarchy")
     return args.parse_args()
@@ -24,7 +26,7 @@ def process(args):
     # create graph processor
     processor = pynuml.process.HitGraphProducer(
             file=f,
-            semantic_labeller=pynuml.labels.StandardLabels(),
+            semantic_labeller=pynuml.labels.StandardLabels(beam_background=args.beam_background),
             event_labeller=pynuml.labels.FlavorLabels(),
             label_vertex=args.label_vertex,
             label_position=args.label_position,
