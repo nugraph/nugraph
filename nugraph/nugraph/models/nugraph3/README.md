@@ -278,3 +278,34 @@ fragments trajectories; k = 16-32 is recommended.
 
 Labels come from the hit truth already in the files, so no reprocessing is
 needed.
+
+## 09 Nexus decoder: spacepoint ghost and edge scores
+
+**What.** `NexusDecoder` (`decoders/nexus.py`, modelled on `FilterDecoder`):
+- ghost head: BCE per spacepoint, real vs ghost/mixed/background, output
+  `sp.x_filter`;
+- edge head: BCE per 3D edge from both ends' features, displacement and
+  distance, output edge `x`;
+- optional spacepoint <-> spacepoint message passing in the core, after
+  hit -> spacepoint (`--nexus-geometry`: attention also sees displacements);
+- optional spacepoint input features ΔT and χ² across planes
+  (@cerati's `NexusFeatures`, used without absolute positions).
+
+Flags: model `--nexus`, `--nexus-in-feats`, `--nexus-geometry`; data
+`--sp-knn K`, `--sp-feats`, `--no-sp-majority`.
+
+**Checkpoint compatibility.** Off by default; without `--nexus` there are no
+new parameters, so existing checkpoints load unchanged.
+
+**Evidence** (semantic + filter + nexus, k = 16, batch 16):
+
+| | edges only, 6k steps | + ΔT, χ², displacement, 6k steps | same, 3 epochs |
+|---|---|---|---|
+| ghost ROC AUC | 0.918 | 0.919 | 0.984 |
+| ghosts removed / real kept | 56.9% / 97.5% | 57.2% / 97.7% | 83.3% / 98.4% |
+| edge ROC AUC | 0.918 | 0.913 | 0.982 |
+| grouping ARI (components, thr 0.8) | 0.282 | 0.296 | 0.423 |
+
+All 3D edges give ARI 0.104 and perfect edges 0.669, so the 3-epoch run closes
+about 57% of that gap. Training length dominates: the same setup at 6 epochs
+gives 0.478.
