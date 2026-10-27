@@ -217,6 +217,9 @@ class NuGraph2(LightningModule): # pylint: disable=too-many-instance-attributes
             if isinstance(module, InputNorm):
                 module.update = False
 
+    def on_load_checkpoint(self, checkpoint: dict) -> None:
+        InputNorm.upgrade_checkpoint(self, checkpoint)
+
     def validation_step(self, batch) -> None: # pylint: disable=arguments-differ
         self.step(batch)
         total_loss = 0.
