@@ -98,12 +98,14 @@ the last PR it needs, perhaps with small textual conflicts.
 | 25 | `stack/25-sp-build-best` | Best-K spacepoint candidates per hit | 24 | yes |
 
 The recipe that the evidence below refers to trains with
-`--semantic --filter --nexus --sp-graph gabriel+stubs --sp-gpu
+`--semantic --filter --nexus --sp-knn 16 --sp-feats --nexus-in-feats 2
+--nexus-geometry --no-sp-majority --sp-graph gabriel+stubs --sp-stub-radius 24 --sp-gpu
 --nexus-semantic --nexus-balance-filter --nexus-log-length --nexus-stub-count
 --nexus-edge-layers 2 --nexus-edge-width 64 --nexus-feedback --nexus-feats 64
 --nexus-vertex-refine --nexus-vertex vote --nexus-direction
 --nexus-filter-weight hadron=3 --sp-build scripts/geometry/microboone.json
---sp-build-best 2 --precision 16-mixed --save-every-epoch`. Every flag is off
+--sp-build-best 2 --precision 16-mixed --save-every-epoch --batch-size 32
+--learning-rate 0.0014142 --epochs 12`. Every flag is off
 by default, except residual blocks in the training CLI (13).
 
 ## 01 Phase 0 regression tests
